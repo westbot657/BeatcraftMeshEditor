@@ -1,6 +1,8 @@
 // Control Scheme
 //   Left-click             select vertex (shift = multi-select)
 //   Left-drag (empty)      orbit
+//   Shift+Left-click       add/remove select
+//   Shift+Left-drag        marquee select
 //   Right-drag             pan
 //   Scroll                 zoom
 //   Left-drag (vertex)     move along viewport-parallel plane
@@ -8,7 +10,7 @@
 //   G                      grid toggle
 //   C                      vertex dots toggle
 //   V (part-edit)          spawn vertex at cursor
-//   E                      assembly ↔ part-edit mode  (Tab taken by egui)
+//   E                      assembly <-> part-edit mode
 //   [ / ]                  cycle active part
 //   N                      create/remove triangle from selection
 //   X                      flip winding of selected triangles
@@ -17,9 +19,10 @@
 //   Ctrl+Shift+S           optimized save
 //   Escape                 deselect all
 
-pub mod extensions;
 pub mod data;
 pub mod easing;
+pub mod light_mesh;
+pub mod math_interp;
 
 pub fn main() {
 

@@ -1,3 +1,4 @@
+use std::ops::Not;
 use std::path::PathBuf;
 
 use glam::{Quat, Vec2, Vec3};
@@ -5,7 +6,6 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::easing::Easing;
-
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(untagged)]
@@ -130,9 +130,9 @@ fn is_default_scale(s: &Vec3) -> bool {
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(default)]
 pub struct MaterialData {
-    material: usize,
-    texture: usize,
-    color: usize,
+    material: u8,
+    texture: u8,
+    color: u8,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -149,12 +149,8 @@ pub struct LightMeshData {
     textures: IndexMap<String, String>,
     #[serde(skip_serializing_if = "IndexMap::is_empty")]
     data: IndexMap<String, MaterialData>,
-    #[serde(default, skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "Not::not")]
     cull: bool
-}
-
-fn is_false(b: &bool) -> bool {
-    !b
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -185,7 +181,6 @@ pub struct SessionData {
     meshes: Vec<SessionMeshData>,
     camera: CameraData,
 }
-
 
 mod triangle_data_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
