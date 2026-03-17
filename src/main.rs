@@ -19,6 +19,7 @@
 
 pub mod extensions;
 pub mod data;
+pub mod easing;
 
 pub fn main() {
 

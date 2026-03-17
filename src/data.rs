@@ -1,4 +1,8 @@
+use glam::{Quat, Vec2, Vec3};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+
+use crate::easing::Easing;
 
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -48,6 +52,74 @@ pub enum TriangleEntry {
         uv: Option<UvId>,
         normal: Option<NormalId>,
     }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ComputeVertexData {
+    points: [VertId; 2],
+    #[serde(default, skip_serializing_if = "Easing::is_default")]
+    function: Easing,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    delta: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    x: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    y: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    z: Option<f32>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ComputeNormalData {
+
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(default)]
+pub struct PartData {
+    vertices: Vec<Vec3>,
+    named_vertices: IndexMap<String, Vec3>,
+    compute_vertices: IndexMap<String, ComputeVertexData>,
+    uvs: Vec<Vec2>,
+    named_uvs: IndexMap<String, Vec2>,
+    normals: Vec<Vec3>,
+    named_normals: IndexMap<String, Vec3>,
+    compute_normals: IndexMap<String, ComputeNormalData>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PlacementData {
+    part: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    position: Option<Vec3>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rotation: Option<Quat>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    normal: Option<Vec3>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(default)]
+pub struct MaterialData {
+    material: usize,
+    texture: usize,
+    color: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(default)]
+pub struct LightMeshData {
+    mesh_format: u32,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    credits: Vec<String>,
+    #[serde(skip_serializing_if = "IndexMap::is_empty")]
+    parts: IndexMap<String, PartData>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    mesh: Vec<PlacementData>,
+    #[serde(skip_serializing_if = "IndexMap::is_empty")]
+    textures: IndexMap<String, String>,
+    #[serde(skip_serializing_if = "IndexMap::is_empty")]
+    data: IndexMap<String, MaterialData>,
 }
 
 
@@ -151,6 +223,21 @@ mod vert_ref_serde {
             IdInner::Bare(v) => VertRefData::Bare(v.into())
         })
     }
+}
+
+
+
+#[cfg(test)]
+mod data_tests {
+    #[test]
+    fn test_deserialize() -> anyhow::Result<()> {
+
+        let data = include_str!("../test_mesh.json");
+
+
+        Ok(())
+    }
+
 }
 
 
