@@ -361,7 +361,7 @@ mod data_tests {
         if json == data {
             Ok(())
         } else {
-            Err(anyhow!("{json}\n\n{data}"))
+            Err(anyhow!("{data}\n!=\n{json}"))
         }
     }
 
