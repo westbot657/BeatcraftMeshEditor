@@ -1,0 +1,164 @@
+{
+  "meshes": [
+    {
+      "path": "../../../IdeaProjects/BeatCraft/common/src/main/resources/assets/beatcraft/environments/triangle/meshes/inner_ring.json",
+      "visible": true,
+      "placements": [
+        {
+          "position": [
+            0.0,
+            2.0,
+            14.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "count": 30,
+          "offset_pos": [
+            0.0,
+            0.0,
+            5.0
+          ],
+          "offset_rot": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        }
+      ]
+    },
+    {
+      "path": "../../../IdeaProjects/BeatCraft/common/src/main/resources/assets/beatcraft/environments/triangle/meshes/outer_ring.json",
+      "visible": true,
+      "placements": [
+        {
+          "position": [
+            0.0,
+            2.0,
+            7.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "count": 15,
+          "offset_pos": [
+            0.0,
+            0.0,
+            8.75
+          ],
+          "offset_rot": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        }
+      ]
+    },
+    {
+      "path": "../../../IdeaProjects/BeatCraft/common/src/main/resources/assets/beatcraft/environments/triangle/meshes/spinning_laser.json",
+      "visible": true,
+      "placements": [
+        {
+          "position": [
+            25.0,
+            -6.0,
+            47.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "count": 8,
+          "offset_pos": [
+            0.0,
+            0.0,
+            0.5
+          ],
+          "offset_rot": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "visible": true
+        },
+        {
+          "position": [
+            -25.0,
+            -6.0,
+            47.5
+          ],
+          "rotation": [
+            0.0,
+            1.0,
+            0.0,
+            6.123233995736766e-17
+          ],
+          "count": 8,
+          "offset_pos": [
+            0.0,
+            0.0,
+            0.5
+          ],
+          "offset_rot": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "visible": true
+        }
+      ]
+    },
+    {
+      "path": "../../../IdeaProjects/BeatCraft/common/src/main/resources/assets/beatcraft/environments/triangle/meshes/static1.json",
+      "visible": true,
+      "placements": []
+    },
+    {
+      "path": "../../../IdeaProjects/BeatCraft/common/src/main/resources/assets/beatcraft/environments/triangle/meshes/static2.json",
+      "visible": true,
+      "placements": []
+    },
+    {
+      "path": "../../../IdeaProjects/BeatCraft/common/src/main/resources/assets/beatcraft/environments/triangle/meshes/static3.json",
+      "visible": true,
+      "placements": []
+    },
+    {
+      "path": "../../../IdeaProjects/BeatCraft/common/src/main/resources/assets/beatcraft/environments/triangle/meshes/static4.json",
+      "visible": true,
+      "placements": []
+    },
+    {
+      "path": "../../../IdeaProjects/BeatCraft/common/src/main/resources/assets/beatcraft/environments/triangle/meshes/structure.json",
+      "visible": true,
+      "placements": []
+    },
+    {
+      "path": "../../../IdeaProjects/BeatCraft/common/src/main/resources/assets/beatcraft/environments/triangle/meshes/towers.json",
+      "visible": true,
+      "placements": []
+    }
+  ],
+  "camera": {
+    "target": [
+      0.0,
+      1.6,
+      0.0
+    ],
+    "dist": 481.9258795538265,
+    "yaw": 2.7379999999993947,
+    "pitch": 0.40299999999999536
+  }
+}

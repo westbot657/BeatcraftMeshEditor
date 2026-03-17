@@ -1,0 +1,50 @@
+{
+  "meshes": [
+    {
+      "path": "../../../IdeaProjects/BeatCraft/common/src/main/resources/assets/beatcraft/environments/kaleidoscope/meshes/spikes.json",
+      "visible": true,
+      "placements": [
+        {
+          "position": [
+            0.0,
+            0.0,
+            12.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "count": 20,
+          "offset_pos": [
+            0.0,
+            0.0,
+            5.0
+          ],
+          "offset_rot": [
+            0.0,
+            0.0,
+            0.49999999999999994,
+            0.8660254037844387
+          ]
+        }
+      ]
+    },
+    {
+      "path": "../../../IdeaProjects/BeatCraft/common/src/main/resources/assets/beatcraft/environments/kaleidoscope/meshes/structure.json",
+      "visible": true,
+      "placements": []
+    }
+  ],
+  "camera": {
+    "target": [
+      0.0,
+      1.6,
+      0.0
+    ],
+    "dist": 134.21682781993007,
+    "yaw": 3.4729999999992005,
+    "pitch": 0.20600000000000435
+  }
+}
