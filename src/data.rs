@@ -7,21 +7,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::easing::Easing;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
 #[serde(untagged)]
-pub enum VertId {
+pub enum VertexId {
     Index(usize),
     Named(String),
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
 #[serde(untagged)]
 pub enum UvId {
     Index(usize),
     Named(String),
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
 #[serde(untagged)]
 pub enum NormalId {
     Index(usize),
@@ -30,9 +30,19 @@ pub enum NormalId {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum VertRefData {
-    Full(VertId, UvId, NormalId),
-    WithUv(VertId, UvId),
-    Bare(VertId),
+    Full(VertexId, UvId, NormalId),
+    WithUv(VertexId, UvId),
+    Bare(VertexId),
+}
+
+impl VertRefData {
+    pub(crate) fn take_all(self) -> (VertexId, Option<UvId>, Option<NormalId>) {
+        match self {
+            Self::Full(v, u, n) => (v, Some(u), Some(n)),
+            Self::WithUv(v, u) => (v, Some(u), None),
+            Self::Bare(v) => (v, None, None)
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -41,12 +51,13 @@ pub struct TriangleData {
     pub mat: Option<String>,
 }
 
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct StateSet {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    uv: Option<UvId>,
+    pub uv: Option<UvId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    normal: Option<NormalId>,
+    pub normal: Option<NormalId>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -58,57 +69,57 @@ pub enum TriangleEntry {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ComputeVertexData {
-    points: [VertId; 2],
+    pub points: [VertexId; 2],
     #[serde(default, skip_serializing_if = "Easing::is_default")]
-    function: Easing,
+    pub function: Easing,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    delta: Option<f32>,
+    pub delta: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    x: Option<f32>,
+    pub x: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    y: Option<f32>,
+    pub y: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    z: Option<f32>,
+    pub z: Option<f32>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(transparent)]
 pub struct ComputeNormalData {
-    points: [VertId; 3],
+    pub points: [VertexId; 3],
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(default)]
 pub struct PartData {
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    vertices: Vec<Vec3>,
+    pub vertices: Vec<Vec3>,
     #[serde(skip_serializing_if = "IndexMap::is_empty")]
-    named_vertices: IndexMap<String, Vec3>,
+    pub named_vertices: IndexMap<String, Vec3>,
     #[serde(skip_serializing_if = "IndexMap::is_empty")]
-    compute_vertices: IndexMap<String, ComputeVertexData>,
+    pub compute_vertices: IndexMap<String, ComputeVertexData>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    uvs: Vec<Vec2>,
+    pub uvs: Vec<Vec2>,
     #[serde(skip_serializing_if = "IndexMap::is_empty")]
-    named_uvs: IndexMap<String, Vec2>,
+    pub named_uvs: IndexMap<String, Vec2>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    normals: Vec<Vec3>,
+    pub normals: Vec<Vec3>,
     #[serde(skip_serializing_if = "IndexMap::is_empty")]
-    named_normals: IndexMap<String, Vec3>,
+    pub named_normals: IndexMap<String, Vec3>,
     #[serde(skip_serializing_if = "IndexMap::is_empty")]
-    compute_normals: IndexMap<String, ComputeNormalData>,
+    pub compute_normals: IndexMap<String, ComputeNormalData>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    triangles: Vec<TriangleEntry>
+    pub triangles: Vec<TriangleEntry>
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PlacementData {
-    part: String,
+    pub part: String,
     #[serde(default, skip_serializing_if = "is_default_position")]
-    position: Vec3,
+    pub position: Vec3,
     #[serde(default, skip_serializing_if = "is_default_rotation")]
-    rotation: Quat,
+    pub rotation: Quat,
     #[serde(default = "default_scale", skip_serializing_if = "is_default_scale")]
-    scale: Vec3,
+    pub scale: Vec3,
 }
 
 fn default_scale() -> Vec3 {
@@ -130,62 +141,62 @@ fn is_default_scale(s: &Vec3) -> bool {
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(default)]
 pub struct MaterialData {
-    material: u8,
-    texture: u8,
-    color: u8,
+    pub material: u8,
+    pub texture: u8,
+    pub color: u8,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(default)]
 pub struct LightMeshData {
-    mesh_format: u32,
+    pub mesh_format: u32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    credits: Vec<String>,
+    pub credits: Vec<String>,
     #[serde(skip_serializing_if = "IndexMap::is_empty")]
-    parts: IndexMap<String, PartData>,
+    pub parts: IndexMap<String, PartData>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    mesh: Vec<PlacementData>,
+    pub mesh: Vec<PlacementData>,
     #[serde(skip_serializing_if = "IndexMap::is_empty")]
-    textures: IndexMap<String, String>,
+    pub textures: IndexMap<String, String>,
     #[serde(skip_serializing_if = "IndexMap::is_empty")]
-    data: IndexMap<String, MaterialData>,
+    pub data: IndexMap<String, MaterialData>,
     #[serde(default, skip_serializing_if = "Not::not")]
-    cull: bool
+    pub cull: bool
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct SessionPlacementData {
-    position: Vec3,
-    rotation: Quat,
-    count: usize,
-    offset_pos: Vec3,
-    offset_rot: Quat,
+    pub position: Vec3,
+    pub rotation: Quat,
+    pub count: usize,
+    pub offset_pos: Vec3,
+    pub offset_rot: Quat,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SessionMeshData {
-    path: PathBuf,
-    placements: Vec<SessionPlacementData>,
+    pub path: PathBuf,
+    pub placements: Vec<SessionPlacementData>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct CameraData {
-    target: Vec3,
-    dist: f32,
-    yaw: f32,
-    pitch: f32,
+    pub target: Vec3,
+    pub dist: f32,
+    pub yaw: f32,
+    pub pitch: f32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct SessionData {
-    meshes: Vec<SessionMeshData>,
-    camera: CameraData,
+    pub meshes: Vec<SessionMeshData>,
+    pub camera: CameraData,
 }
 
 mod triangle_data_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    use super::{NormalId, TriangleData, UvId, VertId, VertRefData};
+    use super::{NormalId, TriangleData, UvId, VertexId, VertRefData};
 
     #[derive(Serialize, Deserialize)]
     #[serde(untagged)]
@@ -194,11 +205,11 @@ mod triangle_data_serde {
         Usize(usize),
     }
 
-    impl From<&VertId> for Id {
-        fn from(value: &VertId) -> Self {
+    impl From<&VertexId> for Id {
+        fn from(value: &VertexId) -> Self {
             match value {
-                VertId::Index(i) => Self::Usize(*i),
-                VertId::Named(n) => Self::String(n.clone())
+                VertexId::Index(i) => Self::Usize(*i),
+                VertexId::Named(n) => Self::String(n.clone())
             }
         }
     }
@@ -221,11 +232,11 @@ mod triangle_data_serde {
         }
     }
 
-    impl From<Id> for VertId {
+    impl From<Id> for VertexId {
         fn from(value: Id) -> Self {
             match value {
-                Id::String(n) => VertId::Named(n),
-                Id::Usize(u) => VertId::Index(u)
+                Id::String(n) => VertexId::Named(n),
+                Id::Usize(u) => VertexId::Index(u)
             }
         }
     }
@@ -396,9 +407,9 @@ mod data_tests {
                         }),
                         TriangleEntry::Triangle(TriangleData {
                             verts: [
-                                VertRefData::Bare(VertId::Named("v0".to_string())),
-                                VertRefData::WithUv(VertId::Named("v1".to_string()), UvId::Index(1)),
-                                VertRefData::WithUv(VertId::Named("v2".to_string()), UvId::Index(2)),
+                                VertRefData::Bare(VertexId::Named("v0".to_string())),
+                                VertRefData::WithUv(VertexId::Named("v1".to_string()), UvId::Index(1)),
+                                VertRefData::WithUv(VertexId::Named("v2".to_string()), UvId::Index(2)),
                             ],
                             mat: None
                         })

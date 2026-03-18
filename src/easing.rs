@@ -8,7 +8,7 @@ macro_rules! easing {
         $( $name:tt => $func:expr )*
     ) => {
         #[allow(non_camel_case_types)]
-        #[derive(Serialize, Deserialize, Debug, Default)]
+        #[derive(Serialize, Deserialize, Debug, Default, Hash, PartialEq, Eq, Copy, Clone)]
         pub enum Easing {
             #[default] $(
             $name,
