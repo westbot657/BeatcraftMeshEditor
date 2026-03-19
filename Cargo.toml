@@ -20,6 +20,7 @@ rfd = "0.14"
 indexmap = { version = "2.13.0", features = ["serde"] }
 regex = "1.12.3"
 anyhow = "1"
+pathdiff = "0.2.3"
 
 [dev-dependencies]
 anyhow = "1"
