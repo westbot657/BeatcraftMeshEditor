@@ -28,7 +28,7 @@ pub enum NormalId {
     Named(String),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum VertRefData {
     Full(VertexId, UvId, NormalId),
     WithUv(VertexId, UvId),
@@ -45,14 +45,14 @@ impl VertRefData {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TriangleData {
     pub verts: [VertRefData; 3],
     pub mat: Option<String>,
 }
 
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct StateSet {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uv: Option<UvId>,
@@ -60,14 +60,14 @@ pub struct StateSet {
     pub normal: Option<NormalId>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(untagged)]
 pub enum TriangleEntry {
     Triangle(#[serde(with = "triangle_data_serde")] TriangleData),
     StateSet(StateSet)
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ComputeVertexData {
     pub points: [VertexId; 2],
     #[serde(default, skip_serializing_if = "Easing::is_default")]
@@ -82,13 +82,13 @@ pub struct ComputeVertexData {
     pub z: Option<f32>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(transparent)]
 pub struct ComputeNormalData {
     pub points: [VertexId; 3],
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct PartData {
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -111,7 +111,7 @@ pub struct PartData {
     pub triangles: Vec<TriangleEntry>
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlacementData {
     pub part: String,
     #[serde(default, skip_serializing_if = "is_default_position")]
@@ -146,7 +146,7 @@ pub struct MaterialData {
     pub color: u8,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct LightMeshData {
     pub mesh_format: u32,
@@ -164,7 +164,7 @@ pub struct LightMeshData {
     pub cull: bool
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SessionPlacementData {
     pub position: Vec3,
     pub rotation: Quat,
@@ -173,13 +173,13 @@ pub struct SessionPlacementData {
     pub offset_rot: Quat,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SessionMeshData {
     pub path: PathBuf,
     pub placements: Vec<SessionPlacementData>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Copy, Clone)]
 pub struct CameraData {
     pub target: Vec3,
     pub dist: f32,
@@ -187,7 +187,7 @@ pub struct CameraData {
     pub pitch: f32,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SessionData {
     pub meshes: Vec<SessionMeshData>,
     pub camera: CameraData,

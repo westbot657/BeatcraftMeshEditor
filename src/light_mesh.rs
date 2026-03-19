@@ -2,7 +2,7 @@ use core::f32;
 use std::collections::{HashMap, hash_map};
 use std::fs;
 use std::hash::Hash;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use glam::{Quat, Vec2, Vec3};
 use indexmap::IndexMap;
@@ -67,7 +67,7 @@ impl From<ComputeNormal> for ComputeNormalData {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Vertices {
     pub indexed: Vec<Vec3>,
     pub named: IndexMap<String, Vec3>,
@@ -93,7 +93,7 @@ impl From<Vertices> for (Vec<Vec3>, IndexMap<String, Vec3>, IndexMap<String, Com
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct UVs {
     pub indexed: Vec<Vec2>,
     pub named: IndexMap<String, Vec2>,
@@ -114,7 +114,7 @@ impl From<UVs> for (Vec<Vec2>, IndexMap<String, Vec2>) {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Normals {
     pub indexed: Vec<Vec3>,
     pub named: IndexMap<String, Vec3>,
@@ -164,7 +164,7 @@ pub struct Triangle {
     pub material: Option<String>
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Triangles(pub Vec<Triangle>);
 
 impl From<Vec<TriangleEntry>> for Triangles {
@@ -417,7 +417,7 @@ impl From<HashableVec3> for Vec3 {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Part {
     pub vertices: Vertices,
     pub uvs: UVs,
