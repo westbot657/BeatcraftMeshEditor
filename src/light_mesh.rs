@@ -1,11 +1,13 @@
 use core::f32;
 use std::collections::{HashMap, hash_map};
+use std::fs;
 use std::hash::Hash;
+use std::path::{Path, PathBuf};
 
 use glam::{Quat, Vec2, Vec3};
 use indexmap::IndexMap;
 
-use crate::data::{ComputeNormalData, ComputeVertexData, MaterialData, NormalId, PartData, PlacementData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId};
+use crate::data::{ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, NormalId, PartData, PlacementData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId};
 use crate::easing::Easing;
 
 #[derive(Debug, Clone)]
@@ -65,7 +67,7 @@ impl From<ComputeNormal> for ComputeNormalData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Vertices {
     pub indexed: Vec<Vec3>,
     pub named: IndexMap<String, Vec3>,
@@ -91,7 +93,7 @@ impl From<Vertices> for (Vec<Vec3>, IndexMap<String, Vec3>, IndexMap<String, Com
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UVs {
     pub indexed: Vec<Vec2>,
     pub named: IndexMap<String, Vec2>,
@@ -112,7 +114,7 @@ impl From<UVs> for (Vec<Vec2>, IndexMap<String, Vec2>) {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Normals {
     pub indexed: Vec<Vec3>,
     pub named: IndexMap<String, Vec3>,
@@ -138,7 +140,7 @@ impl From<Normals> for (Vec<Vec3>, IndexMap<String, Vec3>, IndexMap<String, Comp
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Vertex {
     pub vertex: VertexId,
     pub uv: UvId,
@@ -156,13 +158,13 @@ impl VertRefData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Triangle {
     pub vertices: [Vertex; 3],
     pub material: Option<String>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Triangles(pub Vec<Triangle>);
 
 impl From<Vec<TriangleEntry>> for Triangles {
@@ -415,7 +417,7 @@ impl From<HashableVec3> for Vec3 {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Part {
     pub vertices: Vertices,
     pub uvs: UVs,
@@ -621,7 +623,7 @@ impl From<Part> for PartData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Placement {
     pub part: String,
     pub position: Vec3,
@@ -651,7 +653,7 @@ impl From<Placement> for PlacementData {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct LightMesh {
     pub credits: Vec<String>,
     pub parts: IndexMap<String, Part>,
@@ -659,6 +661,14 @@ pub struct LightMesh {
     pub textures: IndexMap<String, String>,
     pub data: IndexMap<String, MaterialData>,
     pub cull: bool,
+}
+
+impl LightMesh {
+    pub fn load(path: &Path) -> anyhow::Result<Self> {
+        let raw = fs::read_to_string(path)?;
+        let raw: LightMeshData = serde_json::from_str(&raw)?;
+        Ok(raw.into())
+    }
 }
 
 impl From<crate::data::LightMeshData> for LightMesh {

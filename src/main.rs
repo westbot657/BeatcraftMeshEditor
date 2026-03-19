@@ -23,6 +23,8 @@ pub mod data;
 pub mod easing;
 pub mod light_mesh;
 pub mod math_interp;
+pub mod render;
+pub mod editor;
 
 pub fn main() {
 

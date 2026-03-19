@@ -138,7 +138,7 @@ fn is_default_scale(s: &Vec3) -> bool {
     *s == Vec3::ONE
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
 #[serde(default)]
 pub struct MaterialData {
     pub material: u8,
