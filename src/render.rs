@@ -4,10 +4,10 @@ use glam::{Mat4, Vec3, Vec4};
 
 pub struct GpuMesh {
     pub vao: glow::NativeVertexArray,
-    vbos: [glow::NativeBuffer; 3],
+    pub vbos: [glow::NativeBuffer; 3],
     pub ibo: glow::NativeBuffer,
     pub point_vao: glow::NativeVertexArray,
-    point_vbos: [glow::NativeBuffer; 3],
+    pub point_vbos: [glow::NativeBuffer; 3],
     pub vertex_count: usize,
     pub triangle_count: usize,
 }
@@ -118,12 +118,12 @@ impl GpuMesh {
 }
 
 pub struct Renderer {
-    mesh: glow::NativeProgram,
-    point: glow::NativeProgram,
-    flat: glow::NativeProgram,
-    grid_vao: glow::NativeVertexArray,
-    grid_n: i32,
-    axis_vao: glow::NativeVertexArray,
+    pub mesh: glow::NativeProgram,
+    pub point: glow::NativeProgram,
+    pub flat: glow::NativeProgram,
+    pub grid_vao: glow::NativeVertexArray,
+    pub grid_n: i32,
+    pub axis_vao: glow::NativeVertexArray,
 }
 
 impl Renderer {
