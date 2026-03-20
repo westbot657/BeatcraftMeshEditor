@@ -19,14 +19,16 @@
 //   Ctrl+Shift+S           optimized save
 //   Escape                 deselect all
 
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::path::PathBuf;
+use std::ptr;
 use std::sync::Arc;
 
 use eframe::glow::{self, HasContext};
 use egui::Frame;
 
-use self::editor::App;
+use self::editor::{App, DragState};
 
 pub mod data;
 pub mod easing;
@@ -64,6 +66,40 @@ impl<T> UnsafeMutRef<T> {
 
 unsafe impl<T> Send for UnsafeMutRef<T> {}
 unsafe impl<T> Sync for UnsafeMutRef<T> {}
+
+pub(crate) struct Lifeline<'a> {
+    _a: &'a (),
+}
+
+impl<'a> Lifeline<'a> {
+
+    pub(crate) fn new() -> Self {
+        unsafe {
+            let dangling = ();
+            Self {
+                _a: & *(&dangling as *const _)
+            }
+        }
+    }
+
+    /// Detaches a reference from it's owner, allowing
+    /// mutable references to exist simultaneously
+    /// SAFETY: attaches the lifetime to self for
+    /// the illusion of safety
+    pub(crate) unsafe fn detach_ref<'b, T>(&'a self, t: &'b T) -> &'a T {
+        unsafe { & *(t as *const T) }
+    }
+
+    /// Detaches a mutable reference from it's owner, allowing
+    /// more references to be created
+    /// SAFETY: attaches the lifetime to self for
+    /// the illusion of safety
+    #[allow(clippy::mut_from_ref)]
+    pub(crate) unsafe fn detach_mut_ref<'b, T>(&'a self, t: &'b mut T) -> &'a mut T {
+        unsafe { &mut *(t as *mut T) }
+    }
+
+}
 
 
 impl eframe::App for App {
@@ -164,6 +200,7 @@ impl eframe::App for App {
 
                 let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
                 self.handle_3d_input(&resp, ctx, gl);
+
 
                 let s = unsafe { UnsafeMutRef::new(self) };
 

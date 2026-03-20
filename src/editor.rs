@@ -6,9 +6,11 @@ use std::sync::Arc;
 use eframe::glow::Context;
 use egui::{Key, Response};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
+use serde_json::Value;
 
 use crate::data::VertexId;
-use crate::light_mesh::LightMesh;
+use crate::Lifeline;
+use crate::light_mesh::{LightMesh, Placement};
 use crate::render::{GpuMesh, Renderer};
 
 
@@ -23,8 +25,10 @@ pub struct Camera {
 
 impl Camera {
     pub fn eye(&self) -> Vec3 {
-        let cp = self.pitch.cos(); let sp = self.pitch.sin();
-        let cy = self.yaw.cos();   let sy = self.yaw.sin();
+        let cp = self.pitch.cos();
+        let sp = self.pitch.sin();
+        let cy = self.yaw.cos();
+        let sy = self.yaw.sin();
         self.target + self.dist * Vec3::new(cp * sy, sp, cp * cy)
     }
     pub fn view_mat(&self) -> Mat4 { Mat4::look_at_lh(self.eye(), self.target, Vec3::Y) }
@@ -32,8 +36,14 @@ impl Camera {
         Mat4::perspective_lh(self.fov, (w / h).max(0.001), 0.1, 5000.0)
     }
     pub fn mvp(&self, w: f32, h: f32) -> Mat4 { self.proj_mat(w, h) * self.view_mat() }
-    pub fn right(&self) -> Vec3 { let v = self.view_mat(); Vec3::new(v.col(0).x, v.col(0).y, v.col(0).z) }
-    pub fn up_vec(&self) -> Vec3 { let v = self.view_mat(); Vec3::new(v.col(1).x, v.col(1).y, v.col(1).z) }
+    pub fn left(&self) -> Vec3 {
+        let m = self.view_mat();
+        Vec3::new(m.col(0).x, m.col(1).x, m.col(2).x)
+    }
+    pub fn up_vec(&self) -> Vec3 {
+        let m = self.view_mat();
+        Vec3::new(m.col(0).y, m.col(1).y, m.col(2).y)
+    }
     pub fn forward(&self) -> Vec3 { (self.target - self.eye()).normalize() }
     pub fn pick_radius(&self, screen_px: f32, h: f32) -> f32 {
         let view_h = 2.0 * self.dist * (self.fov.to_radians() / 2.0).tan();
@@ -129,12 +139,13 @@ pub struct Editor {
     pub camera: Camera,
     pub part: Option<String>,
     pub part_names: Vec<String>,
+    pub hovered: Option<VertexId>,
 }
 
-pub struct Selection {
-    pub verts: Vec<VertexId>,
-    pub instances: Vec<usize>,
-    pub hovered: isize,
+pub enum Selection {
+    None,
+    Vertices(Vec<VertexId>),
+    Instances(Vec<usize>),
 }
 
 pub struct Drag {
@@ -148,12 +159,12 @@ pub struct Drag {
 
 pub struct InnerCycle {
     pub last_pos: Vec2,
-    pub candidates: Vec<usize>,
+    pub candidates: Vec<VertexId>,
     pub current: usize,
 }
 
 pub struct ClickCycle {
-    pub verticex: InnerCycle,
+    pub vertices: InnerCycle,
     pub instances: InnerCycle,
 }
 
@@ -166,6 +177,7 @@ pub struct View {
 
 pub struct Assembly {
     pub handles: Vec<(Vec3, InstanceHandleType, usize)>,
+    pub hovered: Option<usize>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -216,6 +228,18 @@ pub struct State {
     pub gl: Arc<Context>,
 }
 
+pub enum HistoryEntry {
+    MeshPart(Value),
+    MeshMeta(Value),
+    MeshPlacement(Placement),
+    ViewPlacement(ViewPlacement),
+}
+
+pub struct History {
+    pub history: Vec<HistoryEntry>,
+    pub future: Vec<HistoryEntry>,
+    pub limit: usize,
+}
 
 pub struct App {
     pub mode: EditorMode,
@@ -230,6 +254,7 @@ pub struct App {
     pub view: View,
     pub state: State,
     pub assembly: Assembly,
+    pub history: History,
 }
 
 pub struct TriMeta {
@@ -305,7 +330,7 @@ impl App {
         let gl2 = Arc::clone(&gl);
 
         Self {
-            mode: EditorMode::View,
+            mode: EditorMode::Edit,
             last_mode: EditorMode::View,
             tool: ToolMode::Auto,
             last_tool: ToolMode::Auto,
@@ -321,12 +346,9 @@ impl App {
                 camera: Camera::default(),
                 part: None,
                 part_names: Vec::new(),
+                hovered: None,
             },
-            selection: Selection {
-                verts: Vec::new(),
-                instances: Vec::new(),
-                hovered: -1,
-            },
+            selection: Selection::None,
             drag: Drag {
                 state: DragState::None,
                 drag_last: Vec2::ZERO,
@@ -336,7 +358,7 @@ impl App {
                 pending_desel: 0,
             },
             click_cycle: ClickCycle {
-                verticex: InnerCycle { last_pos: Vec2::ZERO, candidates: Vec::new(), current: 0 },
+                vertices: InnerCycle { last_pos: Vec2::ZERO, candidates: Vec::new(), current: 0 },
                 instances: InnerCycle { last_pos: Vec2::ZERO, candidates: Vec::new(), current: 0 },
             },
             view: View {
@@ -351,7 +373,7 @@ impl App {
                 show_grid: true,
                 show_verts: true,
                 euler_swizzle: EulerSwizzle::YXZ,
-                status: "Beatcraft LightMesh Editor".to_string(),
+                status: "".to_string(),
                 status_timer: 0.,
                 clipboard: Clipboard::None,
                 dirty: false,
@@ -359,7 +381,13 @@ impl App {
             },
             assembly: Assembly {
                 handles: Vec::new(),
+                hovered: None,
             },
+            history: History {
+                history: Vec::new(),
+                future: Vec::new(),
+                limit: 200
+            }
         }
     }
 
@@ -389,7 +417,7 @@ impl App {
                 EditorMode::View => {
 
                 }
-                _ => {
+                EditorMode::Assembly | EditorMode::Edit => {
 
                 }
             }
@@ -421,9 +449,9 @@ impl App {
         let w = rect.width();
         let h = rect.height();
 
-
         let pointer = ctx.input(|i| i.pointer.clone());
         let shift = ctx.input(|i| i.modifiers.shift);
+        let ctrl = ctx.input(|i| i.modifiers.ctrl);
         let primary_pressed = resp.drag_started_by(egui::PointerButton::Primary);
         let secondary_pressed = resp.drag_started_by(egui::PointerButton::Secondary);
         let primary_released = resp.drag_stopped_by(egui::PointerButton::Primary);
@@ -444,7 +472,7 @@ impl App {
         }
 
         if primary_pressed {
-            self.on_3d_press(mx, my, w, h, shift, gl);
+            self.on_3d_press((mx, my), (w, h), ctrl, shift, gl);
         }
         if primary_released {
             self.on_3d_release(mx, my, gl);
@@ -457,15 +485,21 @@ impl App {
         let drag_delta = resp.drag_delta();
         if drag_delta != egui::Vec2::ZERO {
             let ldx = drag_delta.x;
-            let ldy = -drag_delta.y;
+            let ldy = drag_delta.y;
             match self.drag.state {
                 DragState::None => {},
                 DragState::Orbit => {
                     let cam = self.cam();
                     cam.yaw += ldx * 0.008;
-                    cam.pitch = (cam.pitch - ldy * 0.008).clamp(-PI/2.+0.001, PI/2.-0.001);
+                    cam.pitch = (cam.pitch + ldy * 0.008).clamp(-PI/2.+0.001, PI/2.-0.001);
                 },
-                DragState::Pan => {},
+                DragState::Pan => {
+                    let cam = self.cam();
+                    let sc = cam.dist * 0.0012;
+                    let r = cam.left() * ldx * sc;
+                    let u = cam.up_vec() * ldy * sc;
+                    cam.target -= r - u;
+                },
                 DragState::Vertex => {},
                 DragState::Instance => {},
                 DragState::InstanceRotation => {},
@@ -475,11 +509,25 @@ impl App {
             }
         }
 
+        if let DragState::Marquee(v4) = self.drag.state {
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("marquee")));
+            let sx0 = rect.min.x + v4.x;
+            let sy0 = rect.min.y + (h - v4.y);
+            let sx1 = rect.min.x + v4.z;
+            let sy1 = rect.min.y + (h - v4.w);
+            painter.rect_stroke(
+                egui::Rect::from_two_pos(egui::pos2(sx0, sy0), egui::pos2(sx1, sy1)),
+                0.0,
+                egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(120, 180, 255, 200)),
+                egui::StrokeKind::Middle
+            );
+        }
+
     }
 
 
     pub fn undo(&mut self) {
-
+        
     }
 
     pub fn redo(&mut self) {
@@ -490,8 +538,15 @@ impl App {
 
     }
 
+    fn finish_marquee(&mut self, rect: Vec4, gl: &Context) {
 
-    fn on_3d_press(&mut self, mx: f32, my: f32, w: f32, h: f32, shift: bool, gl: &Context) {
+    }
+
+
+    fn on_3d_press(&mut self, mouse: (f32, f32), size: (f32, f32), ctrl: bool, shift: bool, gl: &Context) {
+        let (mx, my) = mouse;
+        let (w, h) = size;
+
         let mvp = self.cam().mvp(w, h);
 
         match self.mode {
@@ -503,6 +558,54 @@ impl App {
             },
             EditorMode::Edit => {
                 self.drag.state = DragState::Orbit;
+                let r = self.cam().pick_radius(8., h);
+                let pick_cycle = &mut self.click_cycle.vertices;
+                let same_spot = (mx - pick_cycle.last_pos.x).abs() <= 2.
+                    && (my - pick_cycle.last_pos.y).abs() <= 2.;
+
+                let ll = Lifeline::new();
+
+                let hits: Vec<&VertexId> = self.raycast_vertices(mx, my, w, h, &mvp, r)
+                    .iter()
+                    .map(|r| unsafe { ll.detach_ref(*r) })
+                    .collect();
+
+                let pick_cycle = &mut self.click_cycle.vertices;
+                let hit = if same_spot && !pick_cycle.candidates.is_empty() {
+                    pick_cycle.current = (pick_cycle.current + 1) % pick_cycle.candidates.len();
+                    pick_cycle.candidates.get(pick_cycle.current).cloned()
+                } else if !hits.is_empty() {
+                    if !same_spot {
+                        pick_cycle.last_pos = Vec2::new(mx, my);
+                        pick_cycle.candidates = hits.iter().map(|r| (*r).clone()).collect();
+                        pick_cycle.current = 0;
+                    }
+                    hits.first().map(|r| (*r).clone())
+                } else {
+                    pick_cycle.last_pos = Vec2::new(-9999., -9999.);
+                    pick_cycle.candidates.clear();
+                    None
+                };
+
+                if let (Some(hit_id), Selection::Vertices(verts)) = (hit, &mut self.selection) {
+                    if shift {
+                        if ctrl && verts.contains(&hit_id) {
+                            let idx = verts.iter().position(|id| *id == hit_id).unwrap();
+                            verts.remove(idx);
+                        } else if !verts.contains(&hit_id) {
+                            verts.push(hit_id);
+                        }
+                    } else if !verts.contains(&hit_id) {
+                        verts.clear();
+                        verts.push(hit_id);
+                    }
+                } else if shift {
+                    self.drag.state = DragState::Marquee(Vec4::new(mx, my, mx, my));
+                } else {
+                    self.selection = Selection::None;
+                    self.upload_selection_points(gl);
+                }
+
 
             },
         }
@@ -510,6 +613,27 @@ impl App {
     }
 
     fn on_3d_release(&mut self, mx: f32, my: f32, gl: &Context) {
+
+        if let DragState::Marquee(vec4) = self.drag.state {
+            // TODO: finish marquee
+        }
+
+        if matches!(self.drag.state, DragState::Vertex | DragState::Instance | DragState::InstanceRotation)
+            && let Some(snap) = self.drag.pre_drag_snapshot.take() {
+            // Push history and clear future.
+        }
+
+        self.drag.state = DragState::None;
+    }
+
+    fn raycast_vertices(&self, mx: f32, my: f32, w: f32, h: f32, mvp: &Mat4, r: f32) -> Vec<&VertexId> {
+
+
+
+        Vec::new()
+    }
+
+    fn upload_selection_points(&mut self, gl: &Context) {
 
     }
 
