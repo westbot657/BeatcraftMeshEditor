@@ -19,16 +19,14 @@
 //   Ctrl+Shift+S           optimized save
 //   Escape                 deselect all
 
-use std::marker::PhantomData;
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::ptr;
 use std::sync::Arc;
 
 use eframe::glow::{self, HasContext};
 use egui::Frame;
 
-use self::editor::{App, DragState};
+use self::editor::App;
 
 pub mod data;
 pub mod easing;

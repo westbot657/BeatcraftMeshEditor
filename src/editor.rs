@@ -31,9 +31,11 @@ impl Camera {
         let sy = self.yaw.sin();
         self.target + self.dist * Vec3::new(cp * sy, sp, cp * cy)
     }
-    pub fn view_mat(&self) -> Mat4 { Mat4::look_at_lh(self.eye(), self.target, Vec3::Y) }
+    pub fn view_mat(&self) -> Mat4 {
+        Mat4::look_at_rh(self.eye(), self.target, Vec3::Y)
+    }
     pub fn proj_mat(&self, w: f32, h: f32) -> Mat4 {
-        Mat4::perspective_lh(self.fov, (w / h).max(0.001), 0.1, 5000.0)
+        Mat4::perspective_rh(self.fov, (w / h).max(0.001), 0.1, 5000.0)
     }
     pub fn mvp(&self, w: f32, h: f32) -> Mat4 { self.proj_mat(w, h) * self.view_mat() }
     pub fn left(&self) -> Vec3 {
@@ -490,7 +492,7 @@ impl App {
                 DragState::None => {},
                 DragState::Orbit => {
                     let cam = self.cam();
-                    cam.yaw += ldx * 0.008;
+                    cam.yaw -= ldx * 0.008;
                     cam.pitch = (cam.pitch + ldy * 0.008).clamp(-PI/2.+0.001, PI/2.-0.001);
                 },
                 DragState::Pan => {
