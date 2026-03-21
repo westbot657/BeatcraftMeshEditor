@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 use std::f32::consts::PI;
+use std::mem;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use eframe::glow::Context;
 use egui::{Key, Response};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
-use serde_json::Value;
 
 use crate::data::VertexId;
-use crate::Lifeline;
-use crate::light_mesh::{LightMesh, Placement};
+use crate::{Lifeline, light_mesh};
+use crate::light_mesh::{LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot, Part};
 use crate::render::{GpuMesh, Renderer};
 
 
@@ -117,6 +117,11 @@ pub struct ViewPlacement {
     pub visible: bool,
 }
 
+pub struct ViewPlacementsSnapshot {
+    pub idx: usize,
+    pub placements: Vec<ViewPlacement>,
+}
+
 impl Default for ViewPlacement {
     fn default() -> Self {
         Self {
@@ -128,6 +133,31 @@ impl Default for ViewPlacement {
     }
 }
 
+impl LightMesh {
+    pub fn into_view_mesh(self, path: PathBuf, gl: &Context) -> ViewMesh {
+        let mut v = ViewMesh::new(path, self);
+        v.rebuild(gl);
+        v
+    }
+}
+
+impl ViewMesh {
+    pub fn new(path: PathBuf, light_mesh: LightMesh) -> Self {
+        Self {
+            path,
+            data: light_mesh,
+            gpu_bufs: HashMap::new(),
+            visible: true,
+            placements: Vec::new()
+        }
+    }
+
+    pub fn rebuild(&mut self, gl: &Context) {
+        
+    }
+}
+
+
 pub struct Render {
     pub renderer: Renderer,
     pub assembly: Option<GpuMesh>,
@@ -137,10 +167,9 @@ pub struct Render {
 }
 
 pub struct Editor {
-    pub mesh: WorkingLightMesh,
+    pub mesh: Option<PathBuf>,
     pub camera: Camera,
     pub part: Option<String>,
-    pub part_names: Vec<String>,
     pub hovered: Option<VertexId>,
 }
 
@@ -156,7 +185,6 @@ pub struct Drag {
     pub drag_plane: (Vec3, Vec3),
     pub pre_drag_snapshot: Option<LightMesh>,
     pub rot_axis: Vec3,
-    pub pending_desel: usize,
 }
 
 pub struct InnerCycle {
@@ -231,16 +259,98 @@ pub struct State {
 }
 
 pub enum HistoryEntry {
-    MeshPart(Value),
-    MeshMeta(Value),
-    MeshPlacement(Placement),
-    ViewPlacement(ViewPlacement),
+    MeshPart(LightMeshPartSnapshot),
+    MeshMeta(LightMeshMetaSnapshot),
+    MeshPlacement(LightMeshPlacementSnapshot),
+    ViewPlacement(ViewPlacementsSnapshot),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HistoryType {
+    MeshPart(String),
+    MeshMeta,
+    MeshPlacement,
+    ViewPlacement,
 }
 
 pub struct History {
     pub history: Vec<HistoryEntry>,
     pub future: Vec<HistoryEntry>,
     pub limit: usize,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum HistoryCycleDir {
+    Past,
+    Future,
+}
+
+impl History {
+    pub fn add_history(&mut self, entry: HistoryEntry) {
+        self.history.push(entry);
+        self.future.clear();
+    }
+
+    pub fn cycle_history(
+        &mut self,
+        dir: HistoryCycleDir,
+        view_meshes: &mut [ViewMesh],
+    ) {
+        let (back, front) = match dir {
+            HistoryCycleDir::Past => (&mut self.history, &mut self.future),
+            HistoryCycleDir::Future => (&mut self.future, &mut self.history),
+        };
+
+        if let Some(restore) = front.pop() {
+            let save = match restore {
+                HistoryEntry::MeshPart(LightMeshPartSnapshot { idx, name, part }) => {
+                    let m = view_meshes.get_mut(idx).unwrap();
+                    let current = m.data.parts.insert(name.clone(), *part).unwrap();
+                    HistoryEntry::MeshPart(LightMeshPartSnapshot {
+                        idx,
+                        name,
+                        part: Box::new(current)
+                    })
+                },
+                HistoryEntry::MeshMeta(LightMeshMetaSnapshot {
+                    idx, mut credits, mut textures, mut data, mut cull
+                }) => {
+                    let m = view_meshes.get_mut(idx).unwrap();
+                    mem::swap(&mut credits, &mut m.data.credits);
+                    mem::swap(&mut textures, &mut m.data.textures);
+                    mem::swap(&mut data, &mut m.data.data);
+                    mem::swap(&mut cull, &mut m.data.cull);
+
+                    HistoryEntry::MeshMeta(LightMeshMetaSnapshot {
+                        idx, credits, textures, data, cull
+                    })
+                },
+                HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
+                    view_idx, mut placements
+                }) => {
+                    let m = view_meshes.get_mut(view_idx).unwrap();
+                    mem::swap(&mut placements, &mut m.data.mesh);
+
+                    HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
+                        view_idx, placements
+                    })
+                },
+                HistoryEntry::ViewPlacement(ViewPlacementsSnapshot {
+                    idx, mut placements
+                }) => {
+                    let m = view_meshes.get_mut(idx).unwrap();
+                    mem::swap(&mut placements, &mut m.placements);
+
+                    HistoryEntry::ViewPlacement(ViewPlacementsSnapshot {
+                        idx, placements
+                    })
+                },
+            };
+            back.push(save);
+        }
+
+    }
+
 }
 
 pub struct App {
@@ -266,49 +376,8 @@ pub struct TriMeta {
     pub vname: Option<String>,
 }
 
-#[derive(Default, Debug)]
-pub struct WorkingLightMesh {
-    pub mesh: LightMesh,
-    pub path: Option<PathBuf>,
-    pub positions: Vec<Vec3>,
-    pub normals: Vec<Vec3>,
-    pub colors: Vec<i32>,
-    pub tri_indices: Vec<[usize; 3]>,
-}
-
-impl WorkingLightMesh {
-
-    pub fn new(mesh: LightMesh, path: Option<PathBuf>) -> Self {
-        let mut s = Self {
-            mesh,
-            path,
-            positions: Vec::new(),
-            normals: Vec::new(),
-            colors: Vec::new(),
-            tri_indices: Vec::new(),
-        };
-        s.resolve();
-        s
-    }
-
-    pub fn load(path: PathBuf) -> anyhow::Result<Self> {
-        Ok(Self::new(LightMesh::load(&path)?, Some(path)))
-    }
-
-    pub fn resolve(&mut self) {
-
-    }
-
-}
-
-
 impl App {
     pub fn new(cc: &eframe::CreationContext, path: Option<PathBuf>) -> Self {
-        let md = if let Some(p) = path {
-            WorkingLightMesh::load(p).unwrap_or_default()
-        } else {
-            WorkingLightMesh::default()
-        };
 
         let mut fonts = egui::FontDefinitions::default();
         fonts.font_data.insert(
@@ -331,6 +400,11 @@ impl App {
 
         let gl2 = Arc::clone(&gl);
 
+        let mut meshes = Vec::new();
+        if let Some(p) = path {
+            meshes.push(LightMesh::load(&p).unwrap().into_view_mesh(p, &*gl));
+        }
+
         Self {
             mode: EditorMode::Edit,
             last_mode: EditorMode::View,
@@ -344,10 +418,9 @@ impl App {
                 sel_points: None,
             },
             editor: Editor {
-                mesh: md,
+                mesh: None,
                 camera: Camera::default(),
                 part: None,
-                part_names: Vec::new(),
                 hovered: None,
             },
             selection: Selection::None,
@@ -357,14 +430,13 @@ impl App {
                 drag_plane: (Vec3::ZERO, Vec3::ZERO),
                 pre_drag_snapshot: None,
                 rot_axis: Vec3::ZERO,
-                pending_desel: 0,
             },
             click_cycle: ClickCycle {
                 vertices: InnerCycle { last_pos: Vec2::ZERO, candidates: Vec::new(), current: 0 },
                 instances: InnerCycle { last_pos: Vec2::ZERO, candidates: Vec::new(), current: 0 },
             },
             view: View {
-                meshes: Vec::new(),
+                meshes,
                 active: 0,
                 session: None,
                 camera: Camera::default(),
@@ -442,7 +514,6 @@ impl App {
                 self.state.show_verts = !self.state.show_verts;
             }
         }
-
 
     }
 
@@ -527,13 +598,18 @@ impl App {
 
     }
 
-
     pub fn undo(&mut self) {
-        
+        self.history.cycle_history(
+            HistoryCycleDir::Past,
+            &mut self.view.meshes,
+        );
     }
 
     pub fn redo(&mut self) {
-
+        self.history.cycle_history(
+            HistoryCycleDir::Future,
+            &mut self.view.meshes,
+        );
     }
 
     pub fn frame_to_geometry(&mut self) {
@@ -542,6 +618,47 @@ impl App {
 
     fn finish_marquee(&mut self, rect: Vec4, gl: &Context) {
 
+    }
+
+    pub fn get_current_mesh_idx(&self) -> Option<usize> {
+        let path = self.editor.mesh.as_ref()?;
+
+        for (idx, mesh) in self.view.meshes.iter().enumerate() {
+            if mesh.path == *path {
+                return Some(idx)
+            }
+        }
+        None
+    }
+
+    pub fn get_current_part_name(&self) -> Option<&str> {
+        self.editor.part.as_deref()
+    }
+
+    pub fn get_current_part(&self) -> Option<(usize, &str, &Part)> {
+        let idx = self.get_current_mesh_idx()?;
+        let name = self.get_current_part_name()?;
+
+        Some((idx, name, self.view.meshes.get(idx)?.data.parts.get(name)?))
+    }
+
+    pub fn push_history(&mut self, typ: HistoryType) {
+        match typ {
+            HistoryType::MeshPart(name) => {
+                if let Some((idx, name, part)) = self.get_current_part() {
+                    self.history.add_history(HistoryEntry::MeshPart(
+                        LightMeshPartSnapshot {
+                            idx,
+                            name: name.to_string(),
+                            part: Box::new(part.clone()),
+                        }
+                    ));
+                }
+            },
+            HistoryType::MeshMeta => {},
+            HistoryType::MeshPlacement => {},
+            HistoryType::ViewPlacement => {},
+        }
     }
 
 
@@ -565,7 +682,7 @@ impl App {
                 let same_spot = (mx - pick_cycle.last_pos.x).abs() <= 2.
                     && (my - pick_cycle.last_pos.y).abs() <= 2.;
 
-                let ll = Lifeline::new();
+                let ll = Lifeline;
 
                 let hits: Vec<&VertexId> = self.raycast_vertices(mx, my, w, h, &mvp, r)
                     .iter()
@@ -617,7 +734,7 @@ impl App {
     fn on_3d_release(&mut self, mx: f32, my: f32, gl: &Context) {
 
         if let DragState::Marquee(vec4) = self.drag.state {
-            // TODO: finish marquee
+            self.finish_marquee(vec4, gl);
         }
 
         if matches!(self.drag.state, DragState::Vertex | DragState::Instance | DragState::InstanceRotation)

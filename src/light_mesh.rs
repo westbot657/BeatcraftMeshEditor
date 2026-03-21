@@ -698,3 +698,25 @@ impl From<LightMesh> for crate::data::LightMeshData {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct LightMeshPartSnapshot {
+    pub idx: usize,
+    pub name: String,
+    pub part: Box<Part>,
+}
+
+#[derive(Clone, Debug)]
+pub struct LightMeshPlacementSnapshot {
+    pub view_idx: usize,
+    pub placements: Vec<Placement>,
+}
+
+#[derive(Clone, Debug)]
+pub struct LightMeshMetaSnapshot {
+    pub idx: usize,
+    pub credits: Vec<String>,
+    pub textures: IndexMap<String, String>,
+    pub data: IndexMap<String, MaterialData>,
+    pub cull: bool,
+}
+

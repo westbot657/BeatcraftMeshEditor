@@ -65,26 +65,15 @@ impl<T> UnsafeMutRef<T> {
 unsafe impl<T> Send for UnsafeMutRef<T> {}
 unsafe impl<T> Sync for UnsafeMutRef<T> {}
 
-pub(crate) struct Lifeline<'a> {
-    _a: &'a (),
-}
+pub(crate) struct Lifeline;
 
-impl<'a> Lifeline<'a> {
-
-    pub(crate) fn new() -> Self {
-        unsafe {
-            let dangling = ();
-            Self {
-                _a: & *(&dangling as *const _)
-            }
-        }
-    }
+impl Lifeline {
 
     /// Detaches a reference from it's owner, allowing
     /// mutable references to exist simultaneously
     /// SAFETY: attaches the lifetime to self for
     /// the illusion of safety
-    pub(crate) unsafe fn detach_ref<'b, T>(&'a self, t: &'b T) -> &'a T {
+    pub(crate) unsafe fn detach_ref<'a, T>(&'a self, t: &T) -> &'a T {
         unsafe { & *(t as *const T) }
     }
 
@@ -93,7 +82,7 @@ impl<'a> Lifeline<'a> {
     /// SAFETY: attaches the lifetime to self for
     /// the illusion of safety
     #[allow(clippy::mut_from_ref)]
-    pub(crate) unsafe fn detach_mut_ref<'b, T>(&'a self, t: &'b mut T) -> &'a mut T {
+    pub(crate) unsafe fn detach_mut_ref<'a, T>(&'a self, t: &mut T) -> &'a mut T {
         unsafe { &mut *(t as *mut T) }
     }
 
