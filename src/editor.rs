@@ -9,9 +9,9 @@ use egui::{Key, Response};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 
 use crate::data::VertexId;
-use crate::{Lifeline, light_mesh};
+use crate::Lifeline;
 use crate::light_mesh::{LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot, Part};
-use crate::render::{GpuMesh, Renderer};
+use crate::render::{GpuMesh, InstanceData, MeshDrawCall, Renderer};
 
 
 #[derive(Copy, Clone)]
@@ -103,7 +103,7 @@ pub enum InstanceHandleType {
 pub struct ViewMesh {
     pub path: PathBuf,
     pub data: LightMesh,
-    pub gpu_bufs: HashMap<usize, GpuMesh>,
+    pub gpu_bufs: (HashMap<String, GpuMesh>, Option<GpuMesh>),
     pub visible: bool,
     pub placements: Vec<ViewPlacement>,
 }
@@ -146,17 +146,26 @@ impl ViewMesh {
         Self {
             path,
             data: light_mesh,
-            gpu_bufs: HashMap::new(),
+            gpu_bufs: (HashMap::new(), None),
             visible: true,
             placements: Vec::new()
         }
     }
 
     pub fn rebuild(&mut self, gl: &Context) {
-        
+        let v = mem::take(&mut self.gpu_bufs.0);
+        self.gpu_bufs.0 = GpuMesh::set_from_hashmap(gl, &self.data, v);
+        let full = self.gpu_bufs.1.get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[]));
+        full.set_from_full_light_mesh(gl, &self.data);
     }
-}
 
+    pub fn render(&self, calls: &mut Vec<InstanceData>) -> Option<&GpuMesh> {
+        calls.push(InstanceData::new(Mat4::IDENTITY, 1., None));
+        self.gpu_bufs.1.as_ref()
+
+    }
+
+}
 
 pub struct Render {
     pub renderer: Renderer,
@@ -329,7 +338,7 @@ impl History {
                     view_idx, mut placements
                 }) => {
                     let m = view_meshes.get_mut(view_idx).unwrap();
-                    mem::swap(&mut placements, &mut m.data.mesh);
+                    mem::swap(&mut placements, &mut m.data.placements);
 
                     HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
                         view_idx, placements
@@ -402,11 +411,11 @@ impl App {
 
         let mut meshes = Vec::new();
         if let Some(p) = path {
-            meshes.push(LightMesh::load(&p).unwrap().into_view_mesh(p, &*gl));
+            meshes.push(LightMesh::load(&p).unwrap().into_view_mesh(p, &gl));
         }
 
         Self {
-            mode: EditorMode::Edit,
+            mode: EditorMode::View,
             last_mode: EditorMode::View,
             tool: ToolMode::Auto,
             last_tool: ToolMode::Auto,
@@ -475,7 +484,9 @@ impl App {
 
 
     pub fn rebuild_meshes(&mut self, gl: &Context) {
-
+        for view_mesh in self.view.meshes.iter_mut() {
+            view_mesh.rebuild(gl);
+        }
     }
 
     pub fn handle_keys(&mut self, ctx: &egui::Context, gl: &Context) {
@@ -724,7 +735,6 @@ impl App {
                     self.selection = Selection::None;
                     self.upload_selection_points(gl);
                 }
-
 
             },
         }

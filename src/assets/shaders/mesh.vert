@@ -1,19 +1,28 @@
+// mesh.vert
 #version 330 core
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNorm;
 layout(location=2) in int  aChannel;
-uniform mat4 uMVP;
-uniform mat4 uNormalMat;
-uniform vec3 uPartColor;
-uniform int  uUsePartColor;
-uniform float uAlpha;
+// per-instance
+layout(location=3) in vec4 aModel0;
+layout(location=4) in vec4 aModel1;
+layout(location=5) in vec4 aModel2;
+layout(location=6) in vec4 aModel3;
+layout(location=7) in vec4 aColorAlpha;    // rgb + alpha
+layout(location=8) in float aUsePartColor; // 1.0 or 0.0
+
+uniform mat4 uVP;
+
 flat out int  vCh;
-out vec3 vN;
-out float vA;
-out vec3 vPC;
-flat out int vUPC;
-void main(){
-    gl_Position=uMVP*vec4(aPos,1.0);
-    vCh=aChannel; vN=normalize(mat3(uNormalMat)*aNorm);
-    vA=uAlpha; vPC=uPartColor; vUPC=uUsePartColor;
+out vec3  vN;
+out vec4  vColorAlpha;
+flat out float vUsePartColor;
+
+void main() {
+    mat4 model = mat4(aModel0, aModel1, aModel2, aModel3);
+    gl_Position   = uVP * model * vec4(aPos, 1.0);
+    vN            = normalize(mat3(model) * aNorm);
+    vCh           = aChannel;
+    vColorAlpha   = aColorAlpha;
+    vUsePartColor = aUsePartColor;
 }

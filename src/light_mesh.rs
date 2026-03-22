@@ -4,7 +4,7 @@ use std::fs;
 use std::hash::Hash;
 use std::path::Path;
 
-use glam::{Quat, Vec2, Vec3};
+use glam::{FloatExt, Mat4, Quat, Vec2, Vec3};
 use indexmap::IndexMap;
 
 use crate::data::{ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, NormalId, PartData, PlacementData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId};
@@ -416,6 +416,62 @@ impl From<HashableVec3> for Vec3 {
     }
 }
 
+impl ComputeVertex {
+    fn compute(&self, part: &Part) -> Option<Vec3> {
+        let a = part.resolve_vertex(&self.points[0])?;
+        let b = part.resolve_vertex(&self.points[1])?;
+
+        let dt = self.delta.unwrap_or(0.);
+        let dt = self.function.apply(dt);
+        let mut c = a.lerp(b, dt);
+
+        let vx = if c.x == 0. { 0. } else { c.x.signum() };
+        let vy = if c.y == 0. { 0. } else { c.y.signum() };
+        let vz = if c.z == 0. { 0. } else { c.z.signum() };
+
+        if let Some(x) = self.x {
+            c.x = a.x + x * vx;
+            if self.y.is_none() {
+                c.y = a.y.lerp(b.y, dt);
+            }
+            if self.z.is_none() {
+                c.z = a.z.lerp(b.z, dt);
+            }
+        }
+        if let Some(y) = self.y {
+            c.y = a.y + y * vy;
+            if self.x.is_none() {
+                c.x = a.x.lerp(b.x, dt);
+            }
+            if self.z.is_none() {
+                c.z = a.z.lerp(b.z, dt);
+            }
+        }
+        if let Some(z) = self.z {
+            c.z = a.z + z * vz;
+            if self.x.is_none() {
+                c.x = a.x.lerp(b.x, dt);
+            }
+            if self.y.is_none() {
+                c.y = a.y.lerp(b.y, dt);
+            }
+        }
+        Some(c)
+    }
+}
+
+impl ComputeNormal {
+    fn compute(&self, part: &Part) -> Option<Vec3> {
+        let a = part.resolve_vertex(&self.points[0])?;
+        let b = part.resolve_vertex(&self.points[1])?;
+        let c = part.resolve_vertex(&self.points[2])?;
+
+        let ab = b - a;
+        let ac = c - a;
+
+        Some(ab.cross(ac).normalize())
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct Part {
@@ -425,7 +481,31 @@ pub struct Part {
     pub triangles: Triangles,
 }
 
+macro_rules! resolve_component {
+    ( $s:tt, $id:expr, $enu:ident, $group:expr ) => {
+        match $id {
+            $enu::Index(i) => $group.indexed.get(*i).copied(),
+            $enu::Named(n) => {
+                if let Some(v) = $group.named.get(n) {
+                    Some(*v)
+                } else {
+                    $group.compute.get(n)?.compute(&$s)
+                }
+            }
+        }
+    };
+}
+
 impl Part {
+
+    pub fn resolve_vertex(&self, id: &VertexId) -> Option<Vec3> {
+        resolve_component!(self, id, VertexId, self.vertices)
+    }
+
+    pub fn resolve_normal(&self, id: &NormalId) -> Option<Vec3> {
+        resolve_component!(self, id, NormalId, self.normals)
+    }
+
     pub fn dedupe_data(&mut self) {
         let mut v_index_remap = HashMap::new();
         let mut v_index_updated = Vec::new();
@@ -631,6 +711,12 @@ pub struct Placement {
     pub scale: Vec3,
 }
 
+impl Placement {
+    pub fn transform(&self) -> Mat4 {
+        Mat4::from_translation(self.position) * Mat4::from_quat(self.rotation) * Mat4::from_scale(self.scale)
+    }
+}
+
 impl From<PlacementData> for Placement {
     fn from(value: PlacementData) -> Self {
         Self {
@@ -657,7 +743,7 @@ impl From<Placement> for PlacementData {
 pub struct LightMesh {
     pub credits: Vec<String>,
     pub parts: IndexMap<String, Part>,
-    pub mesh: Vec<Placement>,
+    pub placements: Vec<Placement>,
     pub textures: IndexMap<String, String>,
     pub data: IndexMap<String, MaterialData>,
     pub cull: bool,
@@ -676,7 +762,7 @@ impl From<crate::data::LightMeshData> for LightMesh {
         Self {
             credits: value.credits,
             parts: value.parts.into_iter().map(|(k, v)| (k, v.into())).collect(),
-            mesh: value.mesh.into_iter().map(Into::into).collect(),
+            placements: value.mesh.into_iter().map(Into::into).collect(),
             textures: value.textures,
             data: value.data,
             cull: value.cull
@@ -690,7 +776,7 @@ impl From<LightMesh> for crate::data::LightMeshData {
             mesh_format: 1,
             credits: value.credits,
             parts: value.parts.into_iter().map(|(k, v)|(k, v.into())).collect(),
-            mesh: value.mesh.into_iter().map(Into::into).collect(),
+            mesh: value.placements.into_iter().map(Into::into).collect(),
             textures: value.textures,
             data: value.data,
             cull: value.cull,

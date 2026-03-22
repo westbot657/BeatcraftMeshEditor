@@ -27,6 +27,7 @@ use eframe::glow::{self, HasContext};
 use egui::Frame;
 
 use self::editor::App;
+use self::render::MeshDrawCall;
 
 pub mod data;
 pub mod easing;
@@ -232,7 +233,15 @@ impl eframe::App for App {
 
                             match s.mode {
                                 editor::EditorMode::View => {
+                                    let mut calls = Vec::new();
+                                    for vm in s.view.meshes.iter() {
+                                        let mut draws = Vec::new();
+                                        if let Some(mesh) = vm.render(&mut draws) {
+                                            calls.push(MeshDrawCall { mesh, instances: draws, wireframe: false })
+                                        }
+                                    }
 
+                                    s.render.renderer.draw_meshes(gl, &mvp, &calls);
                                 }
                                 editor::EditorMode::Assembly => {
 
