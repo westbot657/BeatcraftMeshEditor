@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::Not;
 use std::path::PathBuf;
 
@@ -6,6 +7,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::easing::Easing;
+use crate::editor::Camera;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
 #[serde(untagged)]
@@ -120,6 +122,8 @@ pub struct PlacementData {
     pub rotation: Quat,
     #[serde(default = "default_scale", skip_serializing_if = "is_default_scale")]
     pub scale: Vec3,
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub remap_data: IndexMap<String, String>,
 }
 
 fn default_scale() -> Vec3 {
@@ -146,6 +150,7 @@ pub struct MaterialData {
     pub color: u8,
 }
 
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct LightMeshData {
@@ -168,7 +173,7 @@ pub struct LightMeshData {
 pub struct SessionPlacementData {
     pub position: Vec3,
     pub rotation: Quat,
-    pub count: usize,
+    pub count: u32,
     pub offset_pos: Vec3,
     pub offset_rot: Quat,
 }
@@ -185,6 +190,18 @@ pub struct CameraData {
     pub dist: f32,
     pub yaw: f32,
     pub pitch: f32,
+}
+
+impl From<CameraData> for Camera {
+    fn from(value: CameraData) -> Self {
+        Self {
+            target: value.target,
+            yaw: value.yaw,
+            pitch: value.pitch,
+            dist: value.dist,
+            fov: 100f32.to_radians()
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]

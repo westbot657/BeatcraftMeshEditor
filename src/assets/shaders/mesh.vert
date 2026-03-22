@@ -9,14 +9,12 @@ layout(location=4) in vec4 aModel1;
 layout(location=5) in vec4 aModel2;
 layout(location=6) in vec4 aModel3;
 layout(location=7) in vec4 aColorAlpha;    // rgb + alpha
-layout(location=8) in float aUsePartColor; // 1.0 or 0.0
 
 uniform mat4 uVP;
 
 flat out int  vCh;
 out vec3  vN;
 out vec4  vColorAlpha;
-flat out float vUsePartColor;
 
 void main() {
     mat4 model = mat4(aModel0, aModel1, aModel2, aModel3);
@@ -24,5 +22,4 @@ void main() {
     vN            = normalize(mat3(model) * aNorm);
     vCh           = aChannel;
     vColorAlpha   = aColorAlpha;
-    vUsePartColor = aUsePartColor;
 }

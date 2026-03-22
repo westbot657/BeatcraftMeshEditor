@@ -1,17 +1,17 @@
 use std::collections::HashMap;
 use std::f32::consts::PI;
-use std::mem;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::{fs, mem};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, mpsc};
 
 use eframe::glow::Context;
 use egui::{Key, Response};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 
-use crate::data::VertexId;
+use crate::data::{SessionData, SessionMeshData, SessionPlacementData, VertexId};
 use crate::Lifeline;
 use crate::light_mesh::{LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot, Part};
-use crate::render::{GpuMesh, InstanceData, MeshDrawCall, Renderer};
+use crate::render::{GpuMesh, InstanceData, Renderer};
 
 
 #[derive(Copy, Clone)]
@@ -159,10 +159,34 @@ impl ViewMesh {
         full.set_from_full_light_mesh(gl, &self.data);
     }
 
-    pub fn render(&self, calls: &mut Vec<InstanceData>) -> Option<&GpuMesh> {
-        calls.push(InstanceData::new(Mat4::IDENTITY, 1., None));
-        self.gpu_bufs.1.as_ref()
+    pub fn render_view_placements(&self, calls: &mut Vec<InstanceData>) -> Option<&GpuMesh> {
+        if self.visible {
+            if self.placements.is_empty() {
+                calls.push(InstanceData::new(Mat4::IDENTITY, 1., Some([0.2, 0.2, 0.2])));
+            } else {
+                for placement in self.placements.iter() {
+                    let mut pos = placement.position;
+                    let mut rot = placement.rotation;
+                    for _ in 0..placement.count {
+                        calls.push(InstanceData::new(Mat4::from_translation(pos) * Mat4::from_quat(rot), 1., Some([0.2, 0.2, 0.2])));
+                        pos += placement.offset_pos;
+                        rot *= placement.offset_rot;
+                    }
+                }
+            }
+            self.gpu_bufs.1.as_ref()
+        } else {
+            None
+        }
+    }
 
+    pub fn destroy(self, gl: &Context) {
+        if let Some(m) = self.gpu_bufs.1 {
+            m.destroy(gl);
+        }
+        for m in self.gpu_bufs.0.into_values() {
+            m.destroy(gl);
+        }
     }
 
 }
@@ -176,7 +200,7 @@ pub struct Render {
 }
 
 pub struct Editor {
-    pub mesh: Option<PathBuf>,
+    pub mesh: Option<usize>,
     pub camera: Camera,
     pub part: Option<String>,
     pub hovered: Option<VertexId>,
@@ -209,7 +233,6 @@ pub struct ClickCycle {
 
 pub struct View {
     pub meshes: Vec<ViewMesh>,
-    pub active: usize,
     pub session: Option<PathBuf>,
     pub camera: Camera
 }
@@ -265,6 +288,13 @@ pub struct State {
     pub clipboard: Clipboard,
     pub dirty: bool,
     pub gl: Arc<Context>,
+    pub ui: UiState,
+}
+
+pub struct UiState {
+    pub view_mesh: Option<usize>,
+    pub open_mesh_channel: Option<mpsc::Receiver<Vec<PathBuf>>>,
+    pub open_session_channel: Option<mpsc::Receiver<PathBuf>>,
 }
 
 pub enum HistoryEntry {
@@ -409,12 +439,7 @@ impl App {
 
         let gl2 = Arc::clone(&gl);
 
-        let mut meshes = Vec::new();
-        if let Some(p) = path {
-            meshes.push(LightMesh::load(&p).unwrap().into_view_mesh(p, &gl));
-        }
-
-        Self {
+        let mut s = Self {
             mode: EditorMode::View,
             last_mode: EditorMode::View,
             tool: ToolMode::Auto,
@@ -445,8 +470,7 @@ impl App {
                 instances: InnerCycle { last_pos: Vec2::ZERO, candidates: Vec::new(), current: 0 },
             },
             view: View {
-                meshes,
-                active: 0,
+                meshes: Vec::new(),
                 session: None,
                 camera: Camera::default(),
             },
@@ -461,6 +485,11 @@ impl App {
                 clipboard: Clipboard::None,
                 dirty: false,
                 gl,
+                ui: UiState {
+                    view_mesh: None,
+                    open_mesh_channel: None,
+                    open_session_channel: None,
+                }
             },
             assembly: Assembly {
                 handles: Vec::new(),
@@ -471,7 +500,33 @@ impl App {
                 future: Vec::new(),
                 limit: 200
             }
+        };
+
+        if let Some(p) = path && s.load_session(&p, &gl2).is_err() {
+            let _ = s.load_meshes(vec![p], &gl2);
         }
+
+        s
+    }
+
+    pub fn load_meshes_to_vec(paths: Vec<PathBuf>, gl: &Context) -> anyhow::Result<Vec<ViewMesh>> {
+        let mut out = Vec::new();
+        for path in paths {
+            out.push(LightMesh::load(&path)?.into_view_mesh(path, gl))
+        }
+        Ok(out)
+    }
+
+    pub fn load_meshes(&mut self, paths: Vec<PathBuf>, gl: &Context) -> anyhow::Result<()> {
+        let mut meshes = Self::load_meshes_to_vec(paths, gl)?;
+        // Clear out old meshes with same paths as new meshes
+        self.view.meshes.retain(|view_mesh| {
+            !meshes.iter().any(|new_mesh| {
+                new_mesh.path == view_mesh.path
+            })
+        });
+        self.view.meshes.append(&mut meshes);
+        Ok(())
     }
 
     pub fn cam(&mut self) -> &mut Camera {
@@ -489,7 +544,14 @@ impl App {
         }
     }
 
+    pub fn block_input(&self) -> bool {
+        self.state.ui.open_mesh_channel.is_some() || self.state.ui.open_session_channel.is_some()
+    }
+
     pub fn handle_keys(&mut self, ctx: &egui::Context, gl: &Context) {
+
+        if self.block_input() { return; }
+
         let input = ctx.input(|i| i.clone());
         let ctrl = input.modifiers.ctrl;
         let shift = input.modifiers.shift;
@@ -514,21 +576,22 @@ impl App {
             // TODO
         }
 
-        if self.mode != EditorMode::View {
-            if input.key_pressed(Key::W) {
-                self.state.wireframe = !self.state.wireframe;
-            }
-            if input.key_pressed(Key::G) {
-                self.state.show_grid = !self.state.show_grid;
-            }
-            if input.key_pressed(Key::V) {
-                self.state.show_verts = !self.state.show_verts;
-            }
+        if input.key_pressed(Key::W) {
+            self.state.wireframe = !self.state.wireframe;
+        }
+        if input.key_pressed(Key::G) {
+            self.state.show_grid = !self.state.show_grid;
+        }
+        if input.key_pressed(Key::V) {
+            self.state.show_verts = !self.state.show_verts;
         }
 
     }
 
     pub fn handle_3d_input(&mut self, resp: &Response, ctx: &egui::Context, gl: &Context) {
+
+        if self.block_input() { return; }
+
         let rect = self.state.vp_rect;
         let w = rect.width();
         let h = rect.height();
@@ -632,14 +695,7 @@ impl App {
     }
 
     pub fn get_current_mesh_idx(&self) -> Option<usize> {
-        let path = self.editor.mesh.as_ref()?;
-
-        for (idx, mesh) in self.view.meshes.iter().enumerate() {
-            if mesh.path == *path {
-                return Some(idx)
-            }
-        }
-        None
+        self.editor.mesh
     }
 
     pub fn get_current_part_name(&self) -> Option<&str> {
@@ -674,20 +730,21 @@ impl App {
 
 
     fn on_3d_press(&mut self, mouse: (f32, f32), size: (f32, f32), ctrl: bool, shift: bool, gl: &Context) {
+
+        if self.block_input() { return; }
+
         let (mx, my) = mouse;
         let (w, h) = size;
 
         let mvp = self.cam().mvp(w, h);
 
+        self.drag.state = DragState::Orbit;
         match self.mode {
             EditorMode::View => {
-                self.drag.state = DragState::Orbit;
             },
             EditorMode::Assembly => {
-                self.drag.state = DragState::Orbit;
             },
             EditorMode::Edit => {
-                self.drag.state = DragState::Orbit;
                 let r = self.cam().pick_radius(8., h);
                 let pick_cycle = &mut self.click_cycle.vertices;
                 let same_spot = (mx - pick_cycle.last_pos.x).abs() <= 2.
@@ -764,6 +821,72 @@ impl App {
 
     fn upload_selection_points(&mut self, gl: &Context) {
 
+    }
+
+    pub fn handle_file_open(&mut self, gl: &Context) {
+        if let Some(recv) = self.state.ui.open_session_channel.as_ref() {
+            match recv.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.state.ui.open_session_channel = None;
+                }
+                Ok(session) => {
+                    if let Err(e) = self.load_session(&session, gl) {
+                        eprintln!("Error loading session: {e}")
+                    }
+                }
+            }
+        }
+        if let Some(recv) = self.state.ui.open_mesh_channel.as_ref() {
+            match recv.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => {},
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.state.ui.open_mesh_channel = None;
+                }
+                Ok(meshes) => {
+                    if let Err(e) = self.load_meshes(meshes, gl) {
+                        eprintln!("Error loading meshes: {e}");
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn load_session(&mut self, path: &Path, gl: &Context) -> anyhow::Result<()> {
+
+        let raw = fs::read_to_string(path)?;
+        let session: SessionData = serde_json::from_str(&raw)?;
+
+        self.view.camera = session.camera.into();
+        self.editor.camera = self.view.camera;
+
+        let mut vms = Vec::new();
+
+        for SessionMeshData {
+            path,
+            placements
+        } in session.meshes {
+            let mut vm = LightMesh::load(&path)?.into_view_mesh(path, gl);
+
+            for SessionPlacementData {
+                position,
+                rotation,
+                count,
+                offset_pos,
+                offset_rot
+            } in placements {
+                vm.placements.push(ViewPlacement { position, rotation, count, offset_pos, offset_rot, visible: true })
+            }
+            vms.push(vm);
+        }
+
+        mem::swap(&mut self.view.meshes, &mut vms);
+
+        for vm in vms {
+            vm.destroy(gl);
+        }
+
+        Ok(())
     }
 
 }

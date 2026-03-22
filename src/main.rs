@@ -21,7 +21,7 @@
 
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 
 use eframe::glow::{self, HasContext};
 use egui::Frame;
@@ -101,16 +101,36 @@ impl eframe::App for App {
         let dt = ctx.input(|i| i.unstable_dt);
         if self.state.status_timer > 0. { self.state.status_timer -= dt; }
 
+        self.handle_file_open(gl);
+
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     // Open Session...
-                    if ui.button("Open Session\u{2026}  \u{2502}").clicked() {
-                        // TODO: load with rfd + thread + channel
+                    if ui.button("Open Session\u{2026}  \u{2502}").clicked() && !self.block_input() {
+                        let (sx, rx) = mpsc::channel();
+                        self.state.ui.open_session_channel = Some(rx);
+                        std::thread::spawn(move || {
+                            if let Some(session) = rfd::FileDialog::new()
+                                .set_title("Open Session...")
+                                .add_filter("json", &["json"])
+                                .pick_file() {
+                                let _ = sx.send(session);
+                            }
+                        });
                     }
                     // Open...
-                    if ui.button("Open\u{2026}          \u{2502}").clicked() {
-                        // TODO: load with rfd + thread + channel
+                    if ui.button("Open\u{2026}          \u{2502}").clicked() && !self.block_input() {
+                        let (sx, rx) = mpsc::channel();
+                        self.state.ui.open_mesh_channel = Some(rx);
+                        std::thread::spawn(move || {
+                            if let Some(meshes) = rfd::FileDialog::new()
+                                .set_title("Open Meshes...")
+                                .add_filter("json", &["json"])
+                                .pick_files() {
+                                let _ = sx.send(meshes);
+                            }
+                        });
                     }
                     if ui.button("Save           \u{2502} [Ctrl+S]").clicked() {
                         match self.mode {
@@ -167,7 +187,63 @@ impl eframe::App for App {
             .resizable(false)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    // TODO: metadata panels
+                    match self.mode {
+                        editor::EditorMode::View => {
+                            let mut to_remove = None;
+                            for (i, mesh) in self.view.meshes.iter_mut().enumerate() {
+                                let name = mesh.path.with_extension("");
+                                let name = name.file_name()
+                                    .map(|x| x.to_string_lossy())
+                                    .unwrap_or_else(|| std::borrow::Cow::Borrowed("?"));
+
+                                ui.add_space(2.0);
+                                let selected = self.state.ui.view_mesh == Some(i);
+                                let available = ui.available_size_before_wrap();
+                                if ui.add_sized(
+                                    egui::Vec2::new(available.x, 20.0),
+                                    egui::Button::selectable(selected, name.as_ref()),
+                                ).clicked() {
+                                    self.state.ui.view_mesh = if selected { None } else { Some(i) };
+                                };
+                                ui.add_space(2.0);
+
+                                ui.horizontal(|ui| {
+                                    ui.checkbox(&mut mesh.visible, "");
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        if ui.button("Close").clicked() {
+                                            to_remove = Some(i);
+                                        }
+                                        if ui.button("Edit").clicked() {
+                                            self.editor.mesh = Some(i);
+                                            self.last_mode = self.mode;
+                                            self.mode = editor::EditorMode::Edit;
+                                        }
+                                    });
+                                });
+
+                                ui.separator();
+                            }
+                            if let Some(i) = to_remove {
+                                self.view.meshes.remove(i);
+                                if let Some(sel) = self.state.ui.view_mesh {
+                                    if sel == i {
+                                        self.state.ui.view_mesh = None;
+                                    } else if sel > i {
+                                        self.state.ui.view_mesh = Some(sel - 1);
+                                    }
+                                }
+                                if let Some(sel) = self.editor.mesh {
+                                    if sel == i {
+                                        self.editor.mesh = None;
+                                    } else if sel > i {
+                                        self.editor.mesh = Some(sel - 1);
+                                    }
+                                }
+                            }
+                        },
+                        editor::EditorMode::Assembly => {},
+                        editor::EditorMode::Edit => {},
+                    }
                 });
             });
 
@@ -236,8 +312,8 @@ impl eframe::App for App {
                                     let mut calls = Vec::new();
                                     for vm in s.view.meshes.iter() {
                                         let mut draws = Vec::new();
-                                        if let Some(mesh) = vm.render(&mut draws) {
-                                            calls.push(MeshDrawCall { mesh, instances: draws, wireframe: false })
+                                        if let Some(mesh) = vm.render_view_placements(&mut draws) {
+                                            calls.push(MeshDrawCall { mesh, instances: draws, wireframe: s.state.wireframe })
                                         }
                                     }
 

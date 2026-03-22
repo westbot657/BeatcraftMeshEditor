@@ -4,6 +4,7 @@ use std::fs;
 use std::hash::Hash;
 use std::path::Path;
 
+use anyhow::anyhow;
 use glam::{FloatExt, Mat4, Quat, Vec2, Vec3};
 use indexmap::IndexMap;
 
@@ -417,7 +418,7 @@ impl From<HashableVec3> for Vec3 {
 }
 
 impl ComputeVertex {
-    fn compute(&self, part: &Part) -> Option<Vec3> {
+    fn compute(&self, part: &Part) -> anyhow::Result<Vec3> {
         let a = part.resolve_vertex(&self.points[0])?;
         let b = part.resolve_vertex(&self.points[1])?;
 
@@ -425,43 +426,47 @@ impl ComputeVertex {
         let dt = self.function.apply(dt);
         let mut c = a.lerp(b, dt);
 
-        let vx = if c.x == 0. { 0. } else { c.x.signum() };
-        let vy = if c.y == 0. { 0. } else { c.y.signum() };
-        let vz = if c.z == 0. { 0. } else { c.z.signum() };
+        let delta = b - a;
+        let vx = if delta.x == 0. { 0. } else { delta.x.signum() };
+        let vy = if delta.y == 0. { 0. } else { delta.y.signum() };
+        let vz = if delta.z == 0. { 0. } else { delta.z.signum() };
 
         if let Some(x) = self.x {
             c.x = a.x + x * vx;
+            let dx = f32::inverse_lerp(0., b.x-a.x, vx*x);
             if self.y.is_none() {
-                c.y = a.y.lerp(b.y, dt);
+                c.y = a.y.lerp(b.y, dx);
             }
             if self.z.is_none() {
-                c.z = a.z.lerp(b.z, dt);
+                c.z = a.z.lerp(b.z, dx);
             }
         }
         if let Some(y) = self.y {
             c.y = a.y + y * vy;
+            let dy = f32::inverse_lerp(0., b.y-a.y, vy*y);
             if self.x.is_none() {
-                c.x = a.x.lerp(b.x, dt);
+                c.x = a.x.lerp(b.x, dy);
             }
             if self.z.is_none() {
-                c.z = a.z.lerp(b.z, dt);
+                c.z = a.z.lerp(b.z, dy);
             }
         }
         if let Some(z) = self.z {
             c.z = a.z + z * vz;
+            let dz = f32::inverse_lerp(0., b.z-a.z, vz*z);
             if self.x.is_none() {
-                c.x = a.x.lerp(b.x, dt);
+                c.x = a.x.lerp(b.x, dz);
             }
             if self.y.is_none() {
-                c.y = a.y.lerp(b.y, dt);
+                c.y = a.y.lerp(b.y, dz);
             }
         }
-        Some(c)
+        Ok(c)
     }
 }
 
 impl ComputeNormal {
-    fn compute(&self, part: &Part) -> Option<Vec3> {
+    fn compute(&self, part: &Part) -> anyhow::Result<Vec3> {
         let a = part.resolve_vertex(&self.points[0])?;
         let b = part.resolve_vertex(&self.points[1])?;
         let c = part.resolve_vertex(&self.points[2])?;
@@ -469,7 +474,7 @@ impl ComputeNormal {
         let ab = b - a;
         let ac = c - a;
 
-        Some(ab.cross(ac).normalize())
+        Ok(ab.cross(ac).normalize())
     }
 }
 
@@ -481,29 +486,40 @@ pub struct Part {
     pub triangles: Triangles,
 }
 
-macro_rules! resolve_component {
-    ( $s:tt, $id:expr, $enu:ident, $group:expr ) => {
-        match $id {
-            $enu::Index(i) => $group.indexed.get(*i).copied(),
-            $enu::Named(n) => {
-                if let Some(v) = $group.named.get(n) {
-                    Some(*v)
+impl Part {
+
+    pub fn resolve_vertex(&self, id: &VertexId) -> anyhow::Result<Vec3> {
+        match id {
+            VertexId::Index(i) => {
+                self.vertices.indexed.get(*i).copied().ok_or_else(|| anyhow!("Invalid index {i} for Vertices of length {}", self.vertices.indexed.len()))
+            }
+            VertexId::Named(n) => {
+                if let Some(v) = self.vertices.named.get(n) {
+                    Ok(*v)
                 } else {
-                    $group.compute.get(n)?.compute(&$s)
+                    self.vertices.compute.get(n)
+                        .ok_or_else(|| anyhow!("Invalid name '{n}' for Vertices"))?
+                        .compute(self)
                 }
             }
         }
-    };
-}
-
-impl Part {
-
-    pub fn resolve_vertex(&self, id: &VertexId) -> Option<Vec3> {
-        resolve_component!(self, id, VertexId, self.vertices)
     }
 
-    pub fn resolve_normal(&self, id: &NormalId) -> Option<Vec3> {
-        resolve_component!(self, id, NormalId, self.normals)
+    pub fn resolve_normal(&self, id: &NormalId) -> anyhow::Result<Vec3> {
+        match id {
+            NormalId::Index(i) => {
+                Ok(self.normals.indexed.get(*i).copied().unwrap_or(Vec3::Y))
+            }
+            NormalId::Named(n) => {
+                if let Some(v) = self.normals.named.get(n) {
+                    Ok(*v)
+                } else if let Some(v) = self.normals.compute.get(n) {
+                    v.compute(self)
+                } else {
+                        Ok(Vec3::Y)
+                    }
+            }
+        }
     }
 
     pub fn dedupe_data(&mut self) {
@@ -709,6 +725,7 @@ pub struct Placement {
     pub position: Vec3,
     pub rotation: Quat,
     pub scale: Vec3,
+    pub remap_data: IndexMap<String, String>,
 }
 
 impl Placement {
@@ -724,6 +741,7 @@ impl From<PlacementData> for Placement {
             position: value.position,
             rotation: value.rotation,
             scale: value.scale,
+            remap_data: value.remap_data,
         }
     }
 }
@@ -735,6 +753,7 @@ impl From<Placement> for PlacementData {
             position: value.position,
             rotation: value.rotation,
             scale: value.scale,
+            remap_data: value.remap_data,
         }
     }
 }

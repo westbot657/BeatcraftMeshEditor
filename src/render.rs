@@ -14,19 +14,15 @@ pub struct InstanceData {
     pub model: Mat4,
     /// rgb + alpha packed into one vec4
     pub color_alpha: [f32; 4],
-    /// 1.0 = use part color, 0.0 = use channel palette
-    pub use_part_color: f32,
-    /// pad to 16-byte alignment
-    _pad: [f32; 3],
 }
 
 impl InstanceData {
     pub fn new(model: Mat4, alpha: f32, part_color: Option<[f32; 3]>) -> Self {
-        let (color_alpha, use_part_color) = match part_color {
-            Some(c) => ([c[0], c[1], c[2], alpha], 1.0),
-            None    => ([0.0, 0.0, 0.0, alpha],     0.0),
+        let color_alpha = match part_color {
+            Some(c) => [c[0], c[1], c[2], alpha],
+            None => [0.0, 0.0, 0.0, alpha],
         };
-        Self { model, color_alpha, use_part_color, _pad: [0.0; 3] }
+        Self { model, color_alpha }
     }
 }
 
@@ -170,7 +166,7 @@ impl GpuMesh {
         }
     }
 
-    pub fn draw_tris(&self, gl: &glow::Context, instances: &[InstanceData], wireframe: bool) {
+    pub fn draw_tris(&self, gl: &glow::Context, instances: &[InstanceData], wireframe: bool, renderer: &Renderer) {
         if instances.is_empty() { return; }
         unsafe {
             gl.bind_vertex_array(Some(self.vao));
@@ -178,9 +174,11 @@ impl GpuMesh {
             let n = instances.len() as i32;
             gl.draw_arrays_instanced(glow::TRIANGLES, 0, self.vertex_count as i32, n);
             if wireframe {
+                renderer.set_int(gl, renderer.mesh, "uWire", 1);
                 gl.polygon_mode(glow::FRONT_AND_BACK, glow::LINE);
                 gl.draw_arrays_instanced(glow::TRIANGLES, 0, self.vertex_count as i32, n);
                 gl.polygon_mode(glow::FRONT_AND_BACK, glow::FILL);
+                renderer.set_int(gl, renderer.mesh, "uWire", 0);
             }
             gl.bind_vertex_array(None);
         }
@@ -224,7 +222,15 @@ impl GpuMesh {
         Self::set_from_hashmap(gl, mesh, HashMap::new())
     }
 
-    pub fn add_triangle_data(vertices: &mut Vec<Vec3>, normals: &mut Vec<Vec3>, channels: &mut Vec<i32>, part: &Part, data: &IndexMap<String, MaterialData>, transform: &Mat4) {
+    pub fn add_triangle_data(
+        vertices: &mut Vec<Vec3>,
+        normals: &mut Vec<Vec3>,
+        channels: &mut Vec<i32>,
+        part: &Part,
+        data: &IndexMap<String, MaterialData>,
+        transform: &Mat4,
+        remap_data: &IndexMap<String, String>,
+    ) {
         let mat3 = Mat3::from_mat4(*transform);
         let normal_transform = mat3.inverse().transpose();
         let flip = mat3.determinant() < 0.;
@@ -257,12 +263,23 @@ impl GpuMesh {
 
             normals.extend_from_slice(&norms);
 
+            let material = match material {
+                Some(mat) => {
+                    Some(if let Some(remap) = remap_data.get(mat) {
+                        remap.as_str()
+                    } else {
+                        mat.as_str()
+                    })
+                }
+                None => None
+            };
+
             if let Some(MaterialData {
-                material:_, texture:_, color
-            }) = data.get(material.as_deref().unwrap_or("default")) {
+                material, texture:_, color
+            }) = data.get(material.unwrap_or("default")) && *material != 0 {
                 channels.extend_from_slice(&[*color as i32; 3]);
             } else {
-                channels.extend_from_slice(&[0; 3]);
+                channels.extend_from_slice(&[8; 3]);
             }
         }
 
@@ -276,7 +293,7 @@ impl GpuMesh {
         for placement in light_mesh.placements.iter() {
             let mat = placement.transform();
             let part = light_mesh.parts.get(&placement.part).unwrap();
-            Self::add_triangle_data(&mut vertices, &mut normals, &mut channels, part, &light_mesh.data, &mat);
+            Self::add_triangle_data(&mut vertices, &mut normals, &mut channels, part, &light_mesh.data, &mat, &placement.remap_data);
         }
 
         self.rebuild(gl, &vertices, &normals, &channels);
@@ -288,7 +305,7 @@ impl GpuMesh {
         let mut normals = Vec::new();
         let mut channels = Vec::new();
 
-        Self::add_triangle_data(&mut vertices, &mut normals, &mut channels, part, data, &Mat4::IDENTITY);
+        Self::add_triangle_data(&mut vertices, &mut normals, &mut channels, part, data, &Mat4::IDENTITY, &IndexMap::default());
 
         self.rebuild(gl, &vertices, &normals, &channels);
     }
@@ -322,12 +339,12 @@ impl Renderer {
 
     pub fn new(gl: &glow::Context) -> Result<Self, String> {
         unsafe {
-            let mesh  = Self::compile_shader(gl, include_str!("./assets/shaders/mesh.vert"),  include_str!("./assets/shaders/mesh.frag"))?;
+            let mesh = Self::compile_shader(gl, include_str!("./assets/shaders/mesh.vert"), include_str!("./assets/shaders/mesh.frag"))?;
             let point = Self::compile_shader(gl, include_str!("./assets/shaders/point.vert"), include_str!("./assets/shaders/point.frag"))?;
-            let flat  = Self::compile_shader(gl, include_str!("./assets/shaders/flat.vert"),  include_str!("./assets/shaders/flat.frag"))?;
+            let flat = Self::compile_shader(gl, include_str!("./assets/shaders/flat.vert"), include_str!("./assets/shaders/flat.frag"))?;
 
             let mut grid_pts: Vec<f32> = vec![];
-            let (size, step) = (120i32, 10i32);
+            let (size, step) = (300i32, 10i32);
             let mut i = -size;
             while i <= size {
                 let fi = i as f32; let fs = size as f32;
@@ -344,7 +361,7 @@ impl Renderer {
             gl.bind_vertex_array(None);
             let grid_n = (grid_pts.len() / 3) as i32;
 
-            let ax: f32 = 120.0;
+            let ax: f32 = size as f32;
             let axis_pts: [f32; 12] = [0.0,0.0,0.0, ax,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,ax];
             let axis_vao = gl.create_vertex_array()?;
             gl.bind_vertex_array(Some(axis_vao));
@@ -383,7 +400,7 @@ impl Renderer {
             self.set_mat4(gl, self.mesh, "uVP", vp);
             for call in calls {
                 self.set_int(gl, self.mesh, "uWire", 0);
-                call.mesh.draw_tris(gl, &call.instances, call.wireframe);
+                call.mesh.draw_tris(gl, &call.instances, call.wireframe, self);
             }
         }
     }
