@@ -379,10 +379,11 @@ impl Renderer {
         }
     }
 
-    pub fn draw_meshes(&self, gl: &glow::Context, vp: &Mat4, calls: &[MeshDrawCall<'_>]) {
+    pub fn draw_meshes(&self, gl: &glow::Context, vp: &Mat4, eye: Vec3, calls: &[MeshDrawCall<'_>]) {
         unsafe {
             gl.use_program(Some(self.mesh));
             self.set_mat4(gl, self.mesh, "uVP", vp);
+            self.set_vec3(gl, self.mesh, "uCamPos", eye);
             for call in calls {
                 self.set_int(gl, self.mesh, "uWire", 0);
                 call.mesh.draw_tris(gl, &call.instances, call.wireframe, self);
@@ -412,6 +413,14 @@ impl Renderer {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_4_f32(Some(&l), v.x, v.y, v.z, v.w);
+            }
+        }
+    }
+
+    fn set_vec3(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec3) {
+        unsafe {
+            if let Some(l) = gl.get_uniform_location(prog, name) {
+                gl.uniform_3_f32(Some(&l), v.x, v.y, v.z);
             }
         }
     }

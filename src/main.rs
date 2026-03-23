@@ -479,6 +479,7 @@ impl eframe::App for App {
                             let w = rect.width();
                             let h = rect.height();
                             let vp = s.ref_mut().cam().vp(w, h);
+                            let eye = s.ref_mut().cam().eye();
 
                             gl.clear_color(0.07, 0.08, 0.11, 1.);
                             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
@@ -520,13 +521,13 @@ impl eframe::App for App {
                                         }
                                     }
 
-                                    s.render.renderer.draw_meshes(gl, &vp, &calls);
+                                    s.render.renderer.draw_meshes(gl, &vp, eye, &calls);
                                 }
                                 editor::EditorMode::Assembly => {
                                     if let Some(sel) = s.editor.mesh && let Some(mesh) = s.view.meshes.get(sel) {
                                         let mut instances = Vec::new();
                                         if let Some(mesh) = mesh.render_assembly(&mut instances) {
-                                            s.render.renderer.draw_meshes(gl, &vp, &[
+                                            s.render.renderer.draw_meshes(gl, &vp, eye, &[
                                                 MeshDrawCall { mesh, instances, wireframe: s.state.wireframe }
                                             ]);
                                         }
@@ -545,7 +546,7 @@ impl eframe::App for App {
                                             wireframe: s.state.wireframe
                                         }];
 
-                                        s.render.renderer.draw_meshes(gl, &vp, &calls);
+                                        s.render.renderer.draw_meshes(gl, &vp, eye, &calls);
 
                                         let mut calls = Vec::new();
                                         if s.state.show_verts {
