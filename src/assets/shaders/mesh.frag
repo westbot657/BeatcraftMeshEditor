@@ -15,7 +15,7 @@ const vec3 COLORS[8] = vec3[8](
 );
 
 void main() {
-    if (uWire != 0) { fragColor = vec4(0.65, 0.75, 1.0, 0.6); return; }
+    if (uWire != 0) { fragColor = vec4(vec3(0.4), 0.4); return; }
     vec3 N = normalize(vN);
     float diff = max(dot(N, LIGHT), 0.0) * 0.6 + 0.4;
     vec3 base  = (vCh > 7) ? vColorAlpha.rgb : COLORS[vCh & 7];

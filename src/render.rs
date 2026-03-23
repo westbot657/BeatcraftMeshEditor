@@ -176,6 +176,7 @@ impl GpuMesh {
             if wireframe {
                 renderer.set_int(gl, renderer.mesh, "uWire", 1);
                 gl.polygon_mode(glow::FRONT_AND_BACK, glow::LINE);
+                gl.line_width(0.5);
                 gl.draw_arrays_instanced(glow::TRIANGLES, 0, self.vertex_count as i32, n);
                 gl.polygon_mode(glow::FRONT_AND_BACK, glow::FILL);
                 renderer.set_int(gl, renderer.mesh, "uWire", 0);
@@ -372,25 +373,9 @@ impl Renderer {
             gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
             gl.bind_vertex_array(None);
 
-            Ok(Self { mesh, point, flat, grid_vao, grid_n, axis_vao })
-        }
-    }
+            gl.enable(glow::PROGRAM_POINT_SIZE);
 
-    pub fn draw_grid(&self, gl: &glow::Context, vp: &Mat4) {
-        unsafe {
-            gl.use_program(Some(self.flat));
-            self.set_mat4(gl, self.flat, "uMVP", vp);
-            self.set_vec4(gl, self.flat, "uColor", Vec4::new(0.27, 0.27, 0.34, 0.5));
-            gl.bind_vertex_array(Some(self.grid_vao));
-            gl.draw_arrays(glow::LINES, 0, self.grid_n);
-            gl.line_width(2.0);
-            self.set_vec4(gl, self.flat, "uColor", Vec4::new(0.85, 0.20, 0.20, 0.9));
-            gl.bind_vertex_array(Some(self.axis_vao));
-            gl.draw_arrays(glow::LINES, 0, 2);
-            self.set_vec4(gl, self.flat, "uColor", Vec4::new(0.20, 0.45, 0.90, 0.9));
-            gl.draw_arrays(glow::LINES, 2, 2);
-            gl.line_width(1.0);
-            gl.bind_vertex_array(None);
+            Ok(Self { mesh, point, flat, grid_vao, grid_n, axis_vao })
         }
     }
 

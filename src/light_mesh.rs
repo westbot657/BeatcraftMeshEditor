@@ -1,5 +1,4 @@
 use core::f32;
-use std::borrow::Cow;
 use std::collections::{HashMap, hash_map};
 use std::fs;
 use std::hash::Hash;
@@ -77,7 +76,7 @@ pub struct Vertices {
 }
 
 impl Vertices {
-    pub fn get_vec(&self, part: &Part) -> Vec<(VertexId, Vec3)> {
+    pub fn get_vec(&self, part: &Part, include_compute: bool) -> Vec<(VertexId, Vec3)> {
         let mut out = Vec::new();
 
         for (id, vert) in self.indexed.iter().enumerate() {
@@ -88,8 +87,23 @@ impl Vertices {
             out.push((VertexId::Named(name.clone()), *vert));
         }
 
-        for (name, comp) in self.compute.iter() {
-            out.push((VertexId::Named(name.clone()), comp.compute(part).unwrap()))
+        if include_compute {
+            for (name, comp) in self.compute.iter() {
+                out.push((VertexId::Named(name.clone()), comp.compute(part).unwrap()))
+            }
+        }
+
+        out
+    }
+
+    pub fn get_mut_vec(&mut self) -> Vec<(VertexId, &mut Vec3)> {
+        let mut out = Vec::new();
+        for (id, vert) in self.indexed.iter_mut().enumerate() {
+            out.push((VertexId::Index(id), vert));
+        }
+
+        for (name, vert) in self.named.iter_mut() {
+            out.push((VertexId::Named(name.clone()), vert))
         }
 
         out
@@ -787,6 +801,7 @@ pub struct LightMesh {
     pub textures: IndexMap<String, String>,
     pub data: IndexMap<String, MaterialData>,
     pub cull: bool,
+    pub part_names: Vec<String>,
 }
 
 impl LightMesh {
@@ -799,13 +814,16 @@ impl LightMesh {
 
 impl From<crate::data::LightMeshData> for LightMesh {
     fn from(value: crate::data::LightMeshData) -> Self {
+        let parts: IndexMap<String, Part> = value.parts.into_iter().map(|(k, v)| (k, v.into())).collect();
+        let part_names = parts.keys().cloned().collect();
         Self {
             credits: value.credits,
-            parts: value.parts.into_iter().map(|(k, v)| (k, v.into())).collect(),
+            parts,
             placements: value.mesh.into_iter().map(Into::into).collect(),
             textures: value.textures,
             data: value.data,
-            cull: value.cull
+            cull: value.cull,
+            part_names,
         }
     }
 }

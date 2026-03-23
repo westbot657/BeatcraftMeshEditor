@@ -27,10 +27,10 @@ use std::sync::{Arc, mpsc};
 use eframe::glow::{self, HasContext};
 use egui::Frame;
 use egui::ahash::HashMapExt;
-use glam::{Quat, Vec3};
+use glam::{Mat4, Quat, Vec3};
 
 use self::editor::{App, EulerSwizzle, RotationDisplayMode, ViewPlacement};
-use self::render::MeshDrawCall;
+use self::render::{InstanceData, MeshDrawCall, PointDrawCall};
 use self::widgets::MathDragValue;
 
 pub mod data;
@@ -71,9 +71,9 @@ impl<T> UnsafeMutRef<T> {
 unsafe impl<T> Send for UnsafeMutRef<T> {}
 unsafe impl<T> Sync for UnsafeMutRef<T> {}
 
-pub(crate) struct Lifeline;
+pub struct RefDuper;
 
-impl Lifeline {
+impl RefDuper {
 
     /// Detaches a reference from it's owner, allowing
     /// mutable references to exist simultaneously
@@ -151,11 +151,11 @@ impl eframe::App for App {
                 });
                 ui.menu_button("Edit", |ui| {
                     if ui.button("Undo  \u{2502}       [Ctrl+Z]").clicked() {
-                        self.undo();
+                        self.undo(gl);
                         ui.close();
                     }
                     if ui.button("Redo  \u{2502} [Ctrl+Shift+Z]").clicked() {
-                        self.redo();
+                        self.redo(gl);
                         ui.close();
                     }
                 });
@@ -486,6 +486,7 @@ impl eframe::App for App {
 
                             if s.state.show_grid {
                                 let flat = s.render.renderer.flat;
+                                gl.line_width(1.);
                                 gl.use_program(Some(flat));
                                 if let Some(l) = gl.get_uniform_location(flat, "uMVP") {
                                     gl.uniform_matrix_4_f32_slice(Some(&l), false, &vp.to_cols_array());
@@ -532,7 +533,47 @@ impl eframe::App for App {
                                     }
                                 }
                                 editor::EditorMode::Edit => {
+                                    if let Some((_,name,part)) = s.get_current_part()
+                                    && let Some(sel) = s.editor.mesh
+                                    && let Some(mesh) = s.view.meshes.get(sel)
+                                    && let Some(mesh) = mesh.gpu_bufs.0.get(name) {
+                                        let calls = vec![MeshDrawCall {
+                                            mesh,
+                                            instances: vec![
+                                                InstanceData::new(Mat4::IDENTITY, 1., Some([0.2, 0.2, 0.2]))
+                                            ],
+                                            wireframe: s.state.wireframe
+                                        }];
 
+                                        s.render.renderer.draw_meshes(gl, &vp, &calls);
+
+                                        let mut calls = Vec::new();
+                                        if s.state.show_verts {
+                                            calls.push(PointDrawCall {
+                                                mesh,
+                                                instances: vec![
+                                                    InstanceData::new(Mat4::IDENTITY, 1., Some([0., 1., 1.]))
+                                                ],
+                                                size: 2.5
+                                            });
+
+                                        }
+
+                                        if let Some(selected) = s.render.sel_points.as_ref() {
+                                            calls.push(PointDrawCall {
+                                                mesh: selected,
+                                                instances: vec![
+                                                    InstanceData::new(Mat4::IDENTITY, 1., Some([1., 1., 0.]))
+                                                ],
+                                                size: 4.
+                                            });
+                                        }
+
+                                        if !calls.is_empty() {
+                                            s.render.renderer.draw_points_batch(gl, &vp, &calls);
+                                        }
+
+                                    }
                                 }
                             }
 
