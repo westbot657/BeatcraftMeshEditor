@@ -376,10 +376,10 @@ impl Renderer {
         }
     }
 
-    pub fn draw_grid(&self, gl: &glow::Context, mvp: &Mat4) {
+    pub fn draw_grid(&self, gl: &glow::Context, vp: &Mat4) {
         unsafe {
             gl.use_program(Some(self.flat));
-            self.set_mat4(gl, self.flat, "uMVP", mvp);
+            self.set_mat4(gl, self.flat, "uMVP", vp);
             self.set_vec4(gl, self.flat, "uColor", Vec4::new(0.27, 0.27, 0.34, 0.5));
             gl.bind_vertex_array(Some(self.grid_vao));
             gl.draw_arrays(glow::LINES, 0, self.grid_n);

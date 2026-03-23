@@ -37,7 +37,7 @@ impl Camera {
     pub fn proj_mat(&self, w: f32, h: f32) -> Mat4 {
         Mat4::perspective_rh(self.fov, (w / h).max(0.001), 0.1, 5000.0)
     }
-    pub fn mvp(&self, w: f32, h: f32) -> Mat4 { self.proj_mat(w, h) * self.view_mat() }
+    pub fn vp(&self, w: f32, h: f32) -> Mat4 { self.proj_mat(w, h) * self.view_mat() }
     pub fn left(&self) -> Vec3 {
         let m = self.view_mat();
         Vec3::new(m.col(0).x, m.col(1).x, m.col(2).x)
@@ -180,6 +180,11 @@ impl ViewMesh {
         }
     }
 
+    pub fn render_assembly(&self, calls: &mut Vec<InstanceData>) -> Option<&GpuMesh> {
+        calls.push(InstanceData::new(Mat4::IDENTITY, 1., Some([0.2, 0.2, 0.2])));
+        self.gpu_bufs.1.as_ref()
+    }
+
     pub fn destroy(self, gl: &Context) {
         if let Some(m) = self.gpu_bufs.1 {
             m.destroy(gl);
@@ -242,7 +247,27 @@ pub struct Assembly {
     pub hovered: Option<usize>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RotationDisplayMode {
+    Quaternion,
+    Euler(EulerSwizzle),
+}
+
+impl RotationDisplayMode {
+    pub fn cycle(&self) -> Self {
+        match self {
+            Self::Quaternion => Self::Euler(EulerSwizzle::XYZ),
+            Self::Euler(EulerSwizzle::XYZ) => Self::Euler(EulerSwizzle::XZY),
+            Self::Euler(EulerSwizzle::XZY) => Self::Euler(EulerSwizzle::YXZ),
+            Self::Euler(EulerSwizzle::YXZ) => Self::Euler(EulerSwizzle::YZX),
+            Self::Euler(EulerSwizzle::YZX) => Self::Euler(EulerSwizzle::ZYX),
+            Self::Euler(EulerSwizzle::ZYX) => Self::Euler(EulerSwizzle::ZXY),
+            Self::Euler(EulerSwizzle::ZXY) => Self::Quaternion,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum EulerSwizzle {
     XYZ,
     XZY,
@@ -250,6 +275,25 @@ pub enum EulerSwizzle {
     YZX,
     ZYX,
     ZXY,
+}
+
+impl EulerSwizzle {
+    pub fn to_glam(self) -> glam::EulerRot {
+        match self {
+            EulerSwizzle::XYZ => glam::EulerRot::XYZ,
+            EulerSwizzle::XZY => glam::EulerRot::XZY,
+            EulerSwizzle::YXZ => glam::EulerRot::YXZ,
+            EulerSwizzle::YZX => glam::EulerRot::YZX,
+            EulerSwizzle::ZYX => glam::EulerRot::ZYX,
+            EulerSwizzle::ZXY => glam::EulerRot::ZXY,
+        }
+    }
+}
+
+impl From<EulerSwizzle> for glam::EulerRot {
+    fn from(value: EulerSwizzle) -> Self {
+        value.to_glam()
+    }
 }
 
 impl EulerSwizzle {
@@ -261,6 +305,17 @@ impl EulerSwizzle {
             Self::YZX => "YZX",
             Self::ZYX => "ZYX",
             Self::ZXY => "ZXY",
+        }
+    }
+
+    pub fn names(&self) -> [&'static str; 3] {
+        match self {
+            EulerSwizzle::XYZ => ["x", "y", "z"],
+            EulerSwizzle::XZY => ["x", "z", "y"],
+            EulerSwizzle::YXZ => ["y", "x", "z"],
+            EulerSwizzle::YZX => ["y", "z", "x"],
+            EulerSwizzle::ZYX => ["z", "y", "x"],
+            EulerSwizzle::ZXY => ["z", "x", "y"],
         }
     }
 }
@@ -291,10 +346,13 @@ pub struct State {
     pub ui: UiState,
 }
 
+#[derive(Default)]
 pub struct UiState {
     pub view_mesh: Option<usize>,
     pub open_mesh_channel: Option<mpsc::Receiver<Vec<PathBuf>>>,
     pub open_session_channel: Option<mpsc::Receiver<PathBuf>>,
+    pub collapsed: HashMap<usize, Vec<bool>>,
+    pub view_rotation_modes: HashMap<usize, Vec<[RotationDisplayMode; 2]>>
 }
 
 pub enum HistoryEntry {
@@ -485,11 +543,7 @@ impl App {
                 clipboard: Clipboard::None,
                 dirty: false,
                 gl,
-                ui: UiState {
-                    view_mesh: None,
-                    open_mesh_channel: None,
-                    open_session_channel: None,
-                }
+                ui: UiState::default(),
             },
             assembly: Assembly {
                 handles: Vec::new(),
@@ -584,6 +638,10 @@ impl App {
         }
         if input.key_pressed(Key::V) {
             self.state.show_verts = !self.state.show_verts;
+        }
+        if input.key_pressed(Key::I) {
+            self.last_mode = self.mode;
+            self.mode = EditorMode::View;
         }
 
     }
@@ -736,7 +794,7 @@ impl App {
         let (mx, my) = mouse;
         let (w, h) = size;
 
-        let mvp = self.cam().mvp(w, h);
+        let vp = self.cam().vp(w, h);
 
         self.drag.state = DragState::Orbit;
         match self.mode {
@@ -752,7 +810,11 @@ impl App {
 
                 let ll = Lifeline;
 
-                let hits: Vec<&VertexId> = self.raycast_vertices(mx, my, w, h, &mvp, r)
+                let Some((_,_,part)) = self.get_current_part() else { return; };
+
+                let verts = part.vertices.get_vec(part);
+
+                let hits: Vec<&VertexId> = self.raycast_vertices(&verts, Vec2::new(mx, my), Vec2::new(w, h), &vp, r)
                     .iter()
                     .map(|r| unsafe { ll.detach_ref(*r) })
                     .collect();
@@ -804,7 +866,7 @@ impl App {
             self.finish_marquee(vec4, gl);
         }
 
-        if matches!(self.drag.state, DragState::Vertex | DragState::Instance | DragState::InstanceRotation)
+        if matches!(self.drag.state, DragState::Vertex)
             && let Some(snap) = self.drag.pre_drag_snapshot.take() {
             // Push history and clear future.
         }
@@ -812,11 +874,43 @@ impl App {
         self.drag.state = DragState::None;
     }
 
-    fn raycast_vertices(&self, mx: f32, my: f32, w: f32, h: f32, mvp: &Mat4, r: f32) -> Vec<&VertexId> {
+    fn unproject(point: Vec2, screen_size: Vec2, vp: &Mat4) -> (Vec3, Vec3) {
+        let inv = vp.inverse();
+        let nx = (point.x / screen_size.x) * 2.0 - 1.0;
+        let ny = (point.y / screen_size.y) * 2.0 - 1.0;
+        let n4 = inv * Vec4::new(nx, ny, -1.0, 1.0);
+        let f4 = inv * Vec4::new(nx, ny, 1.0, 1.0);
+        let n3 = Vec3::new(n4.x, n4.y, n4.z) / n4.w;
+        let f3 = Vec3::new(f4.x, f4.y, f4.z) / f4.w;
+        (n3, (f3 - n3).normalize())
+    }
 
+    fn check_point_dist(ray_pos: Vec3, ray_dir: Vec3, point: Vec3, r: f32) -> Option<f32> {
+        let delta = ray_pos - point;
+        let b = 2. * ray_dir.dot(delta);
+        let disc = b * b - 4. * (delta.dot(delta) - r * r);
+        if disc < 0. { return None; }
+        let t = (-b - disc.sqrt()) / 2.;
+        if t > 0. {
+            Some(t)
+        } else {
+            None
+        }
+    }
 
+    fn raycast_vertices<'a, K>(&self, vertices: &'a [(K, Vec3)], mouse: Vec2, size: Vec2, vp: &Mat4, r: f32) -> Vec<&'a K> {
 
-        Vec::new()
+        let (ray_pos, ray_dir) = Self::unproject(mouse, size, vp);
+
+        let mut hits: Vec<(&K, f32)> = vertices.iter()
+            .filter_map(|(id, vert)|
+                Self::check_point_dist(ray_pos, ray_dir, *vert, r)
+                    .map(|dist| (id, dist)))
+            .collect();
+
+        hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        hits.into_iter().map(|(id, _)| id).collect()
     }
 
     fn upload_selection_points(&mut self, gl: &Context) {

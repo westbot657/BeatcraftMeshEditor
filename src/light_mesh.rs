@@ -1,4 +1,5 @@
 use core::f32;
+use std::borrow::Cow;
 use std::collections::{HashMap, hash_map};
 use std::fs;
 use std::hash::Hash;
@@ -73,6 +74,26 @@ pub struct Vertices {
     pub indexed: Vec<Vec3>,
     pub named: IndexMap<String, Vec3>,
     pub compute: IndexMap<String, ComputeVertex>,
+}
+
+impl Vertices {
+    pub fn get_vec(&self, part: &Part) -> Vec<(VertexId, Vec3)> {
+        let mut out = Vec::new();
+
+        for (id, vert) in self.indexed.iter().enumerate() {
+            out.push((VertexId::Index(id), *vert))
+        }
+
+        for (name, vert) in self.named.iter() {
+            out.push((VertexId::Named(name.clone()), *vert));
+        }
+
+        for (name, comp) in self.compute.iter() {
+            out.push((VertexId::Named(name.clone()), comp.compute(part).unwrap()))
+        }
+
+        out
+    }
 }
 
 impl From<(Vec<Vec3>, IndexMap<String, Vec3>, IndexMap<String, ComputeVertexData>)> for Vertices {

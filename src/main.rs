@@ -19,15 +19,19 @@
 //   Ctrl+Shift+S           optimized save
 //   Escape                 deselect all
 
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
 
 use eframe::glow::{self, HasContext};
 use egui::Frame;
+use egui::ahash::HashMapExt;
+use glam::{Quat, Vec3};
 
-use self::editor::App;
+use self::editor::{App, EulerSwizzle, RotationDisplayMode, ViewPlacement};
 use self::render::MeshDrawCall;
+use self::widgets::MathDragValue;
 
 pub mod data;
 pub mod easing;
@@ -35,6 +39,7 @@ pub mod light_mesh;
 pub mod math_interp;
 pub mod render;
 pub mod editor;
+pub mod widgets;
 
 #[derive(Copy, Clone)]
 struct UnsafeMutRef<T: 'static> {
@@ -186,65 +191,92 @@ impl eframe::App for App {
             .exact_width(220.)
             .resizable(false)
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    match self.mode {
-                        editor::EditorMode::View => {
-                            let mut to_remove = None;
-                            for (i, mesh) in self.view.meshes.iter_mut().enumerate() {
-                                let name = mesh.path.with_extension("");
-                                let name = name.file_name()
-                                    .map(|x| x.to_string_lossy())
-                                    .unwrap_or_else(|| std::borrow::Cow::Borrowed("?"));
+                ui.allocate_ui(ui.available_size(), |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        match self.mode {
+                            editor::EditorMode::View => {
+                                let mut to_remove = None;
+                                for (i, mesh) in self.view.meshes.iter_mut().enumerate() {
+                                    let name = mesh.path.with_extension("");
+                                    let name = name.file_name()
+                                        .map(|x| x.to_string_lossy())
+                                        .unwrap_or_else(|| std::borrow::Cow::Borrowed("?"));
 
-                                ui.add_space(2.0);
-                                let selected = self.state.ui.view_mesh == Some(i);
-                                let available = ui.available_size_before_wrap();
-                                if ui.add_sized(
-                                    egui::Vec2::new(available.x, 20.0),
-                                    egui::Button::selectable(selected, name.as_ref()),
-                                ).clicked() {
-                                    self.state.ui.view_mesh = if selected { None } else { Some(i) };
-                                };
-                                ui.add_space(2.0);
+                                    ui.add_space(2.0);
+                                    let selected = self.state.ui.view_mesh == Some(i);
+                                    let available = ui.available_size_before_wrap();
+                                    if ui.add_sized(
+                                        egui::Vec2::new(available.x, 20.0),
+                                        egui::Button::selectable(selected, name.as_ref()),
+                                    ).clicked() {
+                                        self.state.ui.view_mesh = if selected { None } else { Some(i) };
+                                    };
+                                    ui.add_space(2.0);
 
-                                ui.horizontal(|ui| {
-                                    ui.checkbox(&mut mesh.visible, "");
-                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        if ui.button("Close").clicked() {
-                                            to_remove = Some(i);
-                                        }
-                                        if ui.button("Edit").clicked() {
-                                            self.editor.mesh = Some(i);
-                                            self.last_mode = self.mode;
-                                            self.mode = editor::EditorMode::Edit;
-                                        }
+                                    ui.horizontal(|ui| {
+                                        ui.checkbox(&mut mesh.visible, "");
+                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                            if ui.button("Close").clicked() {
+                                                to_remove = Some(i);
+                                            }
+                                            if ui.button("Edit").clicked() {
+                                                self.editor.mesh = Some(i);
+                                                self.last_mode = self.mode;
+                                                self.mode = editor::EditorMode::Assembly;
+                                            }
+                                        });
                                     });
-                                });
 
-                                ui.separator();
-                            }
-                            if let Some(i) = to_remove {
-                                self.view.meshes.remove(i);
-                                if let Some(sel) = self.state.ui.view_mesh {
-                                    if sel == i {
-                                        self.state.ui.view_mesh = None;
-                                    } else if sel > i {
-                                        self.state.ui.view_mesh = Some(sel - 1);
+                                    ui.separator();
+                                }
+                                if let Some(i) = to_remove {
+                                    self.view.meshes.remove(i);
+                                    if let Some(sel) = self.state.ui.view_mesh {
+                                        if sel == i {
+                                            self.state.ui.view_mesh = None;
+                                        } else if sel > i {
+                                            self.state.ui.view_mesh = Some(sel - 1);
+                                        }
+                                    }
+                                    if let Some(sel) = self.editor.mesh {
+                                        if sel == i {
+                                            self.editor.mesh = None;
+                                        } else if sel > i {
+                                            self.editor.mesh = Some(sel - 1);
+                                        }
                                     }
                                 }
-                                if let Some(sel) = self.editor.mesh {
-                                    if sel == i {
-                                        self.editor.mesh = None;
-                                    } else if sel > i {
-                                        self.editor.mesh = Some(sel - 1);
-                                    }
-                                }
-                            }
-                        },
-                        editor::EditorMode::Assembly => {},
-                        editor::EditorMode::Edit => {},
-                    }
+                            },
+                            editor::EditorMode::Assembly => {
+
+                            },
+                            editor::EditorMode::Edit => {
+
+                            },
+                        }
+                    });
+
+                    ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                        ui.add_space(5.);
+                        egui::ScrollArea::horizontal().show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.set_width(ui.available_width());
+                                let target = &mut self.cam().target;
+                                let spacing = ui.spacing().item_spacing.x;
+                                let width = (ui.available_width() - spacing * 2.0) / 3.0;
+                                let mut vars = HashMap::new();
+                                vars.insert("x".to_string(), target.x);
+                                vars.insert("y".to_string(), target.y);
+                                vars.insert("z".to_string(), target.z);
+                                ui.add_sized([width, 20.], MathDragValue::new(&mut target.x, &mut vars).speed(0.1));
+                                ui.add_sized([width, 20.], MathDragValue::new(&mut target.y, &mut vars).speed(0.1));
+                                ui.add_sized([width, 20.], MathDragValue::new(&mut target.z, &mut vars).speed(0.1));
+                            });
+                            ui.label("Camera Pivot");
+                        });
+                    });
                 });
+
             });
 
         egui::SidePanel::right("right_panel")
@@ -252,7 +284,177 @@ impl eframe::App for App {
             .resizable(false)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    // TODO: main panel
+                    match self.mode {
+                        editor::EditorMode::View => {
+                            if let Some(sel) = self.state.ui.view_mesh && let Some(mesh) = self.view.meshes.get_mut(sel) {
+                                if ui.button("+ Add Placement").clicked() {
+                                    mesh.placements.push(ViewPlacement::default());
+                                    self.state.ui.collapsed.entry(sel).or_default().push(false);
+                                    self.state.ui.view_rotation_modes.entry(sel).or_default()
+                                        .push([RotationDisplayMode::Euler(EulerSwizzle::YXZ), RotationDisplayMode::Euler(EulerSwizzle::YXZ)]);
+                                }
+
+                                let mut to_remove = None;
+                                for (i, placement) in mesh.placements.iter_mut().enumerate() {
+                                    let collapsed = self.state.ui.collapsed.entry(sel).or_default();
+                                    if collapsed.len() <= i { collapsed.push(false); }
+                                    let is_collapsed = &mut collapsed[i];
+
+                                    ui.horizontal(|ui| {
+                                        let icon = if *is_collapsed { "▶" } else { "▼" };
+                                        if ui.button(icon).clicked() {
+                                            *is_collapsed = !*is_collapsed;
+                                        }
+                                        ui.label(format!("Placement {}", i + 1));
+                                    });
+
+                                    if !*is_collapsed {
+                                        let w2 = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
+                                        let w3 = (ui.available_width() - ui.spacing().item_spacing.x * 2.0) / 3.0;
+
+                                        let vec3_row = |ui: &mut egui::Ui, v: &mut Vec3| {
+                                            let mut vars = HashMap::new();
+                                            vars.insert("x".to_string(), v.x);
+                                            vars.insert("y".to_string(), v.y);
+                                            vars.insert("z".to_string(), v.z);
+                                            ui.horizontal(|ui| {
+                                                for val in v.as_mut() {
+                                                    ui.allocate_ui_with_layout(egui::Vec2::new(w3, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                                        ui.set_clip_rect(ui.max_rect());
+                                                        ui.add_sized([w3, 20.], MathDragValue::new(val, &mut vars).speed(0.1).max_decimals(3));
+                                                    });
+                                                }
+                                            });
+                                        };
+
+                                        let quat_row = |ui: &mut egui::Ui, q: &mut Quat, mode: &mut RotationDisplayMode| {
+                                            ui.horizontal(|ui| {
+                                                let mode_label = match mode {
+                                                    RotationDisplayMode::Quaternion => "QUAT",
+                                                    RotationDisplayMode::Euler(s) => s.label()
+                                                };
+                                                if ui.small_button(mode_label).clicked() {
+                                                    *mode = mode.cycle();
+                                                }
+                                            });
+
+                                            match mode {
+                                                RotationDisplayMode::Quaternion => {
+                                                    let mut v = q.to_array();
+                                                    let mut vars = HashMap::new();
+                                                    vars.insert("x".to_string(), v[0]);
+                                                    vars.insert("y".to_string(), v[1]);
+                                                    vars.insert("z".to_string(), v[2]);
+                                                    vars.insert("w".to_string(), v[3]);
+                                                    ui.horizontal(|ui| {
+                                                        for val in &mut v[0..2] {
+                                                            ui.allocate_ui_with_layout(egui::Vec2::new(w2, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                                                ui.set_clip_rect(ui.max_rect());
+                                                                ui.add_sized([w2, 20.], MathDragValue::new(val, &mut vars).speed(0.001).max_decimals(3));
+                                                            });
+                                                        }
+                                                    });
+                                                    ui.horizontal(|ui| {
+                                                        for val in &mut v[2..4] {
+                                                            ui.allocate_ui_with_layout(egui::Vec2::new(w2, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                                                ui.set_clip_rect(ui.max_rect());
+                                                                ui.add_sized([w2, 20.], MathDragValue::new(val, &mut vars).speed(0.001).max_decimals(3));
+                                                            });
+                                                        }
+                                                    });
+                                                    *q = Quat::from_array(v);
+                                                }
+                                                RotationDisplayMode::Euler(swizzle) => {
+                                                    let (ax, ay, az) = q.to_euler(swizzle.to_glam());
+                                                    let [n1, n2, n3] = swizzle.names();
+                                                    let normalize_angle = |d: f32| {
+                                                        let d = if d == -0.0 { 0.0 } else { d };
+                                                        if (d - 180.0).abs() < 0.001 || (d + 180.0).abs() < 0.001 { 180.0 } else { d }
+                                                    };
+
+                                                    let mut degrees = [
+                                                        normalize_angle(ax.to_degrees()),
+                                                        normalize_angle(ay.to_degrees()),
+                                                        normalize_angle(az.to_degrees()),
+                                                    ];
+
+                                                    let mut vars = HashMap::new();
+                                                    vars.insert(n1.to_string(), degrees[0]);
+                                                    vars.insert(n2.to_string(), degrees[1]);
+                                                    vars.insert(n3.to_string(), degrees[2]);
+
+                                                    ui.horizontal(|ui| {
+                                                        for val in &mut degrees {
+                                                            ui.allocate_ui_with_layout(egui::Vec2::new(w3, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                                                ui.set_clip_rect(ui.max_rect());
+                                                                ui.add_sized([w3, 20.], MathDragValue::new(val, &mut vars).speed(0.5).max_decimals(1).suffix("\u{b0}").degrees());
+                                                            });
+                                                        }
+                                                    });
+                                                    let rot = glam::EulerRot::from(*swizzle);
+                                                    *q = Quat::from_euler(
+                                                        rot,
+                                                        degrees[0].to_radians(),
+                                                        degrees[1].to_radians(),
+                                                        degrees[2].to_radians(),
+                                                    );
+                                                }
+                                            }
+                                        };
+
+                                        let modes = self.state.ui.view_rotation_modes.entry(sel).or_default();
+                                        if modes.len() <= i {
+                                            modes.push([RotationDisplayMode::Euler(EulerSwizzle::YXZ), RotationDisplayMode::Euler(EulerSwizzle::YXZ)]);
+                                        }
+                                        let [rot_mode, off_mode] = &mut self.state.ui.view_rotation_modes
+                                            .get_mut(&sel).unwrap()[i];
+
+                                        ui.label("Position");
+                                        vec3_row(ui, &mut placement.position);
+
+                                        ui.label("Rotation");
+                                        quat_row(ui, &mut placement.rotation, rot_mode);
+
+                                        ui.horizontal(|ui| {
+                                            ui.allocate_ui_with_layout(egui::Vec2::new(w3, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                                ui.set_clip_rect(ui.max_rect());
+                                                ui.add(egui::DragValue::new(&mut placement.count).speed(1).range(1..=u32::MAX));
+                                            });
+                                            ui.label("Count");
+                                        });
+
+                                        ui.label("Offset Position");
+                                        vec3_row(ui, &mut placement.offset_pos);
+
+                                        ui.label("Offset Rotation");
+                                        quat_row(ui, &mut placement.offset_rot, off_mode);
+
+                                        if ui.add_sized([ui.available_width(), 20.0], egui::Button::new("Delete")).clicked() {
+                                            to_remove = Some(i);
+                                        }
+                                    }
+
+                                    ui.separator();
+                                }
+
+                                if let Some(rem) = to_remove {
+                                    mesh.placements.remove(rem);
+                                    if let Some(collapsed) = self.state.ui.collapsed.get_mut(&sel) {
+                                        collapsed.remove(rem);
+                                    }
+                                    if let Some(modes) = self.state.ui.view_rotation_modes.get_mut(&sel) {
+                                        modes.remove(rem);
+                                    }
+                                }
+                            }
+                        },
+                        editor::EditorMode::Assembly => {
+
+                        },
+                        editor::EditorMode::Edit => {
+
+                        },
+                    }
                 });
             });
 
@@ -276,7 +478,7 @@ impl eframe::App for App {
 
                             let w = rect.width();
                             let h = rect.height();
-                            let mvp = s.ref_mut().cam().mvp(w, h);
+                            let vp = s.ref_mut().cam().vp(w, h);
 
                             gl.clear_color(0.07, 0.08, 0.11, 1.);
                             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
@@ -286,7 +488,7 @@ impl eframe::App for App {
                                 let flat = s.render.renderer.flat;
                                 gl.use_program(Some(flat));
                                 if let Some(l) = gl.get_uniform_location(flat, "uMVP") {
-                                    gl.uniform_matrix_4_f32_slice(Some(&l), false, &mvp.to_cols_array());
+                                    gl.uniform_matrix_4_f32_slice(Some(&l), false, &vp.to_cols_array());
                                 }
                                 if let Some(l) = gl.get_uniform_location(flat, "uColor") {
                                     gl.uniform_4_f32(Some(&l), 0.27, 0.27, 0.34, 0.5);
@@ -317,10 +519,17 @@ impl eframe::App for App {
                                         }
                                     }
 
-                                    s.render.renderer.draw_meshes(gl, &mvp, &calls);
+                                    s.render.renderer.draw_meshes(gl, &vp, &calls);
                                 }
                                 editor::EditorMode::Assembly => {
-
+                                    if let Some(sel) = s.editor.mesh && let Some(mesh) = s.view.meshes.get(sel) {
+                                        let mut instances = Vec::new();
+                                        if let Some(mesh) = mesh.render_assembly(&mut instances) {
+                                            s.render.renderer.draw_meshes(gl, &vp, &[
+                                                MeshDrawCall { mesh, instances, wireframe: s.state.wireframe }
+                                            ]);
+                                        }
+                                    }
                                 }
                                 editor::EditorMode::Edit => {
 
