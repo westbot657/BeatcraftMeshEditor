@@ -30,9 +30,6 @@ void main() {
     int bayer = BAYER[by * 4 + bx];
 
     if (!gl_FrontFacing) {
-        // threshold goes from 15 (near, almost fully discarded)
-        // down to 1 (far, almost fully kept)
-        // clamp depth to [0, 50] then remap to threshold [15, 1]
         float t = 1.0 - clamp(vDepth / 50.0, 0.0, 1.0);
         int threshold = int(mix(15.0, 1.0, t));
         if (bayer >= threshold) discard;
@@ -41,6 +38,6 @@ void main() {
     vec3 N = normalize(vN);
     if (!gl_FrontFacing) N = -N;
     float diff = max(dot(N, LIGHT), 0.0) * 0.6 + 0.4;
-    vec3 base  = (vCh > 7) ? vColorAlpha.rgb : COLORS[vCh & 7];
-    fragColor  = vec4(base * diff, vColorAlpha.a);
+    vec3 base = (vCh > 7) ? vColorAlpha.rgb : COLORS[vCh & 7];
+    fragColor = vec4(base * diff, vColorAlpha.a);
 }

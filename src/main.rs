@@ -26,7 +26,6 @@ use std::sync::{Arc, mpsc};
 
 use eframe::glow::{self, HasContext};
 use egui::Frame;
-use egui::ahash::HashMapExt;
 use glam::{Mat4, Quat, Vec3};
 
 use self::editor::{App, EulerSwizzle, RotationDisplayMode, ViewPlacement};
