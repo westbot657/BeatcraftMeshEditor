@@ -102,7 +102,7 @@ impl GpuMesh {
     ) {
         self.vertex_count = positions.len();
 
-        let pos: &[u8]  = bytemuck::cast_slice(positions);
+        let pos: &[u8] = bytemuck::cast_slice(positions);
         let norm: &[u8] = bytemuck::cast_slice(normals);
         let chan: &[u8] = bytemuck::cast_slice(channels);
 
@@ -129,19 +129,32 @@ impl GpuMesh {
         }
     }
 
-    pub fn new(
-        gl: &glow::Context,
-        positions: &[Vec3],
-        normals: &[Vec3],
-        channels: &[i32],
-    ) -> Self {
+    pub fn new(gl: &glow::Context, positions: &[Vec3], normals: &[Vec3], channels: &[i32]) -> Self {
         unsafe {
             let vao = gl.create_vertex_array().unwrap();
             gl.bind_vertex_array(Some(vao));
             let vbos = [
-                { let vbo = gl.create_buffer().unwrap(); gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo)); gl.enable_vertex_attrib_array(0); gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0); vbo },
-                { let vbo = gl.create_buffer().unwrap(); gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo)); gl.enable_vertex_attrib_array(1); gl.vertex_attrib_pointer_f32(1, 3, glow::FLOAT, false, 0, 0); vbo },
-                { let vbo = gl.create_buffer().unwrap(); gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo)); gl.enable_vertex_attrib_array(2); gl.vertex_attrib_pointer_i32(2, 1, glow::INT, 0, 0); vbo },
+                {
+                    let vbo = gl.create_buffer().unwrap();
+                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+                    gl.enable_vertex_attrib_array(0);
+                    gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
+                    vbo
+                },
+                {
+                    let vbo = gl.create_buffer().unwrap();
+                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+                    gl.enable_vertex_attrib_array(1);
+                    gl.vertex_attrib_pointer_f32(1, 3, glow::FLOAT, false, 0, 0);
+                    vbo
+                },
+                {
+                    let vbo = gl.create_buffer().unwrap();
+                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+                    gl.enable_vertex_attrib_array(2);
+                    gl.vertex_attrib_pointer_i32(2, 1, glow::INT, 0, 0);
+                    vbo
+                },
             ];
             let instance_vbo = Self::setup_instance_attribs(gl);
             gl.bind_vertex_array(None);
@@ -149,16 +162,38 @@ impl GpuMesh {
             let point_vao = gl.create_vertex_array().unwrap();
             gl.bind_vertex_array(Some(point_vao));
             let point_vbos = [
-                { let vbo = gl.create_buffer().unwrap(); gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo)); gl.enable_vertex_attrib_array(0); gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0); vbo },
-                { let vbo = gl.create_buffer().unwrap(); gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo)); gl.enable_vertex_attrib_array(1); gl.vertex_attrib_pointer_f32(1, 3, glow::FLOAT, false, 0, 0); vbo },
-                { let vbo = gl.create_buffer().unwrap(); gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo)); gl.enable_vertex_attrib_array(2); gl.vertex_attrib_pointer_i32(2, 1, glow::INT, 0, 0); vbo },
+                {
+                    let vbo = gl.create_buffer().unwrap();
+                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+                    gl.enable_vertex_attrib_array(0);
+                    gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
+                    vbo
+                },
+                {
+                    let vbo = gl.create_buffer().unwrap();
+                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+                    gl.enable_vertex_attrib_array(1);
+                    gl.vertex_attrib_pointer_f32(1, 3, glow::FLOAT, false, 0, 0);
+                    vbo
+                },
+                {
+                    let vbo = gl.create_buffer().unwrap();
+                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+                    gl.enable_vertex_attrib_array(2);
+                    gl.vertex_attrib_pointer_i32(2, 1, glow::INT, 0, 0);
+                    vbo
+                },
             ];
             let point_instance_vbo = Self::setup_instance_attribs(gl);
             gl.bind_vertex_array(None);
 
             let mut mesh = Self {
-                vao, vbos, instance_vbo,
-                point_vao, point_vbos, point_instance_vbo,
+                vao,
+                vbos,
+                instance_vbo,
+                point_vao,
+                point_vbos,
+                point_instance_vbo,
                 vertex_count: 0,
             };
             mesh.rebuild(gl, positions, normals, channels);
@@ -166,8 +201,16 @@ impl GpuMesh {
         }
     }
 
-    pub fn draw_tris(&self, gl: &glow::Context, instances: &[InstanceData], wireframe: bool, renderer: &Renderer) {
-        if instances.is_empty() { return; }
+    pub fn draw_tris(
+        &self,
+        gl: &glow::Context,
+        instances: &[InstanceData],
+        wireframe: bool,
+        renderer: &Renderer,
+    ) {
+        if instances.is_empty() {
+            return;
+        }
         unsafe {
             gl.bind_vertex_array(Some(self.vao));
             Self::upload_instances(gl, self.instance_vbo, instances);
@@ -186,19 +229,30 @@ impl GpuMesh {
     }
 
     pub fn draw_points(&self, gl: &glow::Context, instances: &[InstanceData]) {
-        if instances.is_empty() { return; }
+        if instances.is_empty() {
+            return;
+        }
         unsafe {
             gl.bind_vertex_array(Some(self.point_vao));
             Self::upload_instances(gl, self.point_instance_vbo, instances);
-            gl.draw_arrays_instanced(glow::POINTS, 0, self.vertex_count as i32, instances.len() as i32);
+            gl.draw_arrays_instanced(
+                glow::POINTS,
+                0,
+                self.vertex_count as i32,
+                instances.len() as i32,
+            );
             gl.bind_vertex_array(None);
         }
     }
 
     pub fn destroy(self, gl: &glow::Context) {
         unsafe {
-            for vbo in self.vbos { gl.delete_buffer(vbo); }
-            for vbo in self.point_vbos { gl.delete_buffer(vbo); }
+            for vbo in self.vbos {
+                gl.delete_buffer(vbo);
+            }
+            for vbo in self.point_vbos {
+                gl.delete_buffer(vbo);
+            }
             gl.delete_buffer(self.instance_vbo);
             gl.delete_buffer(self.point_instance_vbo);
             gl.delete_vertex_array(self.vao);
@@ -206,10 +260,16 @@ impl GpuMesh {
         }
     }
 
-    pub fn set_from_hashmap(gl: &glow::Context, mesh: &LightMesh, mut gpu_meshes: HashMap<String, Self>) -> HashMap<String, Self> {
+    pub fn set_from_hashmap(
+        gl: &glow::Context,
+        mesh: &LightMesh,
+        mut gpu_meshes: HashMap<String, Self>,
+    ) -> HashMap<String, Self> {
         let mut out = HashMap::new();
         for (name, part) in mesh.parts.iter() {
-            let mut gpu_mesh = gpu_meshes.remove(name).unwrap_or_else(|| GpuMesh::new(gl, &[], &[], &[]));
+            let mut gpu_mesh = gpu_meshes
+                .remove(name)
+                .unwrap_or_else(|| GpuMesh::new(gl, &[], &[], &[]));
             gpu_mesh.set_from_light_mesh_part(gl, part, &mesh.data);
             out.insert(name.clone(), gpu_mesh);
         }
@@ -237,13 +297,27 @@ impl GpuMesh {
         let flip = mat3.determinant() < 0.;
 
         for Triangle {
-            vertices: [
-                Vertex { vertex: v0, uv:_, normal: n0 },
-                Vertex { vertex: v1, uv:_, normal: n1 },
-                Vertex { vertex: v2, uv:_, normal: n2 }
-            ],
-            material
-        } in part.triangles.0.iter() {
+            vertices:
+                [
+                    Vertex {
+                        vertex: v0,
+                        uv: _,
+                        normal: n0,
+                    },
+                    Vertex {
+                        vertex: v1,
+                        uv: _,
+                        normal: n1,
+                    },
+                    Vertex {
+                        vertex: v2,
+                        uv: _,
+                        normal: n2,
+                    },
+                ],
+            material,
+        } in part.triangles.0.iter()
+        {
             let mut verts = [
                 transform.transform_point3(part.resolve_vertex(v0).unwrap()),
                 transform.transform_point3(part.resolve_vertex(v1).unwrap()),
@@ -265,25 +339,26 @@ impl GpuMesh {
             normals.extend_from_slice(&norms);
 
             let material = match material {
-                Some(mat) => {
-                    Some(if let Some(remap) = remap_data.get(mat) {
-                        remap.as_str()
-                    } else {
-                        mat.as_str()
-                    })
-                }
-                None => None
+                Some(mat) => Some(if let Some(remap) = remap_data.get(mat) {
+                    remap.as_str()
+                } else {
+                    mat.as_str()
+                }),
+                None => None,
             };
 
             if let Some(MaterialData {
-                material, texture:_, color
-            }) = data.get(material.unwrap_or("default")) && *material != 0 {
+                material,
+                texture: _,
+                color,
+            }) = data.get(material.unwrap_or("default"))
+                && *material != 0
+            {
                 channels.extend_from_slice(&[*color as i32; 3]);
             } else {
                 channels.extend_from_slice(&[8; 3]);
             }
         }
-
     }
 
     pub fn set_from_full_light_mesh(&mut self, gl: &glow::Context, light_mesh: &LightMesh) {
@@ -294,19 +369,39 @@ impl GpuMesh {
         for placement in light_mesh.placements.iter() {
             let mat = placement.transform();
             let part = light_mesh.parts.get(&placement.part).unwrap();
-            Self::add_triangle_data(&mut vertices, &mut normals, &mut channels, part, &light_mesh.data, &mat, &placement.remap_data);
+            Self::add_triangle_data(
+                &mut vertices,
+                &mut normals,
+                &mut channels,
+                part,
+                &light_mesh.data,
+                &mat,
+                &placement.remap_data,
+            );
         }
 
         self.rebuild(gl, &vertices, &normals, &channels);
     }
 
-    pub fn set_from_light_mesh_part(&mut self, gl: &glow::Context, part: &Part, data: &IndexMap<String, MaterialData>) {
-
+    pub fn set_from_light_mesh_part(
+        &mut self,
+        gl: &glow::Context,
+        part: &Part,
+        data: &IndexMap<String, MaterialData>,
+    ) {
         let mut vertices = Vec::new();
         let mut normals = Vec::new();
         let mut channels = Vec::new();
 
-        Self::add_triangle_data(&mut vertices, &mut normals, &mut channels, part, data, &Mat4::IDENTITY, &IndexMap::default());
+        Self::add_triangle_data(
+            &mut vertices,
+            &mut normals,
+            &mut channels,
+            part,
+            data,
+            &Mat4::IDENTITY,
+            &IndexMap::default(),
+        );
 
         self.rebuild(gl, &vertices, &normals, &channels);
     }
@@ -322,71 +417,125 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    fn compile_shader(gl: &glow::Context, vs: &str, fs: &str) -> Result<glow::NativeProgram, String> {
+    fn compile_shader(
+        gl: &glow::Context,
+        vs: &str,
+        fs: &str,
+    ) -> Result<glow::NativeProgram, String> {
         unsafe {
-            let v = gl.create_shader(glow::VERTEX_SHADER).map_err(|e| e.to_string())?;
-            gl.shader_source(v, vs); gl.compile_shader(v);
-            if !gl.get_shader_compile_status(v) { return Err(gl.get_shader_info_log(v)); }
-            let f = gl.create_shader(glow::FRAGMENT_SHADER).map_err(|e| e.to_string())?;
-            gl.shader_source(f, fs); gl.compile_shader(f);
-            if !gl.get_shader_compile_status(f) { return Err(gl.get_shader_info_log(f)); }
+            let v = gl
+                .create_shader(glow::VERTEX_SHADER)
+                .map_err(|e| e.to_string())?;
+            gl.shader_source(v, vs);
+            gl.compile_shader(v);
+            if !gl.get_shader_compile_status(v) {
+                return Err(gl.get_shader_info_log(v));
+            }
+            let f = gl
+                .create_shader(glow::FRAGMENT_SHADER)
+                .map_err(|e| e.to_string())?;
+            gl.shader_source(f, fs);
+            gl.compile_shader(f);
+            if !gl.get_shader_compile_status(f) {
+                return Err(gl.get_shader_info_log(f));
+            }
             let p = gl.create_program().map_err(|e| e.to_string())?;
-            gl.attach_shader(p, v); gl.attach_shader(p, f); gl.link_program(p);
-            if !gl.get_program_link_status(p) { return Err(gl.get_program_info_log(p)); }
-            gl.delete_shader(v); gl.delete_shader(f);
+            gl.attach_shader(p, v);
+            gl.attach_shader(p, f);
+            gl.link_program(p);
+            if !gl.get_program_link_status(p) {
+                return Err(gl.get_program_info_log(p));
+            }
+            gl.delete_shader(v);
+            gl.delete_shader(f);
             Ok(p)
         }
     }
 
     pub fn new(gl: &glow::Context) -> Result<Self, String> {
         unsafe {
-            let mesh = Self::compile_shader(gl, include_str!("./assets/shaders/mesh.vert"), include_str!("./assets/shaders/mesh.frag"))?;
-            let point = Self::compile_shader(gl, include_str!("./assets/shaders/point.vert"), include_str!("./assets/shaders/point.frag"))?;
-            let flat = Self::compile_shader(gl, include_str!("./assets/shaders/flat.vert"), include_str!("./assets/shaders/flat.frag"))?;
+            let mesh = Self::compile_shader(
+                gl,
+                include_str!("./assets/shaders/mesh.vert"),
+                include_str!("./assets/shaders/mesh.frag"),
+            )?;
+            let point = Self::compile_shader(
+                gl,
+                include_str!("./assets/shaders/point.vert"),
+                include_str!("./assets/shaders/point.frag"),
+            )?;
+            let flat = Self::compile_shader(
+                gl,
+                include_str!("./assets/shaders/flat.vert"),
+                include_str!("./assets/shaders/flat.frag"),
+            )?;
 
             let mut grid_pts: Vec<f32> = vec![];
             let (size, step) = (300i32, 10i32);
             let mut i = -size;
             while i <= size {
-                let fi = i as f32; let fs = size as f32;
-                grid_pts.extend_from_slice(&[fi,0.0,-fs, fi,0.0,fs, -fs,0.0,fi, fs,0.0,fi]);
+                let fi = i as f32;
+                let fs = size as f32;
+                grid_pts.extend_from_slice(&[fi, 0.0, -fs, fi, 0.0, fs, -fs, 0.0, fi, fs, 0.0, fi]);
                 i += step;
             }
             let grid_vao = gl.create_vertex_array()?;
             gl.bind_vertex_array(Some(grid_vao));
             let gvbo = gl.create_buffer()?;
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(gvbo));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, bytemuck::cast_slice(&grid_pts), glow::STATIC_DRAW);
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(&grid_pts),
+                glow::STATIC_DRAW,
+            );
             gl.enable_vertex_attrib_array(0);
             gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
             gl.bind_vertex_array(None);
             let grid_n = (grid_pts.len() / 3) as i32;
 
             let ax: f32 = size as f32;
-            let axis_pts: [f32; 12] = [0.0,0.0,0.0, ax,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,ax];
+            let axis_pts: [f32; 12] = [0.0, 0.0, 0.0, ax, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, ax];
             let axis_vao = gl.create_vertex_array()?;
             gl.bind_vertex_array(Some(axis_vao));
             let avbo = gl.create_buffer()?;
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(avbo));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, bytemuck::cast_slice(&axis_pts), glow::STATIC_DRAW);
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(&axis_pts),
+                glow::STATIC_DRAW,
+            );
             gl.enable_vertex_attrib_array(0);
             gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
             gl.bind_vertex_array(None);
 
             gl.enable(glow::PROGRAM_POINT_SIZE);
 
-            Ok(Self { mesh, point, flat, grid_vao, grid_n, axis_vao })
+            Ok(Self {
+                mesh,
+                point,
+                flat,
+                grid_vao,
+                grid_n,
+                axis_vao,
+            })
         }
     }
 
-    pub fn draw_meshes(&self, gl: &glow::Context, vp: &Mat4, eye: Vec3, calls: &[MeshDrawCall<'_>]) {
+    pub fn draw_meshes(
+        &self,
+        gl: &glow::Context,
+        vp: &Mat4,
+        eye: Vec3,
+        calls: &[MeshDrawCall<'_>],
+    ) {
         unsafe {
             gl.use_program(Some(self.mesh));
             self.set_mat4(gl, self.mesh, "uVP", vp);
             self.set_vec3(gl, self.mesh, "uCamPos", eye);
             for call in calls {
                 self.set_int(gl, self.mesh, "uWire", 0);
-                call.mesh.draw_tris(gl, &call.instances, call.wireframe, self);
+                call.mesh
+                    .draw_tris(gl, &call.instances, call.wireframe, self);
             }
         }
     }

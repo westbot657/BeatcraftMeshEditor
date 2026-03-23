@@ -1,8 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 use std::f32::consts::PI;
-use std::{fs, mem};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
+use std::{fs, mem};
 
 use eframe::glow::Context;
 use egui::{Key, Response};
@@ -10,9 +10,10 @@ use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 
 use crate::RefDuper;
 use crate::data::{SessionData, SessionMeshData, SessionPlacementData, VertexId};
-use crate::light_mesh::{LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot, Part};
+use crate::light_mesh::{
+    LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot, Part,
+};
 use crate::render::{GpuMesh, InstanceData, Renderer};
-
 
 #[derive(Copy, Clone)]
 pub struct Camera {
@@ -37,7 +38,9 @@ impl Camera {
     pub fn proj_mat(&self, w: f32, h: f32) -> Mat4 {
         Mat4::perspective_rh(self.fov, (w / h).max(0.001), 0.1, 5000.0)
     }
-    pub fn vp(&self, w: f32, h: f32) -> Mat4 { self.proj_mat(w, h) * self.view_mat() }
+    pub fn vp(&self, w: f32, h: f32) -> Mat4 {
+        self.proj_mat(w, h) * self.view_mat()
+    }
     pub fn left(&self) -> Vec3 {
         let m = self.view_mat();
         Vec3::new(m.col(0).x, m.col(1).x, m.col(2).x)
@@ -46,7 +49,9 @@ impl Camera {
         let m = self.view_mat();
         Vec3::new(m.col(0).y, m.col(1).y, m.col(2).y)
     }
-    pub fn forward(&self) -> Vec3 { (self.target - self.eye()).normalize() }
+    pub fn forward(&self) -> Vec3 {
+        (self.target - self.eye()).normalize()
+    }
     pub fn pick_radius(&self, screen_px: f32, h: f32) -> f32 {
         let view_h = 2.0 * self.dist * (self.fov / 2.0).tan();
         (screen_px / h) * view_h
@@ -64,7 +69,6 @@ impl Default for Camera {
         }
     }
 }
-
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum EditorMode {
@@ -127,9 +131,11 @@ pub struct ViewPlacementsSnapshot {
 impl Default for ViewPlacement {
     fn default() -> Self {
         Self {
-            position: Vec3::ZERO, rotation: Quat::IDENTITY,
+            position: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
             count: 1,
-            offset_pos: Vec3::ZERO, offset_rot: Quat::IDENTITY,
+            offset_pos: Vec3::ZERO,
+            offset_rot: Quat::IDENTITY,
             visible: true,
         }
     }
@@ -150,14 +156,17 @@ impl ViewMesh {
             data: light_mesh,
             gpu_bufs: (HashMap::new(), None),
             visible: true,
-            placements: Vec::new()
+            placements: Vec::new(),
         }
     }
 
     pub fn rebuild(&mut self, gl: &Context) {
         let v = mem::take(&mut self.gpu_bufs.0);
         self.gpu_bufs.0 = GpuMesh::set_from_hashmap(gl, &self.data, v);
-        let full = self.gpu_bufs.1.get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[]));
+        let full = self
+            .gpu_bufs
+            .1
+            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[]));
         full.set_from_full_light_mesh(gl, &self.data);
     }
 
@@ -170,7 +179,11 @@ impl ViewMesh {
                     let mut pos = placement.position;
                     let mut rot = placement.rotation;
                     for _ in 0..placement.count {
-                        calls.push(InstanceData::new(Mat4::from_translation(pos) * Mat4::from_quat(rot), 1., Some([0.2, 0.2, 0.2])));
+                        calls.push(InstanceData::new(
+                            Mat4::from_translation(pos) * Mat4::from_quat(rot),
+                            1.,
+                            Some([0.2, 0.2, 0.2]),
+                        ));
                         pos += placement.offset_pos;
                         rot *= placement.offset_rot;
                     }
@@ -195,7 +208,6 @@ impl ViewMesh {
             m.destroy(gl);
         }
     }
-
 }
 
 pub struct Render {
@@ -241,7 +253,7 @@ pub struct ClickCycle {
 pub struct View {
     pub meshes: Vec<ViewMesh>,
     pub session: Option<PathBuf>,
-    pub camera: Camera
+    pub camera: Camera,
 }
 
 pub struct Assembly {
@@ -354,7 +366,7 @@ pub struct UiState {
     pub open_mesh_channel: Option<mpsc::Receiver<Vec<PathBuf>>>,
     pub open_session_channel: Option<mpsc::Receiver<PathBuf>>,
     pub collapsed: HashMap<usize, Vec<bool>>,
-    pub view_rotation_modes: HashMap<usize, Vec<[RotationDisplayMode; 2]>>
+    pub view_rotation_modes: HashMap<usize, Vec<[RotationDisplayMode; 2]>>,
 }
 
 #[derive(Debug)]
@@ -416,11 +428,15 @@ impl History {
                     HistoryEntry::MeshPart(LightMeshPartSnapshot {
                         idx,
                         name,
-                        part: Box::new(current)
+                        part: Box::new(current),
                     })
-                },
+                }
                 HistoryEntry::MeshMeta(LightMeshMetaSnapshot {
-                    idx, mut credits, mut textures, mut data, mut cull
+                    idx,
+                    mut credits,
+                    mut textures,
+                    mut data,
+                    mut cull,
                 }) => {
                     let m = view_meshes.get_mut(idx).unwrap();
                     mem::swap(&mut credits, &mut m.data.credits);
@@ -429,35 +445,38 @@ impl History {
                     mem::swap(&mut cull, &mut m.data.cull);
                     m.rebuild(gl);
                     HistoryEntry::MeshMeta(LightMeshMetaSnapshot {
-                        idx, credits, textures, data, cull
+                        idx,
+                        credits,
+                        textures,
+                        data,
+                        cull,
                     })
-                },
+                }
                 HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
-                    view_idx, mut placements
+                    view_idx,
+                    mut placements,
                 }) => {
                     let m = view_meshes.get_mut(view_idx).unwrap();
                     mem::swap(&mut placements, &mut m.data.placements);
                     m.rebuild(gl);
                     HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
-                        view_idx, placements
+                        view_idx,
+                        placements,
                     })
-                },
+                }
                 HistoryEntry::ViewPlacement(ViewPlacementsSnapshot {
-                    idx, mut placements
+                    idx,
+                    mut placements,
                 }) => {
                     let m = view_meshes.get_mut(idx).unwrap();
                     mem::swap(&mut placements, &mut m.placements);
                     m.rebuild(gl);
-                    HistoryEntry::ViewPlacement(ViewPlacementsSnapshot {
-                        idx, placements
-                    })
-                },
+                    HistoryEntry::ViewPlacement(ViewPlacementsSnapshot { idx, placements })
+                }
             };
             back.push_back(save);
         }
-
     }
-
 }
 
 pub struct App {
@@ -485,18 +504,21 @@ pub struct TriMeta {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext, path: Option<PathBuf>) -> Self {
-
         let mut fonts = egui::FontDefinitions::default();
         fonts.font_data.insert(
             "source-code-pro".to_string(),
-            Arc::new(egui::FontData::from_static(include_bytes!("./assets/fonts/SourceCodePro-Regular.ttf")))
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "./assets/fonts/SourceCodePro-Regular.ttf"
+            ))),
         );
-        fonts.families
+        fonts
+            .families
             .get_mut(&egui::FontFamily::Monospace)
             .unwrap()
             .insert(0, String::from("source-code-pro"));
 
-        fonts.families
+        fonts
+            .families
             .get_mut(&egui::FontFamily::Proportional)
             .unwrap()
             .insert(0, String::from("source-code-pro"));
@@ -534,8 +556,16 @@ impl App {
                 rot_axis: Vec3::ZERO,
             },
             click_cycle: ClickCycle {
-                vertices: InnerCycle { last_pos: Vec2::ZERO, candidates: Vec::new(), current: 0 },
-                instances: InnerCycle { last_pos: Vec2::ZERO, candidates: Vec::new(), current: 0 },
+                vertices: InnerCycle {
+                    last_pos: Vec2::ZERO,
+                    candidates: Vec::new(),
+                    current: 0,
+                },
+                instances: InnerCycle {
+                    last_pos: Vec2::ZERO,
+                    candidates: Vec::new(),
+                    current: 0,
+                },
             },
             view: View {
                 meshes: Vec::new(),
@@ -543,7 +573,10 @@ impl App {
                 camera: Camera::default(),
             },
             state: State {
-                vp_rect: egui::Rect { min: egui::Pos2 { x: 0., y: 0. }, max: egui::Pos2 { x: 0., y: 0. } },
+                vp_rect: egui::Rect {
+                    min: egui::Pos2 { x: 0., y: 0. },
+                    max: egui::Pos2 { x: 0., y: 0. },
+                },
                 wireframe: true,
                 show_grid: true,
                 show_verts: true,
@@ -562,11 +595,13 @@ impl App {
             history: History {
                 history: VecDeque::new(),
                 future: VecDeque::new(),
-                limit: 200
-            }
+                limit: 200,
+            },
         };
 
-        if let Some(p) = path && s.load_session(&p, &gl2).is_err() {
+        if let Some(p) = path
+            && s.load_session(&p, &gl2).is_err()
+        {
             let _ = s.load_meshes(vec![p], &gl2);
         }
 
@@ -585,9 +620,9 @@ impl App {
         let mut meshes = Self::load_meshes_to_vec(paths, gl)?;
         // Clear out old meshes with same paths as new meshes
         self.view.meshes.retain(|view_mesh| {
-            !meshes.iter().any(|new_mesh| {
-                new_mesh.path == view_mesh.path
-            })
+            !meshes
+                .iter()
+                .any(|new_mesh| new_mesh.path == view_mesh.path)
         });
         self.view.meshes.append(&mut meshes);
         Ok(())
@@ -601,7 +636,6 @@ impl App {
         }
     }
 
-
     pub fn rebuild_meshes(&mut self, gl: &Context) {
         for view_mesh in self.view.meshes.iter_mut() {
             view_mesh.rebuild(gl);
@@ -613,24 +647,25 @@ impl App {
     }
 
     pub fn handle_keys(&mut self, ctx: &egui::Context, gl: &Context) {
-
-        if self.block_input() { return; }
+        if self.block_input() {
+            return;
+        }
 
         let input = ctx.input(|i| i.clone());
         let ctrl = input.modifiers.ctrl;
         let shift = input.modifiers.shift;
 
         if ctrl && input.key_pressed(Key::Z) {
-            if shift { self.redo(gl); } else { self.undo(gl); }
+            if shift {
+                self.redo(gl);
+            } else {
+                self.undo(gl);
+            }
         }
         if ctrl && input.key_pressed(Key::S) {
             match self.mode {
-                EditorMode::View => {
-
-                }
-                EditorMode::Assembly | EditorMode::Edit => {
-
-                }
+                EditorMode::View => {}
+                EditorMode::Assembly | EditorMode::Edit => {}
             }
         }
         if ctrl && input.key_pressed(Key::C) {
@@ -660,51 +695,60 @@ impl App {
         }
 
         match self.mode {
-            EditorMode::View => {},
+            EditorMode::View => {}
             EditorMode::Assembly => {
                 if input.key_pressed(Key::E) {
                     self.last_mode = self.mode;
                     self.mode = EditorMode::Edit;
                     if self.editor.part.is_none()
-                    && let Some(sel) = self.editor.mesh
-                    && let Some(mesh) = self.view.meshes.get(sel)
-                    && !mesh.data.parts.is_empty() {
+                        && let Some(sel) = self.editor.mesh
+                        && let Some(mesh) = self.view.meshes.get(sel)
+                        && !mesh.data.parts.is_empty()
+                    {
                         self.editor.part = Some(0);
                     }
                 }
-            },
+            }
             EditorMode::Edit => {
                 if input.key_pressed(Key::E) {
                     self.last_mode = self.mode;
                     self.mode = EditorMode::Assembly;
                 }
                 if input.key_pressed(Key::OpenBracket)
-                && let Some(sel) = self.editor.mesh
-                && let Some(mesh) = self.view.meshes.get(sel) {
+                    && let Some(sel) = self.editor.mesh
+                    && let Some(mesh) = self.view.meshes.get(sel)
+                {
                     if mesh.data.part_names.is_empty() {
                         self.editor.part = None;
                     } else {
                         let l = mesh.data.part_names.len();
-                        self.editor.part = Some(self.editor.part.map(|x| (x + l - 1) % l).unwrap_or(0));
+                        self.editor.part =
+                            Some(self.editor.part.map(|x| (x + l - 1) % l).unwrap_or(0));
                     }
                 }
                 if input.key_pressed(Key::CloseBracket)
-                && let Some(sel) = self.editor.mesh
-                && let Some(mesh) = self.view.meshes.get(sel) {
+                    && let Some(sel) = self.editor.mesh
+                    && let Some(mesh) = self.view.meshes.get(sel)
+                {
                     if mesh.data.part_names.is_empty() {
                         self.editor.part = None;
                     } else {
-                        self.editor.part = Some(self.editor.part.map(|x| (x + 1) % mesh.data.part_names.len()).unwrap_or(0));
+                        self.editor.part = Some(
+                            self.editor
+                                .part
+                                .map(|x| (x + 1) % mesh.data.part_names.len())
+                                .unwrap_or(0),
+                        );
                     }
                 }
-            },
+            }
         }
-
     }
 
     pub fn handle_3d_input(&mut self, resp: &Response, ctx: &egui::Context, gl: &Context) {
-
-        if self.block_input() { return; }
+        if self.block_input() {
+            return;
+        }
 
         let rect = self.state.vp_rect;
         let w = rect.width();
@@ -718,7 +762,8 @@ impl App {
         let secondary_pressed = resp.drag_started_by(egui::PointerButton::Secondary);
         let primary_released = resp.drag_stopped_by(egui::PointerButton::Primary);
 
-        let mouse_pos = pointer.latest_pos()
+        let mouse_pos = pointer
+            .latest_pos()
             .map(|p| Vec2::new(p.x - rect.min.x, p.y - rect.min.y))
             .unwrap_or(Vec2::new(0., h));
 
@@ -726,9 +771,21 @@ impl App {
         let my = h - mouse_pos.y;
 
         if resp.hovered() {
-            let scroll = ctx.input(|i| if shift { i.raw_scroll_delta.x } else { i.raw_scroll_delta.y } );
+            let scroll = ctx.input(|i| {
+                if shift {
+                    i.raw_scroll_delta.x
+                } else {
+                    i.raw_scroll_delta.y
+                }
+            });
             if scroll != 0. {
-                let factor = if scroll > 0. { if shift { 0.44 } else { 0.88 } } else if shift { 2.24 } else { 1.12 };
+                let factor = if scroll > 0. {
+                    if shift { 0.44 } else { 0.88 }
+                } else if shift {
+                    2.24
+                } else {
+                    1.12
+                };
                 self.cam().dist = (self.cam().dist * factor).clamp(0.05, 5000.);
             }
         }
@@ -752,19 +809,19 @@ impl App {
             let ldx = drag_delta.x;
             let ldy = drag_delta.y;
             match self.drag.state {
-                DragState::None => {},
+                DragState::None => {}
                 DragState::Orbit => {
                     let cam = self.cam();
                     cam.yaw -= ldx * 0.008;
-                    cam.pitch = (cam.pitch + ldy * 0.008).clamp(-PI/2.+0.001, PI/2.-0.001);
-                },
+                    cam.pitch = (cam.pitch + ldy * 0.008).clamp(-PI / 2. + 0.001, PI / 2. - 0.001);
+                }
                 DragState::Pan => {
                     let cam = self.cam();
                     let sc = cam.dist * 0.0012;
                     let r = cam.left() * ldx * sc;
                     let u = cam.up_vec() * ldy * sc;
                     cam.target -= r - u;
-                },
+                }
                 DragState::Vertex => {
                     // Project mouse delta onto a plane at drag_ref facing the camera.
                     // We unproject both last and current mouse positions to rays, then
@@ -778,13 +835,16 @@ impl App {
 
                     let ray_to_plane = |ray_pos: Vec3, ray_dir: Vec3| -> Option<Vec3> {
                         let denom = plane_normal.dot(ray_dir);
-                        if denom.abs() < 1e-6 { return None; }
+                        if denom.abs() < 1e-6 {
+                            return None;
+                        }
                         let t = plane_normal.dot(drag_ref - ray_pos) / denom;
                         Some(ray_pos + ray_dir * t)
                     };
 
                     let (rp0, rd0) = Self::unproject(last, Vec2::new(w, h), &cam.vp(w, h));
-                    let (rp1, rd1) = Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &cam.vp(w, h));
+                    let (rp1, rd1) =
+                        Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &cam.vp(w, h));
 
                     if let (Some(p0), Some(p1)) = (ray_to_plane(rp0, rd0), ray_to_plane(rp1, rd1)) {
                         let delta = p1 - p0;
@@ -792,7 +852,8 @@ impl App {
                         let rd = RefDuper;
                         let self2 = unsafe { rd.detach_mut_ref(self) };
                         if let Selection::Vertices(ref verts) = self.selection
-                        && let Some(part) = self2.get_current_part_mut() {
+                            && let Some(part) = self2.get_current_part_mut()
+                        {
                             for (id, pos) in part.vertices.get_mut_vec() {
                                 if verts.contains(&id) {
                                     *pos += delta;
@@ -801,23 +862,28 @@ impl App {
                         }
                     }
 
-                    if let Some(sel) = self.editor.mesh && let Some(mesh) = self.view.meshes.get_mut(sel) {
+                    if let Some(sel) = self.editor.mesh
+                        && let Some(mesh) = self.view.meshes.get_mut(sel)
+                    {
                         mesh.rebuild(gl);
                         self.upload_selection_points(gl);
                     }
 
                     self.drag.drag_last = Vec2::new(mx, my);
-                },
-                DragState::Instance => {},
-                DragState::InstanceRotation => {},
+                }
+                DragState::Instance => {}
+                DragState::InstanceRotation => {}
                 DragState::Marquee(v4) => {
                     self.drag.state = DragState::Marquee(Vec4::new(v4.x, v4.y, mx, my))
-                },
+                }
             }
         }
 
         if let DragState::Marquee(v4) = self.drag.state {
-            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("marquee")));
+            let painter = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("marquee"),
+            ));
             let sx0 = rect.min.x + v4.x;
             let sy0 = rect.min.y + (h - v4.y);
             let sx1 = rect.min.x + v4.z;
@@ -825,38 +891,37 @@ impl App {
             painter.rect_stroke(
                 egui::Rect::from_two_pos(egui::pos2(sx0, sy0), egui::pos2(sx1, sy1)),
                 0.0,
-                egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(120, 180, 255, 200)),
-                egui::StrokeKind::Middle
+                egui::Stroke::new(
+                    1.0,
+                    egui::Color32::from_rgba_premultiplied(120, 180, 255, 200),
+                ),
+                egui::StrokeKind::Middle,
             );
         }
-
     }
 
     pub fn undo(&mut self, gl: &Context) {
-        self.history.cycle_history(
-            HistoryCycleDir::Past,
-            &mut self.view.meshes,
-            gl
-        );
+        self.history
+            .cycle_history(HistoryCycleDir::Past, &mut self.view.meshes, gl);
     }
 
     pub fn redo(&mut self, gl: &Context) {
-        self.history.cycle_history(
-            HistoryCycleDir::Future,
-            &mut self.view.meshes,
-            gl
-        );
+        self.history
+            .cycle_history(HistoryCycleDir::Future, &mut self.view.meshes, gl);
     }
 
-    pub fn frame_to_geometry(&mut self) {
-
-    }
+    pub fn frame_to_geometry(&mut self) {}
 
     fn finish_marquee(&mut self, rect: Vec4, gl: &Context) {
-        let sx0 = rect.x.min(rect.z); let sx1 = rect.x.max(rect.z);
-        let sy0 = rect.y.min(rect.w); let sy1 = rect.y.max(rect.w);
-        if sx1 - sx0 < 4.0 && sy1 - sy0 < 4.0 { return; }
-        let ww = self.state.vp_rect.width(); let wh = self.state.vp_rect.height();
+        let sx0 = rect.x.min(rect.z);
+        let sx1 = rect.x.max(rect.z);
+        let sy0 = rect.y.min(rect.w);
+        let sy1 = rect.y.max(rect.w);
+        if sx1 - sx0 < 4.0 && sy1 - sy0 < 4.0 {
+            return;
+        }
+        let ww = self.state.vp_rect.width();
+        let wh = self.state.vp_rect.height();
         let vp = self.cam().vp(ww, wh);
         let in_box = |p: Vec3| -> bool {
             Self::project_to_screen(p, &vp, ww, wh)
@@ -865,14 +930,15 @@ impl App {
         };
         match self.mode {
             EditorMode::Edit => {
-                if let Some((_,_,part)) = self.get_current_part() {
-
+                if let Some((_, _, part)) = self.get_current_part() {
                     let pos = part.vertices.get_vec(part, true);
 
                     if !matches!(self.selection, Selection::Vertices(_)) {
                         self.selection = Selection::Vertices(Vec::new())
                     }
-                    let Selection::Vertices(ref mut selection) = self.selection else { unreachable!() };
+                    let Selection::Vertices(ref mut selection) = self.selection else {
+                        unreachable!()
+                    };
 
                     for (i, p) in pos.iter() {
                         if in_box(*p) && !selection.contains(i) {
@@ -882,9 +948,7 @@ impl App {
                     self.upload_selection_points(gl);
                 }
             }
-            EditorMode::Assembly => {
-                
-            }
+            EditorMode::Assembly => {}
             _ => {}
         }
     }
@@ -896,7 +960,10 @@ impl App {
     pub fn get_current_part_name(&self) -> Option<&str> {
         let sel = self.editor.mesh?;
         let mesh = self.view.meshes.get(sel)?;
-        mesh.data.part_names.get(self.editor.part?).map(|x| x.as_str())
+        mesh.data
+            .part_names
+            .get(self.editor.part?)
+            .map(|x| x.as_str())
     }
 
     pub fn get_current_part(&self) -> Option<(usize, &str, &Part)> {
@@ -912,7 +979,7 @@ impl App {
 
         // SAFETY: this borrow only exists to the end of this function
         // so no mutation can happen while it exists
-        let name = unsafe { & *( name as *const _ ) };
+        let name = unsafe { &*(name as *const _) };
 
         self.view.meshes.get_mut(idx)?.data.parts.get_mut(name)
     }
@@ -921,34 +988,42 @@ impl App {
         match typ {
             HistoryType::MeshPart => {
                 if let Some((idx, name, part)) = self.get_current_part() {
-                    self.history.add_history(HistoryEntry::MeshPart(
-                        LightMeshPartSnapshot {
+                    self.history
+                        .add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
                             idx,
                             name: name.to_string(),
                             part: Box::new(part.clone()),
-                        }
-                    ));
+                        }));
                 }
-            },
-            HistoryType::MeshMeta => {},
-            HistoryType::MeshPlacement => {},
-            HistoryType::ViewPlacement => {},
+            }
+            HistoryType::MeshMeta => {}
+            HistoryType::MeshPlacement => {}
+            HistoryType::ViewPlacement => {}
         }
     }
 
-    fn check_vertex_collision(&mut self, mx: f32, my: f32, w: f32, h: f32, vp: &Mat4, include_compute: bool) -> Option<VertexId> {
+    fn check_vertex_collision(
+        &mut self,
+        mx: f32,
+        my: f32,
+        w: f32,
+        h: f32,
+        vp: &Mat4,
+        include_compute: bool,
+    ) -> Option<VertexId> {
         let r = self.cam().pick_radius(8., h);
         let pick_cycle = &mut self.click_cycle.vertices;
-        let same_spot = (mx - pick_cycle.last_pos.x).abs() <= 2.
-            && (my - pick_cycle.last_pos.y).abs() <= 2.;
+        let same_spot =
+            (mx - pick_cycle.last_pos.x).abs() <= 2. && (my - pick_cycle.last_pos.y).abs() <= 2.;
 
         let rd = RefDuper;
 
-        let (_,_,part) = self.get_current_part()?;
+        let (_, _, part) = self.get_current_part()?;
 
         let verts = part.vertices.get_vec(part, include_compute);
 
-        let hits: Vec<&VertexId> = self.raycast_vertices(&verts, Vec2::new(mx, my), Vec2::new(w, h), &vp, r)
+        let hits: Vec<&VertexId> = self
+            .raycast_vertices(&verts, Vec2::new(mx, my), Vec2::new(w, h), vp, r)
             .iter()
             .map(|r| unsafe { rd.detach_ref(*r) })
             .collect();
@@ -969,11 +1044,19 @@ impl App {
             pick_cycle.candidates.clear();
             None
         }
-
     }
 
-    fn on_3d_press(&mut self, mouse: (f32, f32), size: (f32, f32), ctrl: bool, shift: bool, gl: &Context) {
-        if self.block_input() { return; }
+    fn on_3d_press(
+        &mut self,
+        mouse: (f32, f32),
+        size: (f32, f32),
+        ctrl: bool,
+        shift: bool,
+        gl: &Context,
+    ) {
+        if self.block_input() {
+            return;
+        }
 
         let (mx, my) = mouse;
         let (w, h) = size;
@@ -982,14 +1065,19 @@ impl App {
 
         self.drag.state = DragState::Orbit;
         match self.mode {
-            EditorMode::View => {},
-            EditorMode::Assembly => {},
+            EditorMode::View => {}
+            EditorMode::Assembly => {}
             EditorMode::Edit => {
                 let hit = self.check_vertex_collision(mx, my, w, h, &vp, false);
                 let rd = RefDuper;
                 let self2 = unsafe { rd.detach_ref(self) };
                 if let (Some(hit_id), Selection::Vertices(verts)) = (hit, &mut self.selection) {
-                    self.drag.drag_ref = self2.get_current_part().unwrap().2.resolve_vertex(&hit_id).unwrap();
+                    self.drag.drag_ref = self2
+                        .get_current_part()
+                        .unwrap()
+                        .2
+                        .resolve_vertex(&hit_id)
+                        .unwrap();
                     if shift {
                         if ctrl && verts.contains(&hit_id) {
                             let idx = verts.iter().position(|id| *id == hit_id).unwrap();
@@ -1008,22 +1096,29 @@ impl App {
                 } else if shift {
                     self.drag.state = DragState::Marquee(Vec4::new(mx, my, mx, my));
                 }
-            },
+            }
         }
     }
 
-    fn on_3d_click(&mut self, mouse: (f32, f32), size: (f32, f32), ctrl: bool, shift: bool, gl: &Context) {
-        if self.block_input() { return; }
+    fn on_3d_click(
+        &mut self,
+        mouse: (f32, f32),
+        size: (f32, f32),
+        ctrl: bool,
+        shift: bool,
+        gl: &Context,
+    ) {
+        if self.block_input() {
+            return;
+        }
 
         let (mx, my) = mouse;
         let (w, h) = size;
 
         let vp = self.cam().vp(w, h);
         match self.mode {
-            EditorMode::View => {
-            },
-            EditorMode::Assembly => {
-            },
+            EditorMode::View => {}
+            EditorMode::Assembly => {}
             EditorMode::Edit => {
                 let hit = self.check_vertex_collision(mx, my, w, h, &vp, true);
 
@@ -1045,19 +1140,16 @@ impl App {
                     }
                     self.upload_selection_points(gl);
                 }
-
-            },
+            }
         }
     }
 
     fn on_3d_release(&mut self, mx: f32, my: f32, gl: &Context) {
-
         if let DragState::Marquee(vec4) = self.drag.state {
             self.finish_marquee(vec4, gl);
         }
 
         self.drag.state = DragState::None;
-
     }
 
     fn unproject(point: Vec2, screen_size: Vec2, vp: &Mat4) -> (Vec3, Vec3) {
@@ -1075,23 +1167,28 @@ impl App {
         let delta = ray_pos - point;
         let b = 2. * ray_dir.dot(delta);
         let disc = b * b - 4. * (delta.dot(delta) - r * r);
-        if disc < 0. { return None; }
-        let t = (-b - disc.sqrt()) / 2.;
-        if t > 0. {
-            Some(t)
-        } else {
-            None
+        if disc < 0. {
+            return None;
         }
+        let t = (-b - disc.sqrt()) / 2.;
+        if t > 0. { Some(t) } else { None }
     }
 
-    fn raycast_vertices<'a, K>(&self, vertices: &'a [(K, Vec3)], mouse: Vec2, size: Vec2, vp: &Mat4, r: f32) -> Vec<&'a K> {
-
+    fn raycast_vertices<'a, K>(
+        &self,
+        vertices: &'a [(K, Vec3)],
+        mouse: Vec2,
+        size: Vec2,
+        vp: &Mat4,
+        r: f32,
+    ) -> Vec<&'a K> {
         let (ray_pos, ray_dir) = Self::unproject(mouse, size, vp);
 
-        let mut hits: Vec<(&K, f32)> = vertices.iter()
-            .filter_map(|(id, vert)|
-                Self::check_point_dist(ray_pos, ray_dir, *vert, r)
-                    .map(|dist| (id, dist)))
+        let mut hits: Vec<(&K, f32)> = vertices
+            .iter()
+            .filter_map(|(id, vert)| {
+                Self::check_point_dist(ray_pos, ray_dir, *vert, r).map(|dist| (id, dist))
+            })
             .collect();
 
         hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -1101,7 +1198,9 @@ impl App {
 
     fn project_to_screen(p: Vec3, mvp: &Mat4, ww: f32, wh: f32) -> Option<egui::Pos2> {
         let v = *mvp * glam::Vec4::new(p.x, p.y, p.z, 1.0);
-        if v.w <= 0.0 { return None; }
+        if v.w <= 0.0 {
+            return None;
+        }
         let sx = (v.x / v.w + 1.0) / 2.0 * ww;
         let sy = (v.y / v.w + 1.0) / 2.0 * wh;
         Some(egui::pos2(sx, sy))
@@ -1116,19 +1215,26 @@ impl App {
                 }
                 return;
             }
-            if let Some((_,_,part)) = self.get_current_part() {
+            if let Some((_, _, part)) = self.get_current_part() {
                 let mut selected = Vec::new();
                 for id in verts.iter() {
                     if let Ok(vert) = part.resolve_vertex(id) {
                         selected.push(vert);
                     }
                 }
-                if selected.is_empty() { if let Some(buf) = self.render.sel_points.take() { buf.destroy(gl); }; return; }
+                if selected.is_empty() {
+                    if let Some(buf) = self.render.sel_points.take() {
+                        buf.destroy(gl);
+                    };
+                    return;
+                }
                 let nrm = vec![Vec3::Y; selected.len()];
                 let ch = vec![0i32; 3 * selected.len()];
                 self.render.sel_points = Some(GpuMesh::new(gl, &selected, &nrm, &ch));
             }
-        } else if matches!(self.selection, Selection::None) && let Some(buf) = self.render.sel_points.take() {
+        } else if matches!(self.selection, Selection::None)
+            && let Some(buf) = self.render.sel_points.take()
+        {
             buf.destroy(gl);
         }
     }
@@ -1149,7 +1255,7 @@ impl App {
         }
         if let Some(recv) = self.state.ui.open_mesh_channel.as_ref() {
             match recv.try_recv() {
-                Err(mpsc::TryRecvError::Empty) => {},
+                Err(mpsc::TryRecvError::Empty) => {}
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.state.ui.open_mesh_channel = None;
                 }
@@ -1163,7 +1269,6 @@ impl App {
     }
 
     pub fn load_session(&mut self, path: &Path, gl: &Context) -> anyhow::Result<()> {
-
         let raw = fs::read_to_string(path)?;
         let session: SessionData = serde_json::from_str(&raw)?;
 
@@ -1172,10 +1277,7 @@ impl App {
 
         let mut vms = Vec::new();
 
-        for SessionMeshData {
-            path,
-            placements
-        } in session.meshes {
+        for SessionMeshData { path, placements } in session.meshes {
             let mut vm = LightMesh::load(&path)?.into_view_mesh(path, gl);
 
             for SessionPlacementData {
@@ -1183,9 +1285,17 @@ impl App {
                 rotation,
                 count,
                 offset_pos,
-                offset_rot
-            } in placements {
-                vm.placements.push(ViewPlacement { position, rotation, count, offset_pos, offset_rot, visible: true })
+                offset_rot,
+            } in placements
+            {
+                vm.placements.push(ViewPlacement {
+                    position,
+                    rotation,
+                    count,
+                    offset_pos,
+                    offset_rot,
+                    visible: true,
+                })
             }
             vms.push(vm);
         }
@@ -1198,7 +1308,4 @@ impl App {
 
         Ok(())
     }
-
 }
-
-

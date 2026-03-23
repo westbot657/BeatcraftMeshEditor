@@ -6,17 +6,36 @@ pub struct MathDragValue<'a, T: MapIndexable> {
     speed: f64,
     max_decimals: usize,
     suffix: Option<&'a str>,
-    degrees: bool
+    degrees: bool,
 }
 
 impl<'a, T: MapIndexable> MathDragValue<'a, T> {
     pub fn new(value: &'a mut f32, vars: &'a mut T) -> Self {
-        Self { value, vars, speed: 0.1, max_decimals: 3, suffix: None, degrees: false }
+        Self {
+            value,
+            vars,
+            speed: 0.1,
+            max_decimals: 3,
+            suffix: None,
+            degrees: false,
+        }
     }
-    pub fn speed(mut self, speed: f64) -> Self { self.speed = speed; self }
-    pub fn max_decimals(mut self, d: usize) -> Self { self.max_decimals = d; self }
-    pub fn suffix(mut self, s: &'a str) -> Self { self.suffix = Some(s); self }
-    pub fn degrees(mut self) -> Self { self.degrees = true; self }
+    pub fn speed(mut self, speed: f64) -> Self {
+        self.speed = speed;
+        self
+    }
+    pub fn max_decimals(mut self, d: usize) -> Self {
+        self.max_decimals = d;
+        self
+    }
+    pub fn suffix(mut self, s: &'a str) -> Self {
+        self.suffix = Some(s);
+        self
+    }
+    pub fn degrees(mut self) -> Self {
+        self.degrees = true;
+        self
+    }
 }
 
 impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
@@ -25,7 +44,9 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
 
         let (mut editing, mut text) = ui.memory_mut(|m| {
             let editing = m.data.get_temp::<bool>(id).unwrap_or(false);
-            let text = m.data.get_temp::<String>(id)
+            let text = m
+                .data
+                .get_temp::<String>(id)
                 .unwrap_or_else(|| format!("{:.prec$}", self.value, prec = self.max_decimals));
             (editing, text)
         });
@@ -34,16 +55,17 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
             let edit_response = ui.add(
                 egui::TextEdit::singleline(&mut text)
                     .desired_width(ui.available_width())
-                    .font(egui::TextStyle::Monospace)
+                    .font(egui::TextStyle::Monospace),
             );
 
-            let commit = edit_response.lost_focus()
-                || ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let commit =
+                edit_response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter));
 
             let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
             if commit {
-                if let Some(result) = crate::math_interp::eval_inner(&text, self.vars, self.degrees) {
+                if let Some(result) = crate::math_interp::eval_inner(&text, self.vars, self.degrees)
+                {
                     *self.value = result;
                 }
                 text = format!("{:.prec$}", self.value, prec = self.max_decimals);
@@ -57,7 +79,7 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
         } else {
             let display = match self.suffix {
                 Some(s) => format!("{:.prec$}{s}", self.value, prec = self.max_decimals),
-                None    => format!("{:.prec$}", self.value, prec = self.max_decimals),
+                None => format!("{:.prec$}", self.value, prec = self.max_decimals),
             };
 
             let drag = egui::DragValue::new(self.value)

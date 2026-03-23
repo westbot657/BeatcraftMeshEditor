@@ -8,7 +8,10 @@ use anyhow::anyhow;
 use glam::{FloatExt, Mat4, Quat, Vec2, Vec3};
 use indexmap::IndexMap;
 
-use crate::data::{ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, NormalId, PartData, PlacementData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId};
+use crate::data::{
+    ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, NormalId, PartData,
+    PlacementData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId,
+};
 use crate::easing::Easing;
 
 #[derive(Debug, Clone)]
@@ -35,7 +38,7 @@ impl From<ComputeVertexData> for ComputeVertex {
 }
 
 impl From<ComputeVertex> for ComputeVertexData {
-   fn from(value: ComputeVertex) -> Self {
+    fn from(value: ComputeVertex) -> Self {
         Self {
             points: value.points,
             function: value.function,
@@ -55,7 +58,7 @@ pub struct ComputeNormal {
 impl From<ComputeNormalData> for ComputeNormal {
     fn from(value: ComputeNormalData) -> Self {
         Self {
-            points: value.points
+            points: value.points,
         }
     }
 }
@@ -63,7 +66,7 @@ impl From<ComputeNormalData> for ComputeNormal {
 impl From<ComputeNormal> for ComputeNormalData {
     fn from(value: ComputeNormal) -> Self {
         Self {
-            points: value.points
+            points: value.points,
         }
     }
 }
@@ -110,21 +113,44 @@ impl Vertices {
     }
 }
 
-impl From<(Vec<Vec3>, IndexMap<String, Vec3>, IndexMap<String, ComputeVertexData>)> for Vertices {
-    fn from(value: (Vec<Vec3>, IndexMap<String, Vec3>, IndexMap<String, ComputeVertexData>)) -> Self {
+impl
+    From<(
+        Vec<Vec3>,
+        IndexMap<String, Vec3>,
+        IndexMap<String, ComputeVertexData>,
+    )> for Vertices
+{
+    fn from(
+        value: (
+            Vec<Vec3>,
+            IndexMap<String, Vec3>,
+            IndexMap<String, ComputeVertexData>,
+        ),
+    ) -> Self {
         Self {
             indexed: value.0,
             named: value.1,
-            compute: value.2.into_iter().map(|(k, v)|(k, v.into())).collect()
+            compute: value.2.into_iter().map(|(k, v)| (k, v.into())).collect(),
         }
     }
 }
 
-impl From<Vertices> for (Vec<Vec3>, IndexMap<String, Vec3>, IndexMap<String, ComputeVertexData>) {
+impl From<Vertices>
+    for (
+        Vec<Vec3>,
+        IndexMap<String, Vec3>,
+        IndexMap<String, ComputeVertexData>,
+    )
+{
     fn from(value: Vertices) -> Self {
         (
-            value.indexed, value.named,
-            value.compute.into_iter().map(|(k, v)|(k, v.into())).collect()
+            value.indexed,
+            value.named,
+            value
+                .compute
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect(),
         )
     }
 }
@@ -157,21 +183,44 @@ pub struct Normals {
     pub compute: IndexMap<String, ComputeNormal>,
 }
 
-impl From<(Vec<Vec3>, IndexMap<String, Vec3>, IndexMap<String, ComputeNormalData>)> for Normals {
-    fn from(value: (Vec<Vec3>, IndexMap<String, Vec3>, IndexMap<String, ComputeNormalData>)) -> Self {
+impl
+    From<(
+        Vec<Vec3>,
+        IndexMap<String, Vec3>,
+        IndexMap<String, ComputeNormalData>,
+    )> for Normals
+{
+    fn from(
+        value: (
+            Vec<Vec3>,
+            IndexMap<String, Vec3>,
+            IndexMap<String, ComputeNormalData>,
+        ),
+    ) -> Self {
         Self {
             indexed: value.0,
             named: value.1,
-            compute: value.2.into_iter().map(|(k, v)|(k, v.into())).collect()
+            compute: value.2.into_iter().map(|(k, v)| (k, v.into())).collect(),
         }
     }
 }
 
-impl From<Normals> for (Vec<Vec3>, IndexMap<String, Vec3>, IndexMap<String, ComputeNormalData>) {
+impl From<Normals>
+    for (
+        Vec<Vec3>,
+        IndexMap<String, Vec3>,
+        IndexMap<String, ComputeNormalData>,
+    )
+{
     fn from(value: Normals) -> Self {
         (
-            value.indexed, value.named,
-            value.compute.into_iter().map(|(k, v)|(k, v.into())).collect()
+            value.indexed,
+            value.named,
+            value
+                .compute
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect(),
         )
     }
 }
@@ -189,7 +238,7 @@ impl VertRefData {
         Vertex {
             vertex: v,
             uv: u.unwrap_or_else(|| defaults.0.clone()),
-            normal: n.unwrap_or_else(|| defaults.1.clone())
+            normal: n.unwrap_or_else(|| defaults.1.clone()),
         }
     }
 }
@@ -197,7 +246,7 @@ impl VertRefData {
 #[derive(Debug, Clone)]
 pub struct Triangle {
     pub vertices: [Vertex; 3],
-    pub material: Option<String>
+    pub material: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -205,28 +254,30 @@ pub struct Triangles(pub Vec<Triangle>);
 
 impl From<Vec<TriangleEntry>> for Triangles {
     fn from(value: Vec<TriangleEntry>) -> Self {
-        let mut defaults = ( UvId::Index(0), NormalId::Index(0) );
+        let mut defaults = (UvId::Index(0), NormalId::Index(0));
         let mut tris = Vec::new();
 
         for tri in value {
             match tri {
                 TriangleEntry::StateSet(StateSet { uv, normal }) => {
-                    if let Some(uv) = uv { defaults.0 = uv };
-                    if let Some(normal) = normal { defaults.1 = normal };
+                    if let Some(uv) = uv {
+                        defaults.0 = uv
+                    };
+                    if let Some(normal) = normal {
+                        defaults.1 = normal
+                    };
                 }
                 TriangleEntry::Triangle(TriangleData {
                     verts: [a, b, c],
-                    mat
-                }) => {
-                    tris.push(Triangle {
-                        vertices: [
-                            a.resolve(&defaults),
-                            b.resolve(&defaults),
-                            c.resolve(&defaults),
-                        ],
-                        material: mat
-                    })
-                }
+                    mat,
+                }) => tris.push(Triangle {
+                    vertices: [
+                        a.resolve(&defaults),
+                        b.resolve(&defaults),
+                        c.resolve(&defaults),
+                    ],
+                    material: mat,
+                }),
             }
         }
 
@@ -240,13 +291,27 @@ impl From<Triangles> for Vec<TriangleEntry> {
 
         // Data size optimization loop
         for Triangle {
-            vertices: [
-                Vertex { vertex: v0, uv: u0, normal: n0 },
-                Vertex { vertex: v1, uv: u1, normal: n1 },
-                Vertex { vertex: v2, uv: u2, normal: n2 },
-            ],
-            material
-        } in value.0 {
+            vertices:
+                [
+                    Vertex {
+                        vertex: v0,
+                        uv: u0,
+                        normal: n0,
+                    },
+                    Vertex {
+                        vertex: v1,
+                        uv: u1,
+                        normal: n1,
+                    },
+                    Vertex {
+                        vertex: v2,
+                        uv: u2,
+                        normal: n2,
+                    },
+                ],
+            material,
+        } in value.0
+        {
             let matching_normals = n0 == n1 && n1 == n2;
             let matching_uvs = u0 == u1 && u1 == u2;
             if matching_uvs && matching_normals {
@@ -260,11 +325,10 @@ impl From<Triangles> for Vec<TriangleEntry> {
                     verts: [
                         VertRefData::Bare(v0),
                         VertRefData::Bare(v1),
-                        VertRefData::Bare(v2)
+                        VertRefData::Bare(v2),
                     ],
                     mat: material,
                 });
-
             } else if !matching_uvs && matching_normals {
                 let common = if u1 == u2 { &u1 } else { &u0 };
 
@@ -274,16 +338,27 @@ impl From<Triangles> for Vec<TriangleEntry> {
                 }
                 let list = unsafe { sections.get_mut(&key).unwrap_unchecked() };
 
-                let v2 = if u2 == *common { VertRefData::Bare(v2) } else { VertRefData::WithUv(v2, u2) };
+                let v2 = if u2 == *common {
+                    VertRefData::Bare(v2)
+                } else {
+                    VertRefData::WithUv(v2, u2)
+                };
                 let v0_m = u0 == *common;
-                let v1 = if u1 == *common { VertRefData::Bare(v1) } else { VertRefData::WithUv(v1, u1) };
-                let v0 = if v0_m { VertRefData::Bare(v0) } else { VertRefData::WithUv(v0, u0) };
+                let v1 = if u1 == *common {
+                    VertRefData::Bare(v1)
+                } else {
+                    VertRefData::WithUv(v1, u1)
+                };
+                let v0 = if v0_m {
+                    VertRefData::Bare(v0)
+                } else {
+                    VertRefData::WithUv(v0, u0)
+                };
 
                 list.push(TriangleData {
                     verts: [v0, v1, v2],
-                    mat: material
+                    mat: material,
                 });
-
             } else {
                 let uc = if u1 == u2 { &u1 } else { &u0 };
                 let nc = if n1 == n2 { &n1 } else { &n0 };
@@ -331,7 +406,7 @@ impl From<Triangles> for Vec<TriangleEntry> {
                 };
                 list.push(TriangleData {
                     verts: [v0, v1, v2],
-                    mat: material
+                    mat: material,
                 });
             }
         }
@@ -341,7 +416,6 @@ impl From<Triangles> for Vec<TriangleEntry> {
         let mut current = (UvId::Index(0), NormalId::Index(0));
 
         for (section, tris) in sections {
-
             let uv = if section.0 == current.0 {
                 None
             } else {
@@ -362,7 +436,6 @@ impl From<Triangles> for Vec<TriangleEntry> {
             for tri in tris {
                 entries.push(TriangleEntry::Triangle(tri));
             }
-
         }
 
         entries
@@ -378,10 +451,12 @@ impl ComputeVertex {
         (
             &self.points,
             self.function,
-            [self.delta.map(f32::to_bits),
-            self.x.map(f32::to_bits),
-            self.y.map(f32::to_bits),
-            self.z.map(f32::to_bits)]
+            [
+                self.delta.map(f32::to_bits),
+                self.x.map(f32::to_bits),
+                self.y.map(f32::to_bits),
+                self.z.map(f32::to_bits),
+            ],
         )
     }
 }
@@ -468,7 +543,7 @@ impl ComputeVertex {
 
         if let Some(x) = self.x {
             c.x = a.x + x * vx;
-            let dx = f32::inverse_lerp(0., b.x-a.x, vx*x);
+            let dx = f32::inverse_lerp(0., b.x - a.x, vx * x);
             if self.y.is_none() {
                 c.y = a.y.lerp(b.y, dx);
             }
@@ -478,7 +553,7 @@ impl ComputeVertex {
         }
         if let Some(y) = self.y {
             c.y = a.y + y * vy;
-            let dy = f32::inverse_lerp(0., b.y-a.y, vy*y);
+            let dy = f32::inverse_lerp(0., b.y - a.y, vy * y);
             if self.x.is_none() {
                 c.x = a.x.lerp(b.x, dy);
             }
@@ -488,7 +563,7 @@ impl ComputeVertex {
         }
         if let Some(z) = self.z {
             c.z = a.z + z * vz;
-            let dz = f32::inverse_lerp(0., b.z-a.z, vz*z);
+            let dz = f32::inverse_lerp(0., b.z - a.z, vz * z);
             if self.x.is_none() {
                 c.x = a.x.lerp(b.x, dz);
             }
@@ -522,17 +597,21 @@ pub struct Part {
 }
 
 impl Part {
-
     pub fn resolve_vertex(&self, id: &VertexId) -> anyhow::Result<Vec3> {
         match id {
-            VertexId::Index(i) => {
-                self.vertices.indexed.get(*i).copied().ok_or_else(|| anyhow!("Invalid index {i} for Vertices of length {}", self.vertices.indexed.len()))
-            }
+            VertexId::Index(i) => self.vertices.indexed.get(*i).copied().ok_or_else(|| {
+                anyhow!(
+                    "Invalid index {i} for Vertices of length {}",
+                    self.vertices.indexed.len()
+                )
+            }),
             VertexId::Named(n) => {
                 if let Some(v) = self.vertices.named.get(n) {
                     Ok(*v)
                 } else {
-                    self.vertices.compute.get(n)
+                    self.vertices
+                        .compute
+                        .get(n)
                         .ok_or_else(|| anyhow!("Invalid name '{n}' for Vertices"))?
                         .compute(self)
                 }
@@ -542,17 +621,15 @@ impl Part {
 
     pub fn resolve_normal(&self, id: &NormalId) -> anyhow::Result<Vec3> {
         match id {
-            NormalId::Index(i) => {
-                Ok(self.normals.indexed.get(*i).copied().unwrap_or(Vec3::Y))
-            }
+            NormalId::Index(i) => Ok(self.normals.indexed.get(*i).copied().unwrap_or(Vec3::Y)),
             NormalId::Named(n) => {
                 if let Some(v) = self.normals.named.get(n) {
                     Ok(*v)
                 } else if let Some(v) = self.normals.compute.get(n) {
                     v.compute(self)
                 } else {
-                        Ok(Vec3::Y)
-                    }
+                    Ok(Vec3::Y)
+                }
             }
         }
     }
@@ -590,7 +667,7 @@ impl Part {
             match v_index_remap.entry(h) {
                 hash_map::Entry::Vacant(e) => {
                     v_index_updated.push(v);
-                    e.insert(v_index_updated.len()-1);
+                    e.insert(v_index_updated.len() - 1);
                 }
                 hash_map::Entry::Occupied(e) => {
                     v_index_backmap.insert(i, *e.get());
@@ -626,7 +703,7 @@ impl Part {
             match u_index_remap.entry(h) {
                 hash_map::Entry::Vacant(e) => {
                     u_index_updated.push(v);
-                    e.insert(u_index_updated.len()-1);
+                    e.insert(u_index_updated.len() - 1);
                 }
                 hash_map::Entry::Occupied(e) => {
                     u_index_backmap.insert(i, *e.get());
@@ -651,7 +728,7 @@ impl Part {
             match n_index_remap.entry(h) {
                 hash_map::Entry::Vacant(e) => {
                     n_index_updated.push(v);
-                    e.insert(n_index_updated.len()-1);
+                    e.insert(n_index_updated.len() - 1);
                 }
                 hash_map::Entry::Occupied(e) => {
                     n_index_backmap.insert(i, *e.get());
@@ -684,18 +761,23 @@ impl Part {
 
         for tri in self.triangles.0.iter_mut() {
             tri.remap(
-                &v_index_backmap, &v_named_backmap, &v_comp_backmap,
-                &u_index_backmap, &u_named_backmap,
-                &n_index_backmap, &n_named_backmap, &n_comp_backmap
+                &v_index_backmap,
+                &v_named_backmap,
+                &v_comp_backmap,
+                &u_index_backmap,
+                &u_named_backmap,
+                &n_index_backmap,
+                &n_named_backmap,
+                &n_comp_backmap,
             );
         }
-
     }
 }
 
 impl Triangle {
     #[allow(clippy::too_many_arguments)]
-    fn remap(&mut self,
+    fn remap(
+        &mut self,
         vi: &HashMap<usize, usize>,
         vn: &HashMap<String, String>,
         vc: &HashMap<String, String>,
@@ -735,7 +817,6 @@ impl From<PartData> for Part {
 
 impl From<Part> for PartData {
     fn from(value: Part) -> Self {
-
         let (vertices, named_vertices, compute_vertices) = value.vertices.into();
         let (uvs, named_uvs) = value.uvs.into();
         let (normals, named_normals, compute_normals) = value.normals.into();
@@ -765,7 +846,9 @@ pub struct Placement {
 
 impl Placement {
     pub fn transform(&self) -> Mat4 {
-        Mat4::from_translation(self.position) * Mat4::from_quat(self.rotation) * Mat4::from_scale(self.scale)
+        Mat4::from_translation(self.position)
+            * Mat4::from_quat(self.rotation)
+            * Mat4::from_scale(self.scale)
     }
 }
 
@@ -814,7 +897,11 @@ impl LightMesh {
 
 impl From<crate::data::LightMeshData> for LightMesh {
     fn from(value: crate::data::LightMeshData) -> Self {
-        let parts: IndexMap<String, Part> = value.parts.into_iter().map(|(k, v)| (k, v.into())).collect();
+        let parts: IndexMap<String, Part> = value
+            .parts
+            .into_iter()
+            .map(|(k, v)| (k, v.into()))
+            .collect();
         let part_names = parts.keys().cloned().collect();
         Self {
             credits: value.credits,
@@ -833,7 +920,11 @@ impl From<LightMesh> for crate::data::LightMeshData {
         Self {
             mesh_format: 1,
             credits: value.credits,
-            parts: value.parts.into_iter().map(|(k, v)|(k, v.into())).collect(),
+            parts: value
+                .parts
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect(),
             mesh: value.placements.into_iter().map(Into::into).collect(),
             textures: value.textures,
             data: value.data,
@@ -863,4 +954,3 @@ pub struct LightMeshMetaSnapshot {
     pub data: IndexMap<String, MaterialData>,
     pub cull: bool,
 }
-

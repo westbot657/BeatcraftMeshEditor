@@ -77,13 +77,3 @@ impl Easing {
         matches!(self, Self::easeLinear)
     }
 }
-
-
-
-
-
-
-
-
-
-

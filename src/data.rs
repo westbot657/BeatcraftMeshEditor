@@ -41,7 +41,7 @@ impl VertRefData {
         match self {
             Self::Full(v, u, n) => (v, Some(u), Some(n)),
             Self::WithUv(v, u) => (v, Some(u), None),
-            Self::Bare(v) => (v, None, None)
+            Self::Bare(v) => (v, None, None),
         }
     }
 }
@@ -51,7 +51,6 @@ pub struct TriangleData {
     pub verts: [VertRefData; 3],
     pub mat: Option<String>,
 }
-
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct StateSet {
@@ -65,7 +64,7 @@ pub struct StateSet {
 #[serde(untagged)]
 pub enum TriangleEntry {
     Triangle(#[serde(with = "triangle_data_serde")] TriangleData),
-    StateSet(StateSet)
+    StateSet(StateSet),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -109,7 +108,7 @@ pub struct PartData {
     #[serde(skip_serializing_if = "IndexMap::is_empty")]
     pub compute_normals: IndexMap<String, ComputeNormalData>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub triangles: Vec<TriangleEntry>
+    pub triangles: Vec<TriangleEntry>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -149,7 +148,6 @@ pub struct MaterialData {
     pub color: u8,
 }
 
-
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct LightMeshData {
@@ -165,7 +163,7 @@ pub struct LightMeshData {
     #[serde(skip_serializing_if = "IndexMap::is_empty")]
     pub data: IndexMap<String, MaterialData>,
     #[serde(default, skip_serializing_if = "Not::not")]
-    pub cull: bool
+    pub cull: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -198,7 +196,7 @@ impl From<CameraData> for Camera {
             yaw: value.yaw,
             pitch: value.pitch,
             dist: value.dist,
-            fov: 100f32.to_radians()
+            fov: 100f32.to_radians(),
         }
     }
 }
@@ -212,7 +210,7 @@ pub struct SessionData {
 mod triangle_data_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    use super::{NormalId, TriangleData, UvId, VertexId, VertRefData};
+    use super::{NormalId, TriangleData, UvId, VertRefData, VertexId};
 
     #[derive(Serialize, Deserialize)]
     #[serde(untagged)]
@@ -225,7 +223,7 @@ mod triangle_data_serde {
         fn from(value: &VertexId) -> Self {
             match value {
                 VertexId::Index(i) => Self::Usize(*i),
-                VertexId::Named(n) => Self::String(n.clone())
+                VertexId::Named(n) => Self::String(n.clone()),
             }
         }
     }
@@ -234,7 +232,7 @@ mod triangle_data_serde {
         fn from(value: &UvId) -> Self {
             match value {
                 UvId::Index(i) => Self::Usize(*i),
-                UvId::Named(n) => Self::String(n.clone())
+                UvId::Named(n) => Self::String(n.clone()),
             }
         }
     }
@@ -243,7 +241,7 @@ mod triangle_data_serde {
         fn from(value: &NormalId) -> Self {
             match value {
                 NormalId::Index(i) => Self::Usize(*i),
-                NormalId::Named(n) => Self::String(n.clone())
+                NormalId::Named(n) => Self::String(n.clone()),
             }
         }
     }
@@ -252,7 +250,7 @@ mod triangle_data_serde {
         fn from(value: Id) -> Self {
             match value {
                 Id::String(n) => VertexId::Named(n),
-                Id::Usize(u) => VertexId::Index(u)
+                Id::Usize(u) => VertexId::Index(u),
             }
         }
     }
@@ -261,7 +259,7 @@ mod triangle_data_serde {
         fn from(value: Id) -> Self {
             match value {
                 Id::String(n) => UvId::Named(n),
-                Id::Usize(u) => UvId::Index(u)
+                Id::Usize(u) => UvId::Index(u),
             }
         }
     }
@@ -270,7 +268,7 @@ mod triangle_data_serde {
         fn from(value: Id) -> Self {
             match value {
                 Id::String(n) => NormalId::Named(n),
-                Id::Usize(u) => NormalId::Index(u)
+                Id::Usize(u) => NormalId::Index(u),
             }
         }
     }
@@ -280,7 +278,7 @@ mod triangle_data_serde {
     pub(crate) enum IdInner {
         Full([Id; 3]),
         Uv([Id; 2]),
-        Bare(Id)
+        Bare(Id),
     }
 
     impl From<&VertRefData> for IdInner {
@@ -288,11 +286,11 @@ mod triangle_data_serde {
             match value {
                 VertRefData::Full(vert_id, uv_id, normal_id) => {
                     IdInner::Full([Id::from(vert_id), Id::from(uv_id), Id::from(normal_id)])
-                },
+                }
                 VertRefData::WithUv(vert_id, uv_id) => {
                     IdInner::Uv([Id::from(vert_id), Id::from(uv_id)])
-                },
-                VertRefData::Bare(n) => IdInner::Bare(Id::from(n))
+                }
+                VertRefData::Bare(n) => IdInner::Bare(Id::from(n)),
             }
         }
     }
@@ -302,7 +300,7 @@ mod triangle_data_serde {
             match value {
                 IdInner::Full([v, u, n]) => VertRefData::Full(v.into(), u.into(), n.into()),
                 IdInner::Uv([v, u]) => VertRefData::WithUv(v.into(), u.into()),
-                IdInner::Bare(v) => VertRefData::Bare(v.into())
+                IdInner::Bare(v) => VertRefData::Bare(v.into()),
             }
         }
     }
@@ -321,7 +319,7 @@ mod triangle_data_serde {
                     (&t.verts[0]).into(),
                     (&t.verts[1]).into(),
                     (&t.verts[2]).into(),
-                    IdInner::Bare(Id::String(mat.to_string()))
+                    IdInner::Bare(Id::String(mat.to_string())),
                 ])
             } else {
                 TriData::Tri([
@@ -330,20 +328,21 @@ mod triangle_data_serde {
                     (&t.verts[2]).into(),
                 ])
             }
-
         }
     }
 
     impl From<TriData> for TriangleData {
         fn from(value: TriData) -> Self {
             match value {
-                TriData::WithMat([a, b, c, IdInner::Bare(Id::String(mat))]) => {
-                    TriangleData { verts: [a.into(), b.into(), c.into()], mat: Some(mat) }
-                }
-                TriData::Tri([a, b, c]) => {
-                    TriangleData { verts: [a.into(), b.into(), c.into()], mat: None }
-                }
-                _ => unreachable!("Material can only be IdInner::Bare(Id::String)")
+                TriData::WithMat([a, b, c, IdInner::Bare(Id::String(mat))]) => TriangleData {
+                    verts: [a.into(), b.into(), c.into()],
+                    mat: Some(mat),
+                },
+                TriData::Tri([a, b, c]) => TriangleData {
+                    verts: [a.into(), b.into(), c.into()],
+                    mat: None,
+                },
+                _ => unreachable!("Material can only be IdInner::Bare(Id::String)"),
             }
         }
     }
@@ -357,7 +356,6 @@ mod triangle_data_serde {
     }
 }
 
-
 #[cfg(test)]
 mod data_tests {
     use anyhow::anyhow;
@@ -367,7 +365,6 @@ mod data_tests {
 
     #[test]
     fn test_deserialize() -> anyhow::Result<()> {
-
         let _setup: Value = serde_json::from_str(include_str!("../test_mesh.json"))?;
 
         let data = serde_json::to_string(&_setup)?;
@@ -389,7 +386,6 @@ mod data_tests {
 
     #[test]
     fn test_ser() -> anyhow::Result<()> {
-
         macro_rules! map {
             () => {
                 IndexMap::new()
@@ -406,7 +402,7 @@ mod data_tests {
         let value = LightMeshData {
             mesh_format: 1,
             credits: vec!["Westbot".to_string()],
-            parts: map!{
+            parts: map! {
                 "part0": PartData {
                     vertices: vec![],
                     named_vertices: map!{},
@@ -443,7 +439,4 @@ mod data_tests {
         println!("{json}");
         Ok(())
     }
-
 }
-
-
