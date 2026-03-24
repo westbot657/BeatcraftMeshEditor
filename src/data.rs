@@ -162,9 +162,19 @@ pub struct LightMeshData {
     pub textures: IndexMap<String, String>,
     #[serde(skip_serializing_if = "IndexMap::is_empty")]
     pub data: IndexMap<String, MaterialData>,
-    #[serde(default, skip_serializing_if = "Not::not")]
+    #[serde(skip_serializing_if = "Not::not")]
     pub cull: bool,
+    #[serde(skip_serializing_if = "Clone::clone")]
+    pub bloom_pass: bool,
+    #[serde(skip_serializing_if = "Clone::clone")]
+    pub mirror_pass: bool,
+    #[serde(skip_serializing_if = "Clone::clone")]
+    pub solid_pass: bool,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub bloomfog_style: u8,
 }
+
+fn is_zero(v: &u8) -> bool { *v == 0 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SessionPlacementData {
@@ -362,6 +372,7 @@ mod data_tests {
     use serde_json::Value;
 
     use crate::data::*;
+    use crate::light_mesh::BloomfogStyle;
 
     #[test]
     fn test_deserialize() -> anyhow::Result<()> {
@@ -432,6 +443,10 @@ mod data_tests {
             textures: IndexMap::new(),
             data: IndexMap::new(),
             cull: false,
+            bloom_pass: true,
+            mirror_pass: true,
+            solid_pass: true,
+            bloomfog_style: BloomfogStyle::default().into(),
         };
 
         let json = serde_json::to_string(&value)?;

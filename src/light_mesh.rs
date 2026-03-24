@@ -7,12 +7,15 @@ use std::path::Path;
 use anyhow::anyhow;
 use glam::{FloatExt, Mat4, Quat, Vec2, Vec3};
 use indexmap::IndexMap;
+use indexmap::map::MutableKeys;
 
 use crate::data::{
-    ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, NormalId, PartData,
-    PlacementData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId,
+    ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, 
+    NormalId, PartData, PlacementData, StateSet, TriangleData,
+    TriangleEntry, UvId, VertRefData, VertexId
 };
 use crate::easing::Easing;
+use crate::editor::DataSwap;
 
 #[derive(Debug, Clone)]
 pub struct ComputeVertex {
@@ -111,6 +114,7 @@ impl Vertices {
 
         out
     }
+
 }
 
 impl
@@ -634,6 +638,14 @@ impl Part {
         }
     }
 
+    pub fn rename_data(&mut self, swap: &DataSwap<String>) {
+        for tri in self.triangles.0.iter_mut() {
+            if let Some(mat) = tri.material.as_mut() && *mat == swap.from {
+                *mat = swap.to.clone();
+            }
+        }
+    }
+
     pub fn dedupe_data(&mut self) {
         let mut v_index_remap = HashMap::new();
         let mut v_index_updated = Vec::new();
@@ -876,6 +888,45 @@ impl From<Placement> for PlacementData {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[repr(u32)]
+pub enum BloomfogStyle {
+    #[default]
+    BloomOnly = 0,
+    Everything = 1,
+    Nothing = 2,
+}
+
+impl BloomfogStyle {
+    pub fn label(&self) -> &'static str {
+        match self {
+            BloomfogStyle::BloomOnly => "Bloom Only",
+            BloomfogStyle::Everything => "Everything",
+            BloomfogStyle::Nothing => "Nothing",
+        }
+    }
+}
+
+impl From<u8> for BloomfogStyle {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::BloomOnly,
+            1 => Self::Everything,
+            _ => Self::Nothing,
+        }
+    }
+}
+
+impl From<BloomfogStyle> for u8 {
+    fn from(value: BloomfogStyle) -> Self {
+        match value {
+            BloomfogStyle::BloomOnly => 0,
+            BloomfogStyle::Everything => 1,
+            BloomfogStyle::Nothing => 2,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct LightMesh {
     pub credits: Vec<String>,
@@ -884,6 +935,10 @@ pub struct LightMesh {
     pub textures: IndexMap<String, String>,
     pub data: IndexMap<String, MaterialData>,
     pub cull: bool,
+    pub do_bloom: bool,
+    pub do_mirroring: bool,
+    pub bloomfog_style: BloomfogStyle,
+    pub do_solid: bool,
     pub part_names: Vec<String>,
 }
 
@@ -893,6 +948,32 @@ impl LightMesh {
         let raw: LightMeshData = serde_json::from_str(&raw)?;
         Ok(raw.into())
     }
+
+    pub fn rename_data(&mut self, swap: &DataSwap<String>) {
+        for (key, _) in self.data.iter_mut2() {
+            if *key == swap.from {
+                *key = swap.to.clone();
+                break;
+            }
+        }
+        for part in self.parts.values_mut() {
+            part.rename_data(swap);
+        }
+    }
+
+    pub fn rename_part(&mut self, swap: &DataSwap<String>) {
+        for (name, _) in self.parts.iter_mut2() {
+            if *name == swap.from {
+                *name = swap.to.clone();
+            }
+        }
+        for placement in self.placements.iter_mut() {
+            if placement.part == swap.from {
+                placement.part = swap.to.clone();
+            }
+        }
+    }
+
 }
 
 impl From<crate::data::LightMeshData> for LightMesh {
@@ -910,6 +991,10 @@ impl From<crate::data::LightMeshData> for LightMesh {
             textures: value.textures,
             data: value.data,
             cull: value.cull,
+            do_bloom: value.bloom_pass,
+            do_mirroring: value.mirror_pass,
+            do_solid: value.solid_pass,
+            bloomfog_style: value.bloomfog_style.into(),
             part_names,
         }
     }
@@ -929,6 +1014,10 @@ impl From<LightMesh> for crate::data::LightMeshData {
             textures: value.textures,
             data: value.data,
             cull: value.cull,
+            bloom_pass: value.do_bloom,
+            mirror_pass: value.do_mirroring,
+            solid_pass: value.do_solid,
+            bloomfog_style: value.bloomfog_style.into(),
         }
     }
 }

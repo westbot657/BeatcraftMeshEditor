@@ -27,8 +27,11 @@ use std::sync::{Arc, mpsc};
 use eframe::glow::{self, HasContext};
 use egui::Frame;
 use glam::{Mat4, Quat, Vec3};
+use indexmap::IndexMap;
+use indexmap::map::MutableKeys;
 
 use self::editor::{App, EulerSwizzle, RotationDisplayMode, ViewPlacement};
+use self::light_mesh::BloomfogStyle;
 use self::render::{InstanceData, MeshDrawCall, PointDrawCall};
 use self::widgets::MathDragValue;
 
@@ -39,6 +42,7 @@ pub mod light_mesh;
 pub mod math_interp;
 pub mod render;
 pub mod widgets;
+pub mod renaming;
 
 #[derive(Copy, Clone)]
 struct UnsafeMutRef<T: 'static> {
@@ -88,6 +92,97 @@ impl RefDuper {
         unsafe { &mut *(t as *mut T) }
     }
 }
+
+fn vec3_row(ui: &mut egui::Ui, v: &mut Vec3, w3: f32) {
+    let mut vars = HashMap::new();
+    vars.insert("x".to_string(), v.x);
+    vars.insert("y".to_string(), v.y);
+    vars.insert("z".to_string(), v.z);
+    ui.horizontal(|ui| {
+        for val in v.as_mut() {
+            ui.allocate_ui_with_layout(egui::Vec2::new(w3, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_clip_rect(ui.max_rect());
+                ui.add_sized([w3, 20.], MathDragValue::new(val, &mut vars).speed(0.1).max_decimals(3));
+            });
+        }
+    });
+}
+
+fn quat_row(ui: &mut egui::Ui, q: &mut Quat, mode: &mut RotationDisplayMode, w2: f32, w3: f32) {
+    ui.horizontal(|ui| {
+        let mode_label = match mode {
+            RotationDisplayMode::Quaternion => "QUAT",
+            RotationDisplayMode::Euler(s) => s.label()
+        };
+        if ui.small_button(mode_label).clicked() {
+            *mode = mode.cycle();
+        }
+    });
+
+    match mode {
+        RotationDisplayMode::Quaternion => {
+            let mut v = q.to_array();
+            let mut vars = HashMap::new();
+            vars.insert("x".to_string(), v[0]);
+            vars.insert("y".to_string(), v[1]);
+            vars.insert("z".to_string(), v[2]);
+            vars.insert("w".to_string(), v[3]);
+            ui.horizontal(|ui| {
+                for val in &mut v[0..2] {
+                    ui.allocate_ui_with_layout(egui::Vec2::new(w2, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.set_clip_rect(ui.max_rect());
+                        ui.add_sized([w2, 20.], MathDragValue::new(val, &mut vars).speed(0.001).max_decimals(3));
+                    });
+                }
+            });
+            ui.horizontal(|ui| {
+                for val in &mut v[2..4] {
+                    ui.allocate_ui_with_layout(egui::Vec2::new(w2, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.set_clip_rect(ui.max_rect());
+                        ui.add_sized([w2, 20.], MathDragValue::new(val, &mut vars).speed(0.001).max_decimals(3));
+                    });
+                }
+            });
+            *q = Quat::from_array(v);
+        }
+        RotationDisplayMode::Euler(swizzle) => {
+            let (ax, ay, az) = q.to_euler(swizzle.to_glam());
+            let [n1, n2, n3] = swizzle.names();
+            let normalize_angle = |d: f32| {
+                let d = if d == -0.0 { 0.0 } else { d };
+                if (d - 180.0).abs() < 0.001 || (d + 180.0).abs() < 0.001 { 180.0 } else { d }
+            };
+
+            let mut degrees = [
+                normalize_angle(ax.to_degrees()),
+                normalize_angle(ay.to_degrees()),
+                normalize_angle(az.to_degrees()),
+            ];
+
+            let mut vars = HashMap::new();
+            vars.insert(n1.to_string(), degrees[0]);
+            vars.insert(n2.to_string(), degrees[1]);
+            vars.insert(n3.to_string(), degrees[2]);
+
+            ui.horizontal(|ui| {
+                for val in &mut degrees {
+                    ui.allocate_ui_with_layout(egui::Vec2::new(w3, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.set_clip_rect(ui.max_rect());
+                        ui.add_sized([w3, 20.], MathDragValue::new(val, &mut vars).speed(0.5).max_decimals(1).suffix("\u{b0}").degrees());
+                    });
+                }
+            });
+            let rot = glam::EulerRot::from(*swizzle);
+            *q = Quat::from_euler(
+                rot,
+                degrees[0].to_radians(),
+                degrees[1].to_radians(),
+                degrees[2].to_radians(),
+            );
+        }
+    }
+}
+
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -256,7 +351,299 @@ impl eframe::App for App {
                                 }
                             }
                         }
-                        editor::EditorMode::Assembly => {}
+                        editor::EditorMode::Assembly => {
+                            let rd = RefDuper;
+                            let self2 = unsafe { rd.detach_mut_ref(self) };
+                            if let Some(mesh) = self.get_current_view_mesh_mut() {
+                                let path = mesh.path.clone();
+                                let part_names = mesh.data.part_names.clone();
+                                let toggles = self2.state.ui.assembly_collapsed.entry(path.clone()).or_default();
+                                let w = ui.available_width();
+                                let w2 = (w - ui.spacing().item_spacing.x) / 2.0;
+                                let w3 = (w - ui.spacing().item_spacing.x * 2.0) / 3.0;
+
+                                // ── Placements ────────────────────────────────────────────────
+                                ui.horizontal(|ui| {
+                                    let icon = if toggles.placements { "▶" } else { "▼" };
+                                    if ui.small_button(icon).clicked() { toggles.placements = !toggles.placements; }
+                                    ui.label("Placements");
+                                });
+
+                                if !toggles.placements {
+                                    if ui.add_sized([w, 20.], egui::Button::new("+ Add Placement")).clicked() && let Some(first) = part_names.first() {
+                                        mesh.data.placements.push(light_mesh::Placement {
+                                            part: first.clone(),
+                                            position: Vec3::ZERO,
+                                            rotation: Quat::IDENTITY,
+                                            scale: Vec3::ONE,
+                                            remap_data: IndexMap::new(),
+                                        });
+                                    }
+
+                                    let mut to_remove = None;
+                                    for (pi, placement) in mesh.data.placements.iter_mut().enumerate() {
+                                        let pt = toggles.placement_parts.entry(pi).or_insert(([true, true, true], Default::default()));
+
+                                        // Use PartCollapseToggles fields properly
+                                        let pt_collapsed = toggles.placement_parts.entry(pi).or_insert(([true, true, true], Default::default()));
+
+                                        ui.horizontal(|ui| {
+                                            let icon = if pt_collapsed.0[0] { "▶" } else { "▼" };
+                                            if ui.small_button(icon).clicked() { pt_collapsed.0[0] = !pt_collapsed.0[0]; }
+
+                                            egui::ComboBox::from_id_salt(egui::Id::new("placement_part").with(pi))
+                                                .selected_text(placement.part.as_str())
+                                                .width(w - ui.spacing().item_spacing.x * 2. - 24.)
+                                                .show_ui(ui, |ui| {
+                                                    for name in &part_names {
+                                                        ui.selectable_value(&mut placement.part, name.clone(), name.as_str());
+                                                    }
+                                                });
+
+                                            if ui.small_button("×").clicked() {
+                                                to_remove = Some(pi);
+                                            }
+                                        });
+
+                                        if !pt_collapsed.0[0] {
+                                            let rot_mode = &mut pt_collapsed.1;
+
+                                            // Position
+                                            ui.horizontal(|ui| {
+                                                ui.label("Position");
+                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                    if ui.small_button("Paste").clicked() { /* TODO */ }
+                                                    if ui.small_button("Copy").clicked() { /* TODO */ }
+                                                });
+                                            });
+                                            vec3_row(ui, &mut placement.position, w3);
+
+                                            // Rotation
+                                            ui.horizontal(|ui| {
+                                                ui.label("Rotation");
+                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                    if ui.small_button("Paste").clicked() { /* TODO */ }
+                                                    if ui.small_button("Copy").clicked() { /* TODO */ }
+                                                });
+                                            });
+                                            quat_row(ui, &mut placement.rotation, rot_mode, w2, w3);
+
+                                            // Scale
+                                            ui.horizontal(|ui| {
+                                                ui.label("Scale");
+                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                    if ui.small_button("Paste").clicked() { /* TODO */ }
+                                                    if ui.small_button("Copy").clicked() { /* TODO */ }
+                                                    let lock_icon = if pt_collapsed.0[2] { "🔒" } else { "🔓" };
+                                                    if ui.small_button(lock_icon).clicked() {
+                                                        pt_collapsed.0[2] = !pt_collapsed.0[2];
+                                                    }
+                                                });
+                                            });
+                                            if pt_collapsed.0[2] {
+                                                // All axes move proportionally — drive from x, apply ratio to y/z
+                                                let old_x = placement.scale.x;
+                                                vec3_row(ui, &mut placement.scale, w3);
+                                                let new_x = placement.scale.x;
+                                                if old_x.abs() > 1e-6 && new_x != old_x {
+                                                    let ratio = new_x / old_x;
+                                                    placement.scale.y *= ratio;
+                                                    placement.scale.z *= ratio;
+                                                }
+                                            } else {
+                                                vec3_row(ui, &mut placement.scale, w3);
+                                            }
+
+                                            // Remap Data
+                                            ui.horizontal(|ui| {
+                                                let icon = if pt_collapsed.0[1] { "▶" } else { "▼" };
+                                                if ui.small_button(icon).clicked() { pt_collapsed.0[1] = !pt_collapsed.0[1]; }
+                                                ui.label("Remap Data");
+                                            });
+
+                                            if !pt_collapsed.0[1] {
+                                                let mut remap_to_remove = None;
+                                                for (ri, (from, to)) in placement.remap_data.iter_mut2().enumerate() {
+                                                    ui.horizontal(|ui| {
+                                                        let fw = (w - ui.spacing().item_spacing.x * 3. - 24.) / 2.;
+                                                        ui.add_sized([fw, 20.], egui::TextEdit::singleline(from));
+                                                        ui.label("→");
+                                                        ui.add_sized([fw, 20.], egui::TextEdit::singleline(to));
+                                                        if ui.small_button("×").clicked() {
+                                                            remap_to_remove = Some(ri);
+                                                        }
+                                                    });
+                                                }
+                                                if let Some(ri) = remap_to_remove {
+                                                    placement.remap_data.shift_remove_index(ri);
+                                                }
+                                                if ui.add_sized([w, 20.], egui::Button::new("+ Add")).clicked() {
+                                                    placement.remap_data.insert(String::new(), String::new());
+                                                }
+                                            }
+                                        }
+
+                                        ui.separator();
+                                    }
+
+                                    if let Some(i) = to_remove {
+                                        mesh.data.placements.remove(i);
+                                        toggles.placement_parts.remove(&i);
+                                    }
+                                }
+
+                                // ── Data ──────────────────────────────────────────────────────
+                                ui.horizontal(|ui| {
+                                    let icon = if toggles.data { "▶" } else { "▼" };
+                                    if ui.small_button(icon).clicked() { toggles.data = !toggles.data; }
+                                    ui.label("Data");
+                                });
+
+                                if !toggles.data {
+                                    if ui.add_sized([w, 20.], egui::Button::new("+ Add Data")).clicked() {
+                                        mesh.data.data.insert(format!("new_data_{}", mesh.data.data.len()), Default::default());
+                                    }
+
+                                    let mut data_to_remove = None;
+                                    let data_keys: Vec<String> = mesh.data.data.keys().cloned().collect();
+                                    for (di, key) in data_keys.iter().enumerate() {
+                                        let entry = mesh.data.data.get_mut(key).unwrap();
+                                        let di_collapsed = toggles.datas.entry(di).or_insert(true);
+
+                                        ui.horizontal(|ui| {
+                                            let icon = if *di_collapsed { "▶" } else { "▼" };
+                                            if ui.small_button(icon).clicked() { *di_collapsed = !*di_collapsed; }
+                                            let mut name = key.clone();
+                                            if ui.add_sized([w - ui.spacing().item_spacing.x * 2. - 24., 20.],
+                                                egui::TextEdit::singleline(&mut name)).changed() {
+                                                // rename handled externally
+                                            }
+                                            if ui.small_button("×").clicked() {
+                                                data_to_remove = Some(key.clone());
+                                            }
+                                        });
+
+                                        if !*di_collapsed {
+                                            ui.horizontal(|ui| {
+                                                // Mat: click-cycle 0->1->2->0
+                                                let mat_label = format!("Mat [{}]", entry.material);
+                                                if ui.button(mat_label).clicked() {
+                                                    entry.material = (entry.material + 1) % 3;
+                                                }
+
+                                                // Ch: dropdown 0..7
+                                                egui::ComboBox::from_id_salt(egui::Id::new("data_ch").with(di))
+                                                    .selected_text(format!("Ch [{}]", entry.color))
+                                                    .show_ui(ui, |ui| {
+                                                        for ch in 0u8..8 {
+                                                            ui.selectable_value(&mut entry.color, ch, ch.to_string());
+                                                        }
+                                                    });
+                                            });
+
+                                            // Texture: unbound u8, just a drag value
+                                            ui.horizontal(|ui| {
+                                                ui.label("Tex");
+                                                ui.add(egui::DragValue::new(&mut entry.texture).range(0..=255u8).speed(1));
+                                            });
+                                        }
+
+                                        ui.separator();
+                                    }
+
+                                    if let Some(key) = data_to_remove {
+                                        mesh.data.data.shift_remove(&key);
+                                    }
+                                }
+
+                                // ── Textures ──────────────────────────────────────────────────
+                                ui.horizontal(|ui| {
+                                    let icon = if toggles.textures { "▶" } else { "▼" };
+                                    if ui.small_button(icon).clicked() { toggles.textures = !toggles.textures; }
+                                    ui.label("Textures");
+                                });
+
+                                if !toggles.textures {
+                                    if ui.add_sized([w, 20.], egui::Button::new("+ Add Texture")).clicked() {
+                                        mesh.data.textures.insert(format!("{}", mesh.data.textures.len()), String::new());
+                                    }
+
+                                    let mut tex_to_remove = None;
+                                    let tex_keys: Vec<String> = mesh.data.textures.keys().cloned().collect();
+                                    for (ti, key) in tex_keys.iter().enumerate() {
+                                        let val = mesh.data.textures.get_mut(key).unwrap();
+                                        ui.horizontal(|ui| {
+                                            ui.label(format!("{ti}"));
+                                            ui.add_sized([w - ui.spacing().item_spacing.x * 2. - 24. - 16., 20.],
+                                                egui::TextEdit::singleline(val));
+                                            if ui.small_button("×").clicked() {
+                                                tex_to_remove = Some(key.clone());
+                                            }
+                                        });
+                                    }
+
+                                    if let Some(key) = tex_to_remove {
+                                        mesh.data.textures.shift_remove(&key);
+                                    }
+                                }
+
+                                // ── Render Settings ───────────────────────────────────────────
+                                ui.horizontal(|ui| {
+                                    let icon = if toggles.settings { "▶" } else { "▼" };
+                                    if ui.small_button(icon).clicked() { toggles.settings = !toggles.settings; }
+                                    ui.label("Render Settings");
+                                });
+
+                                if !toggles.settings {
+                                    ui.horizontal(|ui| {
+                                        ui.checkbox(&mut mesh.data.cull, "Cull");
+                                        ui.checkbox(&mut mesh.data.do_bloom, "Bloom");
+                                    });
+                                    ui.horizontal(|ui| {
+                                        ui.checkbox(&mut mesh.data.do_mirroring, "Mirror");
+                                        ui.checkbox(&mut mesh.data.do_solid, "Solid");
+                                    });
+                                    egui::ComboBox::from_id_salt("bloomfog_style")
+                                        .selected_text(mesh.data.bloomfog_style.label())
+                                        .width(w)
+                                        .show_ui(ui, |ui| {
+                                            for style in [
+                                                BloomfogStyle::BloomOnly,
+                                                BloomfogStyle::Everything,
+                                                BloomfogStyle::Nothing
+                                            ] {
+                                                ui.selectable_value(&mut mesh.data.bloomfog_style, style, style.label());
+                                            }
+                                        });
+                                }
+
+                                // ── Credits ───────────────────────────────────────────────────
+                                ui.horizontal(|ui| {
+                                    let icon = if toggles.credits { "▶" } else { "▼" };
+                                    if ui.small_button(icon).clicked() { toggles.credits = !toggles.credits; }
+                                    ui.label("Credits");
+                                });
+
+                                if !toggles.credits {
+                                    let mut to_remove = None;
+                                    for (ci, credit) in mesh.data.credits.iter_mut().enumerate() {
+                                        ui.horizontal(|ui| {
+                                            ui.add_sized([w - ui.spacing().item_spacing.x - 24., 20.],
+                                                egui::TextEdit::singleline(credit));
+                                            if ui.small_button("×").clicked() {
+                                                to_remove = Some(ci);
+                                            }
+                                        });
+                                    }
+                                    if let Some(i) = to_remove {
+                                        mesh.data.credits.remove(i);
+                                    }
+                                    if ui.add_sized([w, 20.], egui::Button::new("+ Add Credit")).clicked() {
+                                        mesh.data.credits.push(String::new());
+                                    }
+                                }
+                            }
+                        }
                         editor::EditorMode::Edit => {}
                     });
 
@@ -324,96 +711,6 @@ impl eframe::App for App {
                                         let w2 = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
                                         let w3 = (ui.available_width() - ui.spacing().item_spacing.x * 2.0) / 3.0;
 
-                                        let vec3_row = |ui: &mut egui::Ui, v: &mut Vec3| {
-                                            let mut vars = HashMap::new();
-                                            vars.insert("x".to_string(), v.x);
-                                            vars.insert("y".to_string(), v.y);
-                                            vars.insert("z".to_string(), v.z);
-                                            ui.horizontal(|ui| {
-                                                for val in v.as_mut() {
-                                                    ui.allocate_ui_with_layout(egui::Vec2::new(w3, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                                        ui.set_clip_rect(ui.max_rect());
-                                                        ui.add_sized([w3, 20.], MathDragValue::new(val, &mut vars).speed(0.1).max_decimals(3));
-                                                    });
-                                                }
-                                            });
-                                        };
-
-                                        let quat_row = |ui: &mut egui::Ui, q: &mut Quat, mode: &mut RotationDisplayMode| {
-                                            ui.horizontal(|ui| {
-                                                let mode_label = match mode {
-                                                    RotationDisplayMode::Quaternion => "QUAT",
-                                                    RotationDisplayMode::Euler(s) => s.label()
-                                                };
-                                                if ui.small_button(mode_label).clicked() {
-                                                    *mode = mode.cycle();
-                                                }
-                                            });
-
-                                            match mode {
-                                                RotationDisplayMode::Quaternion => {
-                                                    let mut v = q.to_array();
-                                                    let mut vars = HashMap::new();
-                                                    vars.insert("x".to_string(), v[0]);
-                                                    vars.insert("y".to_string(), v[1]);
-                                                    vars.insert("z".to_string(), v[2]);
-                                                    vars.insert("w".to_string(), v[3]);
-                                                    ui.horizontal(|ui| {
-                                                        for val in &mut v[0..2] {
-                                                            ui.allocate_ui_with_layout(egui::Vec2::new(w2, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                                                ui.set_clip_rect(ui.max_rect());
-                                                                ui.add_sized([w2, 20.], MathDragValue::new(val, &mut vars).speed(0.001).max_decimals(3));
-                                                            });
-                                                        }
-                                                    });
-                                                    ui.horizontal(|ui| {
-                                                        for val in &mut v[2..4] {
-                                                            ui.allocate_ui_with_layout(egui::Vec2::new(w2, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                                                ui.set_clip_rect(ui.max_rect());
-                                                                ui.add_sized([w2, 20.], MathDragValue::new(val, &mut vars).speed(0.001).max_decimals(3));
-                                                            });
-                                                        }
-                                                    });
-                                                    *q = Quat::from_array(v);
-                                                }
-                                                RotationDisplayMode::Euler(swizzle) => {
-                                                    let (ax, ay, az) = q.to_euler(swizzle.to_glam());
-                                                    let [n1, n2, n3] = swizzle.names();
-                                                    let normalize_angle = |d: f32| {
-                                                        let d = if d == -0.0 { 0.0 } else { d };
-                                                        if (d - 180.0).abs() < 0.001 || (d + 180.0).abs() < 0.001 { 180.0 } else { d }
-                                                    };
-
-                                                    let mut degrees = [
-                                                        normalize_angle(ax.to_degrees()),
-                                                        normalize_angle(ay.to_degrees()),
-                                                        normalize_angle(az.to_degrees()),
-                                                    ];
-
-                                                    let mut vars = HashMap::new();
-                                                    vars.insert(n1.to_string(), degrees[0]);
-                                                    vars.insert(n2.to_string(), degrees[1]);
-                                                    vars.insert(n3.to_string(), degrees[2]);
-
-                                                    ui.horizontal(|ui| {
-                                                        for val in &mut degrees {
-                                                            ui.allocate_ui_with_layout(egui::Vec2::new(w3, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                                                ui.set_clip_rect(ui.max_rect());
-                                                                ui.add_sized([w3, 20.], MathDragValue::new(val, &mut vars).speed(0.5).max_decimals(1).suffix("\u{b0}").degrees());
-                                                            });
-                                                        }
-                                                    });
-                                                    let rot = glam::EulerRot::from(*swizzle);
-                                                    *q = Quat::from_euler(
-                                                        rot,
-                                                        degrees[0].to_radians(),
-                                                        degrees[1].to_radians(),
-                                                        degrees[2].to_radians(),
-                                                    );
-                                                }
-                                            }
-                                        };
-
                                         let modes = self.state.ui.view_rotation_modes.entry(sel).or_default();
                                         if modes.len() <= i {
                                             modes.push([RotationDisplayMode::Euler(EulerSwizzle::YXZ), RotationDisplayMode::Euler(EulerSwizzle::YXZ)]);
@@ -422,10 +719,10 @@ impl eframe::App for App {
                                             .get_mut(&sel).unwrap()[i];
 
                                         ui.label("Position");
-                                        vec3_row(ui, &mut placement.position);
+                                        vec3_row(ui, &mut placement.position, w3);
 
                                         ui.label("Rotation");
-                                        quat_row(ui, &mut placement.rotation, rot_mode);
+                                        quat_row(ui, &mut placement.rotation, rot_mode, w2, w3);
 
                                         ui.horizontal(|ui| {
                                             ui.allocate_ui_with_layout(egui::Vec2::new(w3, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -436,10 +733,10 @@ impl eframe::App for App {
                                         });
 
                                         ui.label("Offset Position");
-                                        vec3_row(ui, &mut placement.offset_pos);
+                                        vec3_row(ui, &mut placement.offset_pos, w3);
 
                                         ui.label("Offset Rotation");
-                                        quat_row(ui, &mut placement.offset_rot, off_mode);
+                                        quat_row(ui, &mut placement.offset_rot, off_mode, w2, w3);
 
                                         if ui.add_sized([ui.available_width(), 20.0], egui::Button::new("Delete")).clicked() {
                                             to_remove = Some(i);

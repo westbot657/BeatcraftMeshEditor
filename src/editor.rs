@@ -9,7 +9,7 @@ use egui::{Key, Response};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 
 use crate::RefDuper;
-use crate::data::{SessionData, SessionMeshData, SessionPlacementData, VertexId};
+use crate::data::{NormalId, SessionData, SessionMeshData, SessionPlacementData, UvId, VertexId};
 use crate::light_mesh::{
     LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot, Part,
 };
@@ -267,6 +267,12 @@ pub enum RotationDisplayMode {
     Euler(EulerSwizzle),
 }
 
+impl Default for RotationDisplayMode {
+    fn default() -> Self {
+        Self::Euler(EulerSwizzle::YXZ)
+    }
+}
+
 impl RotationDisplayMode {
     pub fn cycle(&self) -> Self {
         match self {
@@ -360,6 +366,30 @@ pub struct State {
     pub ui: UiState,
 }
 
+pub struct PartCollapseToggles {
+    pub placements: bool,
+    pub data: bool,
+    pub textures: bool,
+    pub settings: bool,
+    pub credits: bool,
+    pub placement_parts: HashMap<usize, ([bool; 3], RotationDisplayMode)>, // part toggle, remap toggle, scale_lock, rotation mode
+    pub datas: HashMap<usize, bool>,
+}
+
+impl Default for PartCollapseToggles {
+    fn default() -> Self {
+        Self {
+            placements: false,
+            data: false,
+            textures: true,
+            settings: true,
+            credits: true,
+            placement_parts: HashMap::default(),
+            datas: HashMap::default(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct UiState {
     pub view_mesh: Option<usize>,
@@ -367,6 +397,97 @@ pub struct UiState {
     pub open_session_channel: Option<mpsc::Receiver<PathBuf>>,
     pub collapsed: HashMap<usize, Vec<bool>>,
     pub view_rotation_modes: HashMap<usize, Vec<[RotationDisplayMode; 2]>>,
+    pub assembly_collapsed: HashMap<PathBuf, PartCollapseToggles>,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct PartId {
+    pub view_idx: usize,
+    pub name: String,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct DataSwap<T: std::fmt::Debug + PartialEq + Eq + Clone> {
+    pub from: T,
+    pub to: T,
+}
+
+impl<T: std::fmt::Debug + PartialEq + Eq + Clone> DataSwap<T> {
+    fn invert(self) -> Self {
+        Self {
+            from: self.to,
+            to: self.from
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Rename {
+    DataTag { view_idx: usize, swap: DataSwap<String> },
+    Part { view_idx: usize, swap: DataSwap<String> },
+    /// Can rename any vertex between indexed and named.
+    Vertex { part: PartId, swap: DataSwap<VertexId> },
+    /// Can rename any uv including jumping between indexed and named.
+    Uv { part: PartId, swap: DataSwap<UvId> },
+    /// Can rename any normal between indexed and named.
+    Normal { part: PartId, swap: DataSwap<NormalId> },
+    /// Can rename compute vertices
+    ComputeVertex { part: PartId, swap: DataSwap<String> },
+    /// Can rename compute normals
+    ComputeNormal { part: PartId, swap: DataSwap<String> },
+}
+
+impl Rename {
+    pub fn invert(self) -> Self {
+        match self {
+            Self::DataTag { view_idx, swap } => Self::DataTag { view_idx, swap: swap.invert() },
+            Self::Part { view_idx, swap } => Self::Part { view_idx, swap: swap.invert() },
+            Self::Uv { part, swap } => Self::Uv { part, swap: swap.invert() },
+            Self::Normal { part, swap } => Self::Normal { part, swap: swap.invert() },
+            Self::Vertex { part, swap } => Self::Vertex { part, swap: swap.invert() },
+            Self::ComputeNormal { part, swap } => Self::ComputeNormal { part, swap: swap.invert() },
+            Self::ComputeVertex { part, swap } => Self::ComputeVertex { part, swap: swap.invert() },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum IndexMutationRequest {
+    InsertVertex { part: PartId, index: usize, vertex: Vec3 },
+    InsertUv { part: PartId, index: usize, uv: Vec2 },
+    InsertNormal { part: PartId, index: usize, normal: Vec3 },
+    RemoveVertex { part: PartId, index: usize },
+    RemoveUv { part: PartId, index: usize },
+    RemoveNormal { part: PartId, index: usize },
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum IndexMutation {
+    InsertedVertex { part: PartId, index: usize },
+    InsertedUv { part: PartId, index: usize },
+    InsertedNormal { part: PartId, index: usize },
+    RemovedVertex { part: PartId, index: usize, vertex: Vec3 },
+    RemovedUv { part: PartId, index: usize, uv: Vec2 },
+    RemovedNormal { part: PartId, index: usize, normal: Vec3 },
+}
+
+impl IndexMutation {
+    fn inverse_request(self) -> IndexMutationRequest {
+        match self {
+            Self::InsertedVertex { part, index } =>
+                IndexMutationRequest::RemoveVertex { part, index },
+            Self::InsertedUv { part, index } =>
+                IndexMutationRequest::RemoveUv { part, index },
+            Self::InsertedNormal { part, index } =>
+                IndexMutationRequest::RemoveNormal { part, index },
+            Self::RemovedVertex { part, index, vertex } =>
+                IndexMutationRequest::InsertVertex { part, index, vertex},
+            Self::RemovedUv { part, index, uv } =>
+                IndexMutationRequest::InsertUv { part, index, uv },
+            Self::RemovedNormal { part, index, normal } =>
+                IndexMutationRequest::InsertNormal { part, index, normal },
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -375,14 +496,9 @@ pub enum HistoryEntry {
     MeshMeta(LightMeshMetaSnapshot),
     MeshPlacement(LightMeshPlacementSnapshot),
     ViewPlacement(ViewPlacementsSnapshot),
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum HistoryType {
-    MeshPart,
-    MeshMeta,
-    MeshPlacement,
-    ViewPlacement,
+    IndexMutation(IndexMutation),
+    Rename(Rename),
+    MutliStep(Vec<HistoryEntry>),
 }
 
 pub struct History {
@@ -407,75 +523,105 @@ impl History {
         }
     }
 
+    fn process_history(
+        &mut self,
+        editor: &mut App,
+        gl: &Context,
+        entry: HistoryEntry
+    ) -> HistoryEntry {
+        match entry {
+            HistoryEntry::MeshPart(LightMeshPartSnapshot { idx, name, part }) => {
+                let m = editor.view.meshes.get_mut(idx).unwrap();
+                let current = m.data.parts.insert(name.clone(), *part).unwrap();
+                m.rebuild(gl);
+                HistoryEntry::MeshPart(LightMeshPartSnapshot {
+                    idx,
+                    name,
+                    part: Box::new(current),
+                })
+            }
+            HistoryEntry::MeshMeta(LightMeshMetaSnapshot {
+                idx,
+                mut credits,
+                mut textures,
+                mut data,
+                mut cull,
+            }) => {
+                let m = editor.view.meshes.get_mut(idx).unwrap();
+                mem::swap(&mut credits, &mut m.data.credits);
+                mem::swap(&mut textures, &mut m.data.textures);
+                mem::swap(&mut data, &mut m.data.data);
+                mem::swap(&mut cull, &mut m.data.cull);
+                m.rebuild(gl);
+                HistoryEntry::MeshMeta(LightMeshMetaSnapshot {
+                    idx,
+                    credits,
+                    textures,
+                    data,
+                    cull,
+                })
+            }
+            HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
+                view_idx,
+                mut placements,
+            }) => {
+                let m = editor.view.meshes.get_mut(view_idx).unwrap();
+                mem::swap(&mut placements, &mut m.data.placements);
+                m.rebuild(gl);
+                HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
+                    view_idx,
+                    placements,
+                })
+            }
+            HistoryEntry::ViewPlacement(ViewPlacementsSnapshot {
+                idx,
+                mut placements,
+            }) => {
+                let m = editor.view.meshes.get_mut(idx).unwrap();
+                mem::swap(&mut placements, &mut m.placements);
+                m.rebuild(gl);
+                HistoryEntry::ViewPlacement(ViewPlacementsSnapshot { idx, placements })
+            }
+            HistoryEntry::IndexMutation(idx_mut) => {
+                HistoryEntry::IndexMutation(editor.mutate_index_inner(idx_mut.inverse_request()))
+            }
+            HistoryEntry::Rename(rename) => {
+
+                editor.rename(rename.clone());
+
+                HistoryEntry::Rename(rename.invert())
+            }
+            HistoryEntry::MutliStep(mut steps) => {
+                let mut out = Vec::new();
+                while let Some(step) = steps.pop() {
+                    out.push(self.process_history(editor, gl, step));
+                }
+                HistoryEntry::MutliStep(out)
+            }
+        }
+    }
+
     pub fn cycle_history(
         &mut self,
         dir: HistoryCycleDir,
-        view_meshes: &mut [ViewMesh],
+        editor: &mut App,
         gl: &Context,
     ) {
-        let (back, front) = match dir {
-            HistoryCycleDir::Future => (&mut self.history, &mut self.future),
-            HistoryCycleDir::Past => (&mut self.future, &mut self.history),
+        let front = match dir {
+            HistoryCycleDir::Future => &mut self.future,
+            HistoryCycleDir::Past => &mut self.history,
         };
 
-        if let Some(restore) = front.pop_back() {
+        let save = if let Some(restore) = front.pop_back() {
             println!("Restoring {:?}", restore);
-            let save = match restore {
-                HistoryEntry::MeshPart(LightMeshPartSnapshot { idx, name, part }) => {
-                    let m = view_meshes.get_mut(idx).unwrap();
-                    let current = m.data.parts.insert(name.clone(), *part).unwrap();
-                    m.rebuild(gl);
-                    HistoryEntry::MeshPart(LightMeshPartSnapshot {
-                        idx,
-                        name,
-                        part: Box::new(current),
-                    })
-                }
-                HistoryEntry::MeshMeta(LightMeshMetaSnapshot {
-                    idx,
-                    mut credits,
-                    mut textures,
-                    mut data,
-                    mut cull,
-                }) => {
-                    let m = view_meshes.get_mut(idx).unwrap();
-                    mem::swap(&mut credits, &mut m.data.credits);
-                    mem::swap(&mut textures, &mut m.data.textures);
-                    mem::swap(&mut data, &mut m.data.data);
-                    mem::swap(&mut cull, &mut m.data.cull);
-                    m.rebuild(gl);
-                    HistoryEntry::MeshMeta(LightMeshMetaSnapshot {
-                        idx,
-                        credits,
-                        textures,
-                        data,
-                        cull,
-                    })
-                }
-                HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
-                    view_idx,
-                    mut placements,
-                }) => {
-                    let m = view_meshes.get_mut(view_idx).unwrap();
-                    mem::swap(&mut placements, &mut m.data.placements);
-                    m.rebuild(gl);
-                    HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
-                        view_idx,
-                        placements,
-                    })
-                }
-                HistoryEntry::ViewPlacement(ViewPlacementsSnapshot {
-                    idx,
-                    mut placements,
-                }) => {
-                    let m = view_meshes.get_mut(idx).unwrap();
-                    mem::swap(&mut placements, &mut m.placements);
-                    m.rebuild(gl);
-                    HistoryEntry::ViewPlacement(ViewPlacementsSnapshot { idx, placements })
-                }
-            };
-            back.push_back(save);
-        }
+            self.process_history(editor, gl, restore)
+        } else { return };
+
+        let back = match dir {
+            HistoryCycleDir::Future => &mut self.history,
+            HistoryCycleDir::Past => &mut self.future,
+        };
+        back.push_back(save);
     }
 }
 
@@ -901,13 +1047,17 @@ impl App {
     }
 
     pub fn undo(&mut self, gl: &Context) {
+        let rd = RefDuper;
+        let self2 = unsafe { rd.detach_mut_ref(self) };
         self.history
-            .cycle_history(HistoryCycleDir::Past, &mut self.view.meshes, gl);
+            .cycle_history(HistoryCycleDir::Past, self2, gl);
     }
 
     pub fn redo(&mut self, gl: &Context) {
+        let rd = RefDuper;
+        let self2 = unsafe { rd.detach_mut_ref(self) };
         self.history
-            .cycle_history(HistoryCycleDir::Future, &mut self.view.meshes, gl);
+            .cycle_history(HistoryCycleDir::Future, self2, gl);
     }
 
     pub fn frame_to_geometry(&mut self) {}
@@ -953,6 +1103,14 @@ impl App {
         }
     }
 
+    pub fn get_current_view_mesh(&self) -> Option<&ViewMesh> {
+        self.view.meshes.get(self.editor.mesh?)
+    }
+
+    pub fn get_current_view_mesh_mut(&mut self) -> Option<&mut ViewMesh> {
+        self.view.meshes.get_mut(self.editor.mesh?)
+    }
+
     pub fn get_current_mesh_idx(&self) -> Option<usize> {
         self.editor.mesh
     }
@@ -977,29 +1135,61 @@ impl App {
         let idx = self.get_current_mesh_idx()?;
         let name = self.get_current_part_name()?;
 
-        // SAFETY: this borrow only exists to the end of this function
+        // # SAFETY:
+        // this borrow only exists to the end of this function
         // so no mutation can happen while it exists
         let name = unsafe { &*(name as *const _) };
 
         self.view.meshes.get_mut(idx)?.data.parts.get_mut(name)
     }
 
-    pub fn push_history(&mut self, typ: HistoryType) {
-        match typ {
-            HistoryType::MeshPart => {
-                if let Some((idx, name, part)) = self.get_current_part() {
-                    self.history
-                        .add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
-                            idx,
-                            name: name.to_string(),
-                            part: Box::new(part.clone()),
-                        }));
+    pub fn add_history(&mut self, entry: HistoryEntry) {
+        self.history.add_history(entry);
+    }
+
+    /// Renames the specified data and updates history
+    pub fn rename(&mut self, rename: Rename) -> anyhow::Result<()> {
+        match &rename {
+            Rename::DataTag { view_idx, swap } => {
+                if let Some(vm) = self.view.meshes.get_mut(*view_idx) {
+                    vm.data.rename_data(swap);
                 }
-            }
-            HistoryType::MeshMeta => {}
-            HistoryType::MeshPlacement => {}
-            HistoryType::ViewPlacement => {}
+            },
+            Rename::Part { view_idx, swap } => {
+                if let Some(vm) = self.view.meshes.get_mut(*view_idx) {
+                    vm.data.rename_part(swap);
+                }
+            },
+            Rename::Vertex { part, swap } => {
+                if let Some(vm) = self.view.meshes.get_mut(part.view_idx) {
+                    vm.data.rename_vertex(part.name.as_str(), swap)?
+                }
+            },
+            Rename::Uv { part, swap } => {
+                if let Some(vm) = self.view.meshes.get_mut(part.view_idx) {
+                    vm.data.rename_uv(part.name.as_str(), swap)?
+                }
+            },
+            Rename::Normal { part, swap } => {
+                if let Some(vm) = self.view.meshes.get_mut(part.view_idx) {
+                    vm.data.rename_normal(part.name.as_str(), swap)?
+                }
+            },
+            Rename::ComputeVertex { part, swap } => {},
+            Rename::ComputeNormal { part, swap } => {},
         }
+        self.add_history(HistoryEntry::Rename(rename));
+        Ok(())
+    }
+
+    fn mutate_index_inner(&mut self, idx_mut: IndexMutationRequest) -> IndexMutation {
+        todo!()
+    }
+
+    /// modifies indexed data and pushes to history
+    pub fn mutate_index(&mut self, idx_mut: IndexMutationRequest) {
+        let res = self.mutate_index_inner(idx_mut);
+        self.add_history(HistoryEntry::IndexMutation(res));
     }
 
     fn check_vertex_collision(
@@ -1092,7 +1282,15 @@ impl App {
                     self.upload_selection_points(gl);
                     self.drag.state = DragState::Vertex;
                     self.drag.drag_last = Vec2::new(mx, my);
-                    self.push_history(HistoryType::MeshPart);
+
+                    if let Some((idx, name, part)) = self.get_current_part() {
+                        self.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
+                            idx,
+                            name: name.to_string(),
+                            part: Box::new(part.clone())
+                        }));
+                    }
+
                 } else if shift {
                     self.drag.state = DragState::Marquee(Vec4::new(mx, my, mx, my));
                 }
