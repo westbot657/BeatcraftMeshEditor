@@ -3,7 +3,6 @@
 flat in int vCh;
 in vec3 vN;
 in vec4 vColorAlpha;
-in float vDepth;
 uniform int uWire;
 out vec4 fragColor;
 
@@ -29,15 +28,17 @@ void main() {
     int by = int(mod(gl_FragCoord.y, 4.0));
     int bayer = BAYER[by * 4 + bx];
 
+    vec4 vColor = vColorAlpha;
     if (!gl_FrontFacing) {
-        float t = 1.0 - clamp(vDepth / 50.0, 0.0, 1.0);
+        float t = 1.0 - clamp(gl_FragCoord.z / gl_FragCoord.w / 50.0, 0.0, 1.0);
         int threshold = int(mix(15.0, 1.0, t));
         if (bayer >= threshold) discard;
+        vColor = vec4(vColor.rgb * vec3(2.0, 2.0, 4.0), vColor.a);
     }
 
     vec3 N = normalize(vN);
     if (!gl_FrontFacing) N = -N;
     float diff = max(dot(N, LIGHT), 0.0) * 0.6 + 0.4;
-    vec3 base = (vCh > 7) ? vColorAlpha.rgb : COLORS[vCh & 7];
-    fragColor = vec4(base * diff, vColorAlpha.a);
+    vec3 base = (vCh > 7) ? vColor.rgb : COLORS[vCh & 7];
+    fragColor = vec4(base * diff, vColor.a);
 }

@@ -431,10 +431,6 @@ pub enum Rename {
     Uv { part: PartId, swap: DataSwap<UvId> },
     /// Can rename any normal between indexed and named.
     Normal { part: PartId, swap: DataSwap<NormalId> },
-    /// Can rename compute vertices
-    ComputeVertex { part: PartId, swap: DataSwap<String> },
-    /// Can rename compute normals
-    ComputeNormal { part: PartId, swap: DataSwap<String> },
 }
 
 impl Rename {
@@ -445,47 +441,6 @@ impl Rename {
             Self::Uv { part, swap } => Self::Uv { part, swap: swap.invert() },
             Self::Normal { part, swap } => Self::Normal { part, swap: swap.invert() },
             Self::Vertex { part, swap } => Self::Vertex { part, swap: swap.invert() },
-            Self::ComputeNormal { part, swap } => Self::ComputeNormal { part, swap: swap.invert() },
-            Self::ComputeVertex { part, swap } => Self::ComputeVertex { part, swap: swap.invert() },
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum IndexMutationRequest {
-    InsertVertex { part: PartId, index: usize, vertex: Vec3 },
-    InsertUv { part: PartId, index: usize, uv: Vec2 },
-    InsertNormal { part: PartId, index: usize, normal: Vec3 },
-    RemoveVertex { part: PartId, index: usize },
-    RemoveUv { part: PartId, index: usize },
-    RemoveNormal { part: PartId, index: usize },
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum IndexMutation {
-    InsertedVertex { part: PartId, index: usize },
-    InsertedUv { part: PartId, index: usize },
-    InsertedNormal { part: PartId, index: usize },
-    RemovedVertex { part: PartId, index: usize, vertex: Vec3 },
-    RemovedUv { part: PartId, index: usize, uv: Vec2 },
-    RemovedNormal { part: PartId, index: usize, normal: Vec3 },
-}
-
-impl IndexMutation {
-    fn inverse_request(self) -> IndexMutationRequest {
-        match self {
-            Self::InsertedVertex { part, index } =>
-                IndexMutationRequest::RemoveVertex { part, index },
-            Self::InsertedUv { part, index } =>
-                IndexMutationRequest::RemoveUv { part, index },
-            Self::InsertedNormal { part, index } =>
-                IndexMutationRequest::RemoveNormal { part, index },
-            Self::RemovedVertex { part, index, vertex } =>
-                IndexMutationRequest::InsertVertex { part, index, vertex},
-            Self::RemovedUv { part, index, uv } =>
-                IndexMutationRequest::InsertUv { part, index, uv },
-            Self::RemovedNormal { part, index, normal } =>
-                IndexMutationRequest::InsertNormal { part, index, normal },
         }
     }
 }
@@ -496,7 +451,6 @@ pub enum HistoryEntry {
     MeshMeta(LightMeshMetaSnapshot),
     MeshPlacement(LightMeshPlacementSnapshot),
     ViewPlacement(ViewPlacementsSnapshot),
-    IndexMutation(IndexMutation),
     Rename(Rename),
     MutliStep(Vec<HistoryEntry>),
 }
@@ -534,6 +488,7 @@ impl History {
                 let m = editor.view.meshes.get_mut(idx).unwrap();
                 let current = m.data.parts.insert(name.clone(), *part).unwrap();
                 m.rebuild(gl);
+                editor.upload_selection_points(gl);
                 HistoryEntry::MeshPart(LightMeshPartSnapshot {
                     idx,
                     name,
@@ -553,6 +508,7 @@ impl History {
                 mem::swap(&mut data, &mut m.data.data);
                 mem::swap(&mut cull, &mut m.data.cull);
                 m.rebuild(gl);
+                editor.upload_selection_points(gl);
                 HistoryEntry::MeshMeta(LightMeshMetaSnapshot {
                     idx,
                     credits,
@@ -568,6 +524,7 @@ impl History {
                 let m = editor.view.meshes.get_mut(view_idx).unwrap();
                 mem::swap(&mut placements, &mut m.data.placements);
                 m.rebuild(gl);
+                editor.upload_selection_points(gl);
                 HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
                     view_idx,
                     placements,
@@ -580,14 +537,12 @@ impl History {
                 let m = editor.view.meshes.get_mut(idx).unwrap();
                 mem::swap(&mut placements, &mut m.placements);
                 m.rebuild(gl);
+                editor.upload_selection_points(gl);
                 HistoryEntry::ViewPlacement(ViewPlacementsSnapshot { idx, placements })
-            }
-            HistoryEntry::IndexMutation(idx_mut) => {
-                HistoryEntry::IndexMutation(editor.mutate_index_inner(idx_mut.inverse_request()))
             }
             HistoryEntry::Rename(rename) => {
 
-                editor.rename(rename.clone());
+                editor.rename(rename.clone()).expect("Renames shouldn't end up in history if they are invalid");
 
                 HistoryEntry::Rename(rename.invert())
             }
@@ -1175,21 +1130,9 @@ impl App {
                     vm.data.rename_normal(part.name.as_str(), swap)?
                 }
             },
-            Rename::ComputeVertex { part, swap } => {},
-            Rename::ComputeNormal { part, swap } => {},
         }
         self.add_history(HistoryEntry::Rename(rename));
         Ok(())
-    }
-
-    fn mutate_index_inner(&mut self, idx_mut: IndexMutationRequest) -> IndexMutation {
-        todo!()
-    }
-
-    /// modifies indexed data and pushes to history
-    pub fn mutate_index(&mut self, idx_mut: IndexMutationRequest) {
-        let res = self.mutate_index_inner(idx_mut);
-        self.add_history(HistoryEntry::IndexMutation(res));
     }
 
     fn check_vertex_collision(
@@ -1201,7 +1144,7 @@ impl App {
         vp: &Mat4,
         include_compute: bool,
     ) -> Option<VertexId> {
-        let r = self.cam().pick_radius(8., h);
+        let r = self.cam().pick_radius(10., h);
         let pick_cycle = &mut self.click_cycle.vertices;
         let same_spot =
             (mx - pick_cycle.last_pos.x).abs() <= 2. && (my - pick_cycle.last_pos.y).abs() <= 2.;
@@ -1346,6 +1289,8 @@ impl App {
         if let DragState::Marquee(vec4) = self.drag.state {
             self.finish_marquee(vec4, gl);
         }
+
+        let _ = (mx, my);
 
         self.drag.state = DragState::None;
     }

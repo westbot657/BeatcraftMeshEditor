@@ -531,7 +531,6 @@ impl Renderer {
         unsafe {
             gl.use_program(Some(self.mesh));
             self.set_mat4(gl, self.mesh, "uVP", vp);
-            self.set_vec3(gl, self.mesh, "uCamPos", eye);
             for call in calls {
                 self.set_int(gl, self.mesh, "uWire", 0);
                 call.mesh

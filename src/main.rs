@@ -362,7 +362,6 @@ impl eframe::App for App {
                                 let w2 = (w - ui.spacing().item_spacing.x) / 2.0;
                                 let w3 = (w - ui.spacing().item_spacing.x * 2.0) / 3.0;
 
-                                // ── Placements ────────────────────────────────────────────────
                                 ui.horizontal(|ui| {
                                     let icon = if toggles.placements { "▶" } else { "▼" };
                                     if ui.small_button(icon).clicked() { toggles.placements = !toggles.placements; }
@@ -492,7 +491,6 @@ impl eframe::App for App {
                                     }
                                 }
 
-                                // ── Data ──────────────────────────────────────────────────────
                                 ui.horizontal(|ui| {
                                     let icon = if toggles.data { "▶" } else { "▼" };
                                     if ui.small_button(icon).clicked() { toggles.data = !toggles.data; }
@@ -526,14 +524,14 @@ impl eframe::App for App {
                                         if !*di_collapsed {
                                             ui.horizontal(|ui| {
                                                 // Mat: click-cycle 0->1->2->0
-                                                let mat_label = format!("Mat [{}]", entry.material);
+                                                let mat_label = format!("Material {}", entry.material);
                                                 if ui.button(mat_label).clicked() {
                                                     entry.material = (entry.material + 1) % 3;
                                                 }
 
                                                 // Ch: dropdown 0..7
                                                 egui::ComboBox::from_id_salt(egui::Id::new("data_ch").with(di))
-                                                    .selected_text(format!("Ch [{}]", entry.color))
+                                                    .selected_text(format!("Channel {}", entry.color))
                                                     .show_ui(ui, |ui| {
                                                         for ch in 0u8..8 {
                                                             ui.selectable_value(&mut entry.color, ch, ch.to_string());
@@ -556,7 +554,6 @@ impl eframe::App for App {
                                     }
                                 }
 
-                                // ── Textures ──────────────────────────────────────────────────
                                 ui.horizontal(|ui| {
                                     let icon = if toggles.textures { "▶" } else { "▼" };
                                     if ui.small_button(icon).clicked() { toggles.textures = !toggles.textures; }
@@ -587,7 +584,6 @@ impl eframe::App for App {
                                     }
                                 }
 
-                                // ── Render Settings ───────────────────────────────────────────
                                 ui.horizontal(|ui| {
                                     let icon = if toggles.settings { "▶" } else { "▼" };
                                     if ui.small_button(icon).clicked() { toggles.settings = !toggles.settings; }
@@ -617,7 +613,6 @@ impl eframe::App for App {
                                         });
                                 }
 
-                                // ── Credits ───────────────────────────────────────────────────
                                 ui.horizontal(|ui| {
                                     let icon = if toggles.credits { "▶" } else { "▼" };
                                     if ui.small_button(icon).clicked() { toggles.credits = !toggles.credits; }

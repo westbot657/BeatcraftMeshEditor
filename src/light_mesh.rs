@@ -9,6 +9,7 @@ use glam::{FloatExt, Mat4, Quat, Vec2, Vec3};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 
+use crate::RefDuper;
 use crate::data::{
     ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, 
     NormalId, PartData, PlacementData, StateSet, TriangleData,
@@ -532,7 +533,7 @@ impl From<HashableVec3> for Vec3 {
 }
 
 impl ComputeVertex {
-    fn compute(&self, part: &Part) -> anyhow::Result<Vec3> {
+    pub(crate) fn compute(&self, part: &Part) -> anyhow::Result<Vec3> {
         let a = part.resolve_vertex(&self.points[0])?;
         let b = part.resolve_vertex(&self.points[1])?;
 
@@ -580,7 +581,7 @@ impl ComputeVertex {
 }
 
 impl ComputeNormal {
-    fn compute(&self, part: &Part) -> anyhow::Result<Vec3> {
+    pub(crate) fn compute(&self, part: &Part) -> anyhow::Result<Vec3> {
         let a = part.resolve_vertex(&self.points[0])?;
         let b = part.resolve_vertex(&self.points[1])?;
         let c = part.resolve_vertex(&self.points[2])?;
@@ -644,6 +645,129 @@ impl Part {
                 *mat = swap.to.clone();
             }
         }
+    }
+
+    /// if any deltas are negative, than ids > threshold are shifted down
+    /// otherwise ids <= threshold are shifted up.
+    pub fn cascade_ids(&mut self, threshold: usize, deltas: (i64, i64, i64)) {
+        let negative = deltas.0 < 0 || deltas.1 < 0 || deltas.2 < 0;
+
+        let shift = |id: &mut usize, delta: i64| {
+            if negative {
+                if *id > threshold {
+                    *id = (*id as i64 + delta) as usize;
+                }
+            } else if *id <= threshold {
+                *id += delta as usize
+            }
+        };
+
+        for tri in self.triangles.0.iter_mut() {
+            for vert in tri.vertices.iter_mut() {
+                match &mut vert.vertex {
+                    VertexId::Index(i) => shift(i, deltas.0),
+                    _ => {}
+                }
+                match &mut vert.uv {
+                    UvId::Index(i) => shift(i, deltas.1),
+                    _ => {}
+                }
+                match &mut vert.normal {
+                    NormalId::Index(i) => shift(i, deltas.2),
+                    _ => {}
+                }
+            }
+        }
+        for comp in self.vertices.compute.values_mut() {
+            for id in comp.points.iter_mut() {
+                match id {
+                    VertexId::Index(i) => shift(i, deltas.0),
+                    _ => {}
+                }
+            }
+        }
+        for comp in self.normals.compute.values_mut() {
+            for id in comp.points.iter_mut() {
+                match id {
+                    VertexId::Index(i) => shift(i, deltas.0),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    pub fn contains_vertex(&self, id: &VertexId) -> bool {
+        match id {
+            VertexId::Index(i) => *i < self.vertices.indexed.len(),
+            VertexId::Named(n) => self.vertices.named.contains_key(n) || self.vertices.compute.contains_key(n),
+        }
+    }
+
+    pub fn contains_uv(&self, id: &UvId) -> bool {
+        match id {
+            UvId::Index(i) => *i < self.uvs.indexed.len(),
+            UvId::Named(n) => self.uvs.named.contains_key(n),
+        }
+    }
+
+    pub fn contains_normal(&self, id: &NormalId) -> bool {
+        match id {
+            NormalId::Index(i) => *i < self.normals.indexed.len(),
+            NormalId::Named(n) => self.normals.named.contains_key(n) || self.normals.compute.contains_key(n),
+        }
+    }
+
+    pub(crate) unsafe fn get_detached_vertex_refs<'a>(&mut self, lifeline: &'a mut RefDuper, target: usize) -> Vec<&'a mut VertexId> {
+        let mut refs = Vec::new();
+
+        for comp in self.vertices.compute.values_mut() {
+            for id in comp.points.iter_mut() {
+                if matches!(id, VertexId::Index(i) if *i == target) {
+                    refs.push(unsafe { lifeline.detach_mut_ref(id) });
+                }
+            }
+        }
+        for comp in self.normals.compute.values_mut() {
+            for id in comp.points.iter_mut() {
+                if matches!(id, VertexId::Index(i) if *i == target) {
+                    refs.push(unsafe { lifeline.detach_mut_ref(id) });
+                }
+            }
+        }
+        for tri in self.triangles.0.iter_mut() {
+            for vert in tri.vertices.iter_mut() {
+                if matches!(vert.vertex, VertexId::Index(i) if i == target) {
+                    refs.push(unsafe { lifeline.detach_mut_ref(&mut vert.vertex) });
+                }
+            }
+        }
+        refs
+    }
+
+    pub(crate) unsafe fn get_detached_uv_refs<'a>(&mut self, lifeline: &'a mut RefDuper, target: usize) -> Vec<&'a mut UvId> {
+        let mut refs = Vec::new();
+
+        for tri in self.triangles.0.iter_mut() {
+            for vert in tri.vertices.iter_mut() {
+                if matches!(vert.uv, UvId::Index(i) if i == target) {
+                    refs.push(unsafe { lifeline.detach_mut_ref(&mut vert.uv) });
+                }
+            }
+        }
+        refs
+    }
+
+    pub(crate) unsafe fn get_detached_normal_refs<'a>(&mut self, lifeline: &'a mut RefDuper, target: usize) -> Vec<&'a mut NormalId> {
+        let mut refs = Vec::new();
+
+        for tri in self.triangles.0.iter_mut() {
+            for vert in tri.vertices.iter_mut() {
+                if matches!(vert.normal, NormalId::Index(i) if i == target) {
+                    refs.push(unsafe { lifeline.detach_mut_ref(&mut vert.normal) });
+                }
+            }
+        }
+        refs
     }
 
     pub fn dedupe_data(&mut self) {
