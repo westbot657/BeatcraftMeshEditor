@@ -1,9 +1,13 @@
 // mesh.frag
 #version 330 core
+
 flat in int vCh;
 in vec3 vN;
 in vec4 vColorAlpha;
+
 uniform int uWire;
+uniform sampler2D uNoise;
+
 out vec4 fragColor;
 
 const vec3 LIGHT = normalize(vec3(0.6, 1.0, 0.4));
@@ -22,15 +26,22 @@ const int BAYER[16] = int[16](
 );
 
 void main() {
-    if (uWire != 0) { fragColor = vec4(vec3(0.4), 0.4); return; }
+    if (uWire != 0) {
+        fragColor = vec4(vec3(0.4), 0.4);
+        return;
+    }
+    float x = gl_FragCoord.x;
+    float y = gl_FragCoord.y;
 
-    int bx = int(mod(gl_FragCoord.x, 4.0));
-    int by = int(mod(gl_FragCoord.y, 4.0));
+    int bx = int(mod(x, 4.0));
+    int by = int(mod(y, 4.0));
     int bayer = BAYER[by * 4 + bx];
 
+    float noise = texture(uNoise, vec2(x, y) / vec2(textureSize(uNoise, 0))).r;
+    float depth = gl_FragCoord.z / gl_FragCoord.w + (noise - 0.5) * 3.5;
     vec4 vColor = vColorAlpha;
     if (!gl_FrontFacing) {
-        float t = 1.0 - clamp(gl_FragCoord.z / gl_FragCoord.w / 50.0, 0.0, 1.0);
+        float t = 1.0 - clamp(depth / 50.0, 0.0, 1.0);
         int threshold = int(mix(15.0, 1.0, t));
         if (bayer >= threshold) discard;
         vColor = vec4(vColor.rgb * vec3(2.0, 2.0, 4.0), vColor.a);

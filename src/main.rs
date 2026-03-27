@@ -381,9 +381,6 @@ impl eframe::App for App {
 
                                     let mut to_remove = None;
                                     for (pi, placement) in mesh.data.placements.iter_mut().enumerate() {
-                                        let pt = toggles.placement_parts.entry(pi).or_insert(([true, true, true], Default::default()));
-
-                                        // Use PartCollapseToggles fields properly
                                         let pt_collapsed = toggles.placement_parts.entry(pi).or_insert(([true, true, true], Default::default()));
 
                                         ui.horizontal(|ui| {
@@ -433,25 +430,15 @@ impl eframe::App for App {
                                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                                     if ui.small_button("Paste").clicked() { /* TODO */ }
                                                     if ui.small_button("Copy").clicked() { /* TODO */ }
-                                                    let lock_icon = if pt_collapsed.0[2] { "🔒" } else { "🔓" };
-                                                    if ui.small_button(lock_icon).clicked() {
-                                                        pt_collapsed.0[2] = !pt_collapsed.0[2];
-                                                    }
+                                                    // TODO: re-add lock system when it works
+                                                    // correctly
+                                                    // let lock_icon = if pt_collapsed.0[2] { "[#]" } else { "[ ]" };
+                                                    // if ui.small_button(lock_icon).clicked() {
+                                                    //     pt_collapsed.0[2] = !pt_collapsed.0[2];
+                                                    // }
                                                 });
                                             });
-                                            if pt_collapsed.0[2] {
-                                                // All axes move proportionally — drive from x, apply ratio to y/z
-                                                let old_x = placement.scale.x;
-                                                vec3_row(ui, &mut placement.scale, w3);
-                                                let new_x = placement.scale.x;
-                                                if old_x.abs() > 1e-6 && new_x != old_x {
-                                                    let ratio = new_x / old_x;
-                                                    placement.scale.y *= ratio;
-                                                    placement.scale.z *= ratio;
-                                                }
-                                            } else {
-                                                vec3_row(ui, &mut placement.scale, w3);
-                                            }
+                                            vec3_row(ui, &mut placement.scale, w3);
 
                                             // Remap Data
                                             ui.horizontal(|ui| {
@@ -541,7 +528,7 @@ impl eframe::App for App {
 
                                             // Texture: unbound u8, just a drag value
                                             ui.horizontal(|ui| {
-                                                ui.label("Tex");
+                                                ui.label("Texture");
                                                 ui.add(egui::DragValue::new(&mut entry.texture).range(0..=255u8).speed(1));
                                             });
                                         }
@@ -639,7 +626,9 @@ impl eframe::App for App {
                                 }
                             }
                         }
-                        editor::EditorMode::Edit => {}
+                        editor::EditorMode::Edit => {
+                            // TODO: add raw vertices, uvs, and normals
+                        }
                     });
 
                     ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
@@ -753,10 +742,18 @@ impl eframe::App for App {
                             }
                         },
                         editor::EditorMode::Assembly => {
-
+                            // does anything even need to be added here?
                         },
                         editor::EditorMode::Edit => {
-
+                            // TODO:
+                            // if vertices == 2:
+                            //     add compute vertex button
+                            // elif vertices >= 3:
+                            //     allow creating/removing triangles
+                            // if vertices > 1:
+                            //     multiplexed position input
+                            // if vertices make up triangles:
+                            //     multiplexed normal and uv inputs
                         },
                     }
                 });

@@ -106,3 +106,84 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
         response
     }
 }
+
+
+pub struct MultiMathValue<'a, T: MapIndexable> {
+    values: &'a mut Option<Vec<f32>>,
+    vars: &'a mut [&'a mut T],
+    max_decimals: usize,
+    suffix: Option<&'a str>,
+    degrees: bool,
+}
+
+impl<'a, T: MapIndexable> MultiMathValue<'a, T> {
+    pub fn new(values: &'a mut Option<Vec<f32>>, vars: &'a mut [&'a mut T]) -> Self {
+        Self {
+            values,
+            vars,
+            max_decimals: 3,
+            suffix: None,
+            degrees: false,
+        }
+    }
+
+    pub fn max_decimals(mut self, d: usize) -> Self {
+        self.max_decimals = d;
+        self
+    }
+
+    pub fn suffix(mut self, s: &'a str) -> Self {
+        self.suffix = Some(s);
+        self
+    }
+
+    pub fn degrees(mut self) -> Self {
+        self.degrees = true;
+        self
+    }
+}
+
+impl<'a, T: MapIndexable> egui::Widget for MultiMathValue<'a, T> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        let id = ui.next_auto_id();
+
+        let mut text = ui.memory_mut(|m| {
+            m.data
+                .get_temp::<String>(id)
+                .unwrap_or_else(String::new)
+        });
+
+        let edit_response = ui.add(
+            egui::TextEdit::singleline(&mut text)
+                .desired_width(ui.available_width())
+                .font(egui::TextStyle::Monospace)
+                .hint_text("x, y, z"),
+        );
+
+        let commit = ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+        if commit && !text.trim().is_empty() {
+
+            let evaluated: Option<Vec<f32>> = self.vars
+                .iter_mut()
+                .map(|vars| crate::math_interp::eval_inner(&text, *vars, self.degrees))
+                .collect();
+
+            if let Some(results) = evaluated {
+                *self.values = Some(results);
+            }
+            // on eval failure, leave text as-is for the user to correct
+        } else if cancel {
+            text = String::new();
+            *self.values = None;
+        }
+
+        ui.memory_mut(|m| {
+            m.data.insert_temp(id, text);
+        });
+
+        edit_response
+    }
+}
+

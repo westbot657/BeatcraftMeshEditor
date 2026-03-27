@@ -391,6 +391,13 @@ impl Default for PartCollapseToggles {
 }
 
 #[derive(Default)]
+pub struct EditCollapsed {
+    pub vertices: bool,
+    pub uvs: bool,
+    pub normal: bool,
+}
+
+#[derive(Default)]
 pub struct UiState {
     pub view_mesh: Option<usize>,
     pub open_mesh_channel: Option<mpsc::Receiver<Vec<PathBuf>>>,
@@ -398,6 +405,7 @@ pub struct UiState {
     pub collapsed: HashMap<usize, Vec<bool>>,
     pub view_rotation_modes: HashMap<usize, Vec<[RotationDisplayMode; 2]>>,
     pub assembly_collapsed: HashMap<PathBuf, PartCollapseToggles>,
+    pub edit_collpased: EditCollapsed,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -1131,7 +1139,7 @@ impl App {
                 }
             },
         }
-        self.add_history(HistoryEntry::Rename(rename));
+        self.add_history(HistoryEntry::Rename(rename.invert()));
         Ok(())
     }
 

@@ -414,6 +414,7 @@ pub struct Renderer {
     pub grid_vao: glow::NativeVertexArray,
     pub grid_n: i32,
     pub axis_vao: glow::NativeVertexArray,
+    pub blue_noise: glow::NativeTexture,
 }
 
 impl Renderer {
@@ -510,6 +511,37 @@ impl Renderer {
 
             gl.enable(glow::PROGRAM_POINT_SIZE);
 
+            let blue_noise = {
+                let bn = image::load_from_memory(include_bytes!("assets/textures/noise/blue_noise.png"))
+                    .unwrap()
+                    .to_rgba8();
+
+                let (w, h) = bn.dimensions();
+                let pixels = bn.into_raw();
+
+                let tex = gl.create_texture().unwrap();
+                gl.bind_texture(glow::TEXTURE_2D, Some(tex));
+
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::REPEAT as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::REPEAT as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+
+                gl.tex_image_2d(
+                    glow::TEXTURE_2D,
+                    0,
+                    glow::RGBA as i32,
+                    w as i32,
+                    h as i32,
+                    0,
+                    glow::RGBA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelUnpackData::Slice(Some(pixels.as_slice()))
+                );
+
+                tex
+            };
+
             Ok(Self {
                 mesh,
                 point,
@@ -517,6 +549,7 @@ impl Renderer {
                 grid_vao,
                 grid_n,
                 axis_vao,
+                blue_noise,
             })
         }
     }
@@ -531,6 +564,7 @@ impl Renderer {
         unsafe {
             gl.use_program(Some(self.mesh));
             self.set_mat4(gl, self.mesh, "uVP", vp);
+            self.set_sampler(gl, self.mesh, "uNoise", Some(self.blue_noise), 0);
             for call in calls {
                 self.set_int(gl, self.mesh, "uWire", 0);
                 call.mesh
@@ -547,6 +581,24 @@ impl Renderer {
                 self.set_float(gl, self.point, "uPointSize", call.size);
                 call.mesh.draw_points(gl, &call.instances);
             }
+        }
+    }
+
+    fn set_sampler(
+        &self,
+        gl: &glow::Context,
+        prog: glow::NativeProgram,
+        name: &str,
+        texture: Option<glow::NativeTexture>,
+        slot: u32
+    ) {
+        unsafe {
+            gl.active_texture(glow::TEXTURE0 + slot);
+            gl.bind_texture(glow::TEXTURE_2D, texture);
+            gl.uniform_1_i32(
+                gl.get_uniform_location(prog, name).as_ref(),
+                slot as i32,
+            );
         }
     }
 
