@@ -1,9 +1,16 @@
+use std::mem;
+
 use crate::RefDuper;
 use crate::data::{NormalId, UvId, VertexId};
 use crate::editor::DataSwap;
 use crate::light_mesh::{LightMesh, Part};
 use anyhow::{Result, anyhow};
+use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
+
+fn rehash<T>(map: IndexMap<String, T>) -> IndexMap<String, T> {
+    map.into_iter().collect()
+}
 
 impl LightMesh {
     pub fn rename_vertex(&mut self, part: &str, swap: &DataSwap<VertexId>) -> Result<()> {
@@ -11,6 +18,8 @@ impl LightMesh {
             if !part.contains_vertex(&swap.from) {
                 return Err(anyhow!("vertex is not present"));
             }
+
+            println!("pre-rename: {part:#?}");
 
             let update_vertices = |part: &mut Part| {
                 match &swap.from {
@@ -95,6 +104,10 @@ impl LightMesh {
                     }
                 }
             }
+            let named = mem::take(&mut part.vertices.named);
+            part.vertices.named = rehash(named);
+            let compute = mem::take(&mut part.vertices.compute);
+            part.vertices.compute = rehash(compute);
         }
         Ok(())
     }
@@ -165,6 +178,9 @@ impl LightMesh {
                     }
                 }
             }
+
+            let named = mem::take(&mut part.uvs.named);
+            part.uvs.named = rehash(named);
         }
         Ok(())
     }
@@ -235,6 +251,10 @@ impl LightMesh {
                     }
                 }
             }
+            let named = mem::take(&mut part.normals.named);
+            part.normals.named = rehash(named);
+            let compute = mem::take(&mut part.normals.compute);
+            part.normals.compute = rehash(compute);
         }
         Ok(())
     }

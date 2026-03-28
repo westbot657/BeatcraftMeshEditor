@@ -1225,10 +1225,44 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui) {
                     name = self3.state.ui.working_name.take().unwrap_or(name);
                 }
 
+                if ui
+                    .add_sized(
+                        [w, 20.],
+                        egui::TextEdit::singleline(&mut name),
+                    )
+                    .changed()
+                {
+                    let _ = self3.rename(editor::Rename::Vertex {
+                        part: editor::PartId {
+                            view_idx: self3.get_current_mesh_idx().unwrap(),
+                            name: self3.get_current_part_name().unwrap().to_string(),
+                        },
+                        swap: editor::DataSwap {
+                            from: data::VertexId::Named(key.clone()),
+                            to: data::VertexId::Named(name)
+                        }
+                    });
+                    self3.state.ui.working_key = WorkingRenameKey::None;
+                    return;
+                }
+
                 if name != *key {
                     self3.state.ui.working_key = WorkingRenameKey::NamedVert(key.clone());
                     self3.state.ui.working_name = Some(name);
                 }
+
+                vec3_row(
+                    ui, vert, w3,
+                    || part2.clone(),
+                    |t| self3.add_history(editor::HistoryEntry::MeshPart(
+                        light_mesh::LightMeshPartSnapshot {
+                            idx: self3.get_current_mesh_idx().unwrap(),
+                            name: self3.get_current_part_name().unwrap().to_string(),
+                            part: Box::new(t)
+                        }
+                    ))
+                );
+
                 // remove button
             }
         }
