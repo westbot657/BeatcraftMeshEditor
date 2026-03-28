@@ -9,7 +9,7 @@ use egui::{Key, Response};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 
 use crate::RefDuper;
-use crate::data::{NormalId, SessionData, SessionMeshData, SessionPlacementData, UvId, VertexId};
+use crate::data::{LightMeshData, NormalId, SessionData, SessionMeshData, SessionPlacementData, UvId, VertexId};
 use crate::light_mesh::{
     LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot, Part,
 };
@@ -358,6 +358,7 @@ pub struct State {
     pub show_grid: bool,
     pub show_verts: bool,
     pub euler_swizzle: EulerSwizzle,
+    pub title_content: Option<String>,
     pub status: String,
     pub status_timer: f32,
     pub clipboard: Clipboard,
@@ -424,6 +425,8 @@ pub struct UiState {
     pub open_mesh_channel: Option<mpsc::Receiver<Vec<PathBuf>>>,
     /// mpsc channel for opening a session
     pub open_session_channel: Option<mpsc::Receiver<PathBuf>>,
+    /// mpsc channel for saving a session
+    pub save_session_channel: Option<mpsc::Receiver<PathBuf>>,
     /// Map<viewmesh id, Vec<view placement collapse state>>
     pub collapsed: HashMap<usize, Vec<bool>>,
     /// Map<viewmesh id, Vec<rotation display modes>>
@@ -643,6 +646,7 @@ impl History {
 }
 
 pub struct App {
+    pub title: &'static str,
     pub mode: EditorMode,
     pub last_mode: EditorMode,
     pub tool: ToolMode,
@@ -693,6 +697,7 @@ impl App {
         let gl2 = Arc::clone(&gl);
 
         let mut s = Self {
+            title: "Beatcraft Mesh Editor",
             mode: EditorMode::View,
             last_mode: EditorMode::View,
             tool: ToolMode::Auto,
@@ -736,6 +741,7 @@ impl App {
                 camera: Camera::default(),
             },
             state: State {
+                title_content: None,
                 vp_rect: egui::Rect {
                     min: egui::Pos2 { x: 0., y: 0. },
                     max: egui::Pos2 { x: 0., y: 0. },
@@ -809,6 +815,58 @@ impl App {
         self.state.ui.open_mesh_channel.is_some() || self.state.ui.open_session_channel.is_some()
     }
 
+    fn save_session(&mut self) -> anyhow::Result<()> {
+        let mut meshes = Vec::new();
+
+        for view in self.view.meshes.iter() {
+            let mut placements = Vec::new();
+
+            for place in view.placements.iter() {
+                placements.push((*place).into());
+            }
+
+            meshes.push(SessionMeshData {
+                path: view.path.clone(),
+                placements,
+            });
+        }
+
+        let data = SessionData {
+            meshes,
+            camera: self.view.camera.into(),
+        };
+
+        let json = serde_json::to_string(&data)?;
+
+        if let Some(path) = self.view.session.as_deref() {
+            fs::write(path, &json)?;
+        } else {
+            let (sx, rx) = mpsc::channel();
+            self.state.ui.save_session_channel = Some(rx);
+
+            std::thread::spawn(move || {
+                if let Some(dest) = rfd::FileDialog::new()
+                    .set_title("Save Session")
+                    .add_filter("json", &["json"])
+                    .set_file_name("session.json")
+                    .save_file() {
+                    let _ = sx.send(dest);
+                }
+            });
+        }
+
+        Ok(())
+    }
+
+    fn save_current_mesh(&self) -> anyhow::Result<()> {
+        if let Some(sel) = self.editor.mesh && let Some(mesh) = self.view.meshes.get(sel) {
+            let json: LightMeshData = mesh.data.clone().into();
+            let json = serde_json::to_string(&json)?;
+            fs::write(&mesh.path, &json)?;
+        }
+        Ok(())
+    }
+
     pub fn handle_keys(&mut self, ctx: &egui::Context, gl: &Context) {
         if self.block_input() {
             return;
@@ -827,8 +885,28 @@ impl App {
         }
         if ctrl && input.key_pressed(Key::S) {
             match self.mode {
-                EditorMode::View => {}
-                EditorMode::Assembly | EditorMode::Edit => {}
+                EditorMode::View => {
+                    if let Err(e) = self.save_session() {
+                        self.state.status = "Failed to save session".into();
+                        eprintln!("Failed to save session:\n{e}");
+                        self.state.status_timer = 2.;
+                    } else {
+                        self.state.status = "[Saved]".into();
+                        self.state.title_content = Some("[Saved]".into());
+                        self.state.status_timer = 2.;
+                    }
+                }
+                EditorMode::Assembly | EditorMode::Edit => {
+                    if let Err(e) = self.save_current_mesh() {
+                        self.state.status = "Failed to save mesh".into();
+                        eprintln!("Failed to save mesh:\n{e}");
+                        self.state.status_timer = 2.;
+                    } else {
+                        self.state.status = "[Saved]".into();
+                        self.state.title_content = Some("[Saved]".into());
+                        self.state.status_timer = 2.;
+                    }
+                }
             }
         }
         if ctrl && input.key_pressed(Key::C) {
@@ -1469,6 +1547,26 @@ impl App {
                 }
             }
         }
+        if let Some(recv) = self.state.ui.save_session_channel.as_ref() {
+            match recv.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.state.ui.save_session_channel = None;
+                }
+                Ok(dest) => {
+                    self.view.session = Some(dest);
+                    if let Err(e) = self.save_session() {
+                        self.state.status = "Failed to save session".into();
+                        eprintln!("Failed to save session:\n{e}");
+                        self.state.status_timer = 2.;
+                    } else {
+                        self.state.status = "[Saved]".into();
+                        self.state.title_content = Some("[Saved]".into());
+                        self.state.status_timer = 2.;
+                    }
+                }
+            }
+        }
     }
 
     pub fn load_session(&mut self, path: &Path, gl: &Context) -> anyhow::Result<()> {
@@ -1508,6 +1606,8 @@ impl App {
         for vm in vms {
             vm.destroy(gl);
         }
+
+        self.view.session = Some(path.to_path_buf());
 
         Ok(())
     }

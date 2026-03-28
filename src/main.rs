@@ -101,6 +101,7 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
     w3: f32,
     snapshot_provider: impl Fn() -> T,
     mut history_pusher: impl FnMut(T),
+    mut on_change: impl FnMut(),
 ) {
     let mut vars = HashMap::new();
     vars.insert("x".to_string(), v.x);
@@ -122,6 +123,9 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
                             .max_decimals(3),
                     );
 
+                    if resp.changed() {
+                        on_change();
+                    }
                     if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
                         ui.memory_mut(|m| {
                             m.data.insert_temp(id, *v);
@@ -146,11 +150,12 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
 
 fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
     ui: &mut Ui,
-    v: [&mut Option<f32>; 3],
+    mut v: [&mut Option<f32>; 3],
     w3: f32,
     vars: &mut HashMap<String, f32>,
     snapshot_provider: impl Fn() -> T,
     mut history_pusher: impl FnMut(T),
+    mut on_change: impl FnMut(),
 ) {
     if let Some(x) = v[0] {
         vars.insert("x".into(), *x);
@@ -177,6 +182,10 @@ fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
                             .max_decimals(3),
                     );
 
+                    if resp.changed() {
+                        on_change();
+                    }
+
                     if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
                         ui.memory_mut(|m| {
                             let c2 = [*v[0], *v[1], *v[2]];
@@ -196,19 +205,22 @@ fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
                 }
             );
         }
+        *v[0] = current[0];
+        *v[1] = current[1];
+        *v[2] = current[2];
     });
 }
 
 fn delta_function_row<T: 'static + Clone + Send + Sync>(
     ui: &mut Ui,
-    func_delta: (&mut Easing, &mut Option<f32>),
+    func_delta_vars: (&mut Easing, &mut Option<f32>, &mut HashMap<String, f32>),
     salt: impl Hash,
     w: (f32, f32),
-    vars: &mut HashMap<String, f32>,
     snapshot_provider: impl Fn() -> T,
     mut history_pusher: impl FnMut(T),
+    mut on_change: impl FnMut(),
 ) {
-    let (func, delta) = func_delta;
+    let (func, delta, vars) = func_delta_vars;
     let (w2, w3) = w;
     if let Some(d) = delta {
         vars.insert("d".into(), *d);
@@ -227,6 +239,10 @@ fn delta_function_row<T: 'static + Clone + Send + Sync>(
                         .speed(0.1)
                         .max_decimals(3),
                 );
+
+                if resp.changed() {
+                    on_change();
+                }
 
                 if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
                     ui.memory_mut(|m| {
@@ -263,6 +279,7 @@ fn delta_function_row<T: 'static + Clone + Send + Sync>(
                         }
                     });
                 if old != *func {
+                    on_change();
                     history_pusher(snapshot_provider());
                 }
             }
@@ -275,10 +292,12 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
     ui: &mut egui::Ui,
     q: &mut Quat,
     mode: &mut RotationDisplayMode,
-    w2: f32, w3: f32,
+    w: (f32, f32),
     snapshot_provider: impl Fn() -> T,
     mut history_pusher: impl FnMut(T),
+    mut on_change: impl FnMut(),
 ) {
+    let (w2, w3) = w;
     ui.horizontal(|ui| {
         let mode_label = match mode {
             RotationDisplayMode::Quaternion => "QUAT",
@@ -311,6 +330,10 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
                                     .speed(0.001)
                                     .max_decimals(3),
                             );
+
+                            if resp.changed() {
+                                on_change();
+                            }
 
                             if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
                                 ui.memory_mut(|m| {
@@ -347,6 +370,10 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
                                     .speed(0.001)
                                     .max_decimals(3),
                             );
+
+                            if resp.changed() {
+                                on_change();
+                            }
 
                             if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
                                 ui.memory_mut(|m| {
@@ -409,6 +436,10 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
                                     .degrees(),
                             );
 
+                            if resp.changed() {
+                                on_change();
+                            }
+
                             if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
                                 ui.memory_mut(|m| {
                                     m.data.insert_temp(id, *q);
@@ -451,7 +482,14 @@ impl eframe::App for App {
 
         let dt = ctx.input(|i| i.unstable_dt);
         if self.state.status_timer > 0. {
+            if let Some(t) = self.state.title_content.as_mut() && !t.is_empty() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("{} {}", self.title, t)));
+                t.clear();
+            }
             self.state.status_timer -= dt;
+        } else if self.state.title_content.is_some() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.title.to_string()));
+            self.state.title_content = None;
         }
 
         self.handle_file_open(gl);
@@ -555,7 +593,7 @@ impl eframe::App for App {
                                 draw_assembly_left(self, ui, gl);
                             }
                             editor::EditorMode::Edit => {
-                                draw_edit_left(self, ui);
+                                draw_edit_left(self, ui, gl);
                             }
                         });
                     });
@@ -597,7 +635,7 @@ impl eframe::App for App {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| match self.mode {
                     editor::EditorMode::View => {
-                        draw_view_right(self, ui);
+                        draw_view_right(self, ui, gl);
                     }
                     editor::EditorMode::Assembly => {
                         draw_assembly_right();
@@ -743,9 +781,10 @@ fn draw_view_left(s: &mut App, ui: &mut Ui) {
     }
 }
 
-fn draw_view_right(s: &mut App, ui: &mut Ui) {
+fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let rd = RefDuper;
     let s2 = unsafe { rd.detach_mut_ref(s) };
+    let s3 = unsafe { rd.detach_mut_ref(s) };
     if let Some(sel) = s.state.ui.view_mesh
         && let Some(mesh) = s.view.meshes.get_mut(sel)
     {
@@ -798,19 +837,21 @@ fn draw_view_right(s: &mut App, ui: &mut Ui) {
                             idx: sel,
                             placements: t
                         }
-                    ))
+                    )),
+                    || s3.rebuild_meshes(gl)
                 );
 
                 ui.label("Rotation");
                 quat_row(
-                    ui, &mut placement.rotation, rot_mode, w2, w3,
+                    ui, &mut placement.rotation, rot_mode, (w2, w3),
                     || mesh2.placements.clone(),
                     |t| s2.add_history(editor::HistoryEntry::ViewPlacement(
                         editor::ViewPlacementsSnapshot {
                             idx: sel,
                             placements: t
                         }
-                    ))
+                    )),
+                    || s3.rebuild_meshes(gl)
                 );
 
                 ui.horizontal(|ui| {
@@ -839,11 +880,12 @@ fn draw_view_right(s: &mut App, ui: &mut Ui) {
                             placements: t
                         }
                     )),
+                    || s3.rebuild_meshes(gl)
                 );
 
                 ui.label("Offset Rotation");
                 quat_row(
-                    ui, &mut placement.offset_rot, off_mode, w2, w3,
+                    ui, &mut placement.offset_rot, off_mode, (w2, w3),
                     || mesh2.placements.clone(),
                     |t| s2.add_history(editor::HistoryEntry::ViewPlacement(
                         editor::ViewPlacementsSnapshot {
@@ -851,6 +893,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui) {
                             placements: t
                         }
                     )),
+                    || s3.rebuild_meshes(gl)
                 );
 
                 if ui
@@ -895,6 +938,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let rd = RefDuper;
     let self2 = unsafe { rd.detach_mut_ref(s) };
     let self3 = unsafe { rd.detach_mut_ref(s) };
+    let self4 = unsafe { rd.detach_mut_ref(s) };
     if let Some(mesh) = s.get_current_view_mesh_mut() {
         let rd2 = RefDuper;
         let mesh2 = unsafe { rd2.detach_mut_ref(mesh) };
@@ -983,7 +1027,8 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 view_idx: self3.get_current_mesh_idx().unwrap(),
                                 placements: t
                             }
-                        ))
+                        )),
+                        || self4.rebuild_meshes(gl)
                     );
 
                     // Rotation
@@ -995,14 +1040,15 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         });
                     });
                     quat_row(
-                        ui, &mut placement.rotation, rot_mode, w2, w3,
+                        ui, &mut placement.rotation, rot_mode, (w2, w3),
                         || mesh2.data.placements.clone(),
                         |t| self3.add_history(editor::HistoryEntry::MeshPlacement(
                             light_mesh::LightMeshPlacementSnapshot {
                                 view_idx: self3.get_current_mesh_idx().unwrap(),
                                 placements: t
                             }
-                        ))
+                        )),
+                        || self4.rebuild_meshes(gl)
                     );
 
                     // Scale
@@ -1027,7 +1073,8 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 view_idx: self3.get_current_mesh_idx().unwrap(),
                                 placements: t
                             }
-                        ))
+                        )),
+                        || self4.rebuild_meshes(gl)
                     );
 
                     // Remap Data
@@ -1275,7 +1322,6 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 mesh.data.credits.push(String::new());
             }
         }
-        self2.rebuild_meshes(gl);
     }
 }
 
@@ -1301,16 +1347,17 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4, eye: V
     }
 }
 
-fn draw_edit_left(s: &mut App, ui: &mut Ui) {
+fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     // TODO: add raw vertices, uvs, and normals
     let rd = RefDuper;
     let self2 = unsafe { rd.detach_mut_ref(s) };
     let self3 = unsafe { rd.detach_mut_ref(s) };
+    let self4 = unsafe { rd.detach_mut_ref(s) };
     if let Some(part) = self2.get_current_part_mut() {
         let rd2 = RefDuper;
         let part2 = unsafe { rd2.detach_mut_ref(part) };
         let w = ui.available_width();
-        let w2 = (w - ui.spacing().item_spacing.x) / 2.;
+        //let w2 = (w - ui.spacing().item_spacing.x) / 2.;
         let w3 = (w - ui.spacing().item_spacing.x * 2.) / 3.;
 
         // Indexed vertices
@@ -1334,7 +1381,8 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui) {
                             name: self3.get_current_part_name().unwrap().to_string(),
                             part: Box::new(t)
                         }
-                    ))
+                    )),
+                    || self4.rebuild_meshes(gl)
                 );
             }
         }
@@ -1393,7 +1441,8 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui) {
                             name: self3.get_current_part_name().unwrap().to_string(),
                             part: Box::new(t)
                         }
-                    ))
+                    )),
+                    || self4.rebuild_meshes(gl)
                 );
 
                 // remove button
@@ -1445,11 +1494,11 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui) {
 
                 let mut vars = HashMap::new();
 
-                ui.label("d          Easing");
+                ui.label("D          Easing");
                 delta_function_row(
-                    ui, (&mut comp.function, &mut comp.delta),
+                    ui, (&mut comp.function, &mut comp.delta, &mut vars),
                     key.as_str(),
-                    (w3, w3*2. + ui.spacing().item_spacing.x), &mut vars,
+                    (w3, w3*2. + ui.spacing().item_spacing.x),
                     || part2.clone(),
                     |t| self3.add_history(editor::HistoryEntry::MeshPart(
                         light_mesh::LightMeshPartSnapshot {
@@ -1458,6 +1507,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui) {
                             part: Box::new(t)
                         }
                     )),
+                    || self4.rebuild_meshes(gl)
                 );
 
                 ui.label("X          Y          Z");
@@ -1472,6 +1522,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui) {
                             part: Box::new(t)
                         }
                     )),
+                    || self4.rebuild_meshes(gl)
                 );
 
             }
@@ -1534,7 +1585,7 @@ pub fn main() -> Result<(), eframe::Error> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Beatcraft LightMesh Editor")
+            .with_title("Beatcraft Mesh Editor")
             .with_inner_size([1440., 860.]),
         multisampling: 4,
         depth_buffer: 24,
@@ -1542,7 +1593,7 @@ pub fn main() -> Result<(), eframe::Error> {
     };
 
     eframe::run_native(
-        "Beatcraft LightMesh Editor",
+        "Beatcraft Mesh Editor",
         options,
         Box::new(move |cc| Ok(Box::new(App::new(cc, path)))),
     )

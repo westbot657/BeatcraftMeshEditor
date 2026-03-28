@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::easing::Easing;
-use crate::editor::Camera;
+use crate::editor::{Camera, ViewPlacement};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
 #[serde(untagged)]
@@ -187,6 +187,18 @@ pub struct SessionPlacementData {
     pub offset_rot: Quat,
 }
 
+impl From<ViewPlacement> for SessionPlacementData {
+    fn from(value: ViewPlacement) -> Self {
+        Self {
+            position: value.position,
+            rotation: value.rotation,
+            count: value.count,
+            offset_pos: value.offset_pos,
+            offset_rot: value.offset_rot,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SessionMeshData {
     pub path: PathBuf,
@@ -209,6 +221,17 @@ impl From<CameraData> for Camera {
             pitch: value.pitch,
             dist: value.dist,
             fov: 100f32.to_radians(),
+        }
+    }
+}
+
+impl From<Camera> for CameraData {
+    fn from(value: Camera) -> Self {
+        Self {
+            target: value.target,
+            dist: value.dist,
+            yaw: value.yaw,
+            pitch: value.pitch,
         }
     }
 }
