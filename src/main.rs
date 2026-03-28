@@ -20,6 +20,7 @@
 //   Escape                 deselect all
 
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
@@ -30,10 +31,11 @@ use glam::{Mat4, Quat, Vec3};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 
+use self::easing::Easing;
 use self::editor::{App, RotationDisplayMode, ViewPlacement, WorkingRenameKey};
 use self::light_mesh::BloomfogStyle;
 use self::render::{InstanceData, MeshDrawCall, PointDrawCall};
-use self::widgets::MathDragValue;
+use self::widgets::{MathDragValue, MathDragValueOpt};
 
 pub mod data;
 pub mod easing;
@@ -108,7 +110,7 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
         let mut current = *v;
         for val in current.as_mut() {
             ui.allocate_ui_with_layout(
-                egui::Vec2::new(w3, 20.0),
+                (w3, 20.).into(),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     let id = ui.next_auto_id();
@@ -141,6 +143,133 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
         *v = current;
     });
 }
+
+fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
+    ui: &mut Ui,
+    v: [&mut Option<f32>; 3],
+    w3: f32,
+    vars: &mut HashMap<String, f32>,
+    snapshot_provider: impl Fn() -> T,
+    mut history_pusher: impl FnMut(T),
+) {
+    if let Some(x) = v[0] {
+        vars.insert("x".into(), *x);
+    }
+    if let Some(y) = v[1] {
+        vars.insert("y".into(), *y);
+    }
+    if let Some(z) = v[2] {
+        vars.insert("z".into(), *z);
+    }
+    ui.horizontal(|ui| {
+        let mut current = [*v[0], *v[1], *v[2]];
+        for val in current.iter_mut() {
+            ui.allocate_ui_with_layout(
+                (w3, 20.).into(),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    let id = ui.next_auto_id();
+                    ui.set_clip_rect(ui.max_rect());
+                    let resp = ui.add_sized(
+                        [w3, 20.],
+                        MathDragValueOpt::new(val, vars)
+                            .speed(0.1)
+                            .max_decimals(3),
+                    );
+
+                    if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
+                        ui.memory_mut(|m| {
+                            let c2 = [*v[0], *v[1], *v[2]];
+                            m.data.insert_temp(id, c2);
+                            m.data.insert_temp(id, snapshot_provider());
+                        });
+                    }
+                    if (resp.drag_stopped() || (resp.lost_focus() && !resp.dragged()))
+                    && let Some((old, t)) = ui.memory_mut(|m| {
+                        let o = m.data.get_temp::<[Option<f32>; 3]>(id)?;
+                        let t = m.data.get_temp::<T>(id)?;
+                        Some((o, t))
+                    })
+                    && (old[0] != *v[0] || old[1] != *v[1] || old[2] != *v[2]) {
+                        history_pusher(t);
+                    }
+                }
+            );
+        }
+    });
+}
+
+fn delta_function_row<T: 'static + Clone + Send + Sync>(
+    ui: &mut Ui,
+    func_delta: (&mut Easing, &mut Option<f32>),
+    salt: impl Hash,
+    w: (f32, f32),
+    vars: &mut HashMap<String, f32>,
+    snapshot_provider: impl Fn() -> T,
+    mut history_pusher: impl FnMut(T),
+) {
+    let (func, delta) = func_delta;
+    let (w2, w3) = w;
+    if let Some(d) = delta {
+        vars.insert("d".into(), *d);
+    }
+
+    ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(
+            (w2, 20.).into(),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                let id = ui.next_auto_id();
+                ui.set_clip_rect(ui.max_rect());
+                let resp = ui.add_sized(
+                    [w2, 20.],
+                    MathDragValueOpt::new(delta, vars)
+                        .speed(0.1)
+                        .max_decimals(3),
+                );
+
+                if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
+                    ui.memory_mut(|m| {
+                        m.data.insert_temp(id, *delta);
+                        m.data.insert_temp(id, snapshot_provider());
+                    });
+                }
+                if (resp.drag_stopped() || (resp.lost_focus() && !resp.dragged()))
+                && let Some((old, t)) = ui.memory_mut(|m| {
+                    let o = m.data.get_temp::<Option<f32>>(id)?;
+                    let t = m.data.get_temp::<T>(id)?;
+                    Some((o, t))
+                })
+                && old == *delta {
+                    history_pusher(t);
+                }
+
+            }
+        );
+        ui.allocate_ui_with_layout(
+            (w3, 20.).into(),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                let old = *func;
+                ui.set_clip_rect(ui.max_rect());
+                egui::ComboBox::from_id_salt(egui::Id::new("delta_function").with(salt))
+                    .selected_text(func.display_name())
+                    .width(w3)
+                    .show_ui(ui, |ui| {
+                        for (name, easing) in Easing::iter_all() {
+                            ui.selectable_value(
+                                func, easing, name
+                            );
+                        }
+                    });
+                if old != *func {
+                    history_pusher(snapshot_provider());
+                }
+            }
+        );
+    });
+}
+
 
 fn quat_row<T: 'static + Clone + Send + Sync>(
     ui: &mut egui::Ui,
@@ -266,7 +395,7 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
             ui.horizontal(|ui| {
                 for val in &mut degrees {
                     ui.allocate_ui_with_layout(
-                        egui::Vec2::new(w3, 20.0),
+                        (w3, 20.).into(),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             let id = ui.next_auto_id();
@@ -417,16 +546,18 @@ impl eframe::App for App {
             .show(ctx, |ui| {
                 ui.allocate_ui(ui.available_size(), |ui| {
                     ui.allocate_exact_size((230., 1.).into(), Sense::empty());
-                    egui::ScrollArea::vertical().show(ui, |ui| match self.mode {
-                        editor::EditorMode::View => {
-                            draw_view_left(self, ui);
-                        }
-                        editor::EditorMode::Assembly => {
-                            draw_assembly_left(self, ui, gl);
-                        }
-                        editor::EditorMode::Edit => {
-                            draw_edit_left(self, ui);
-                        }
+                    ui.allocate_ui((ui.available_width(), ui.available_height()-45.).into(), |ui| {
+                        egui::ScrollArea::vertical().id_salt("left_p_scroll").show(ui, |ui| match self.mode {
+                            editor::EditorMode::View => {
+                                draw_view_left(self, ui);
+                            }
+                            editor::EditorMode::Assembly => {
+                                draw_assembly_left(self, ui, gl);
+                            }
+                            editor::EditorMode::Edit => {
+                                draw_edit_left(self, ui);
+                            }
+                        });
                     });
 
                     ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
@@ -1182,6 +1313,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui) {
         let w2 = (w - ui.spacing().item_spacing.x) / 2.;
         let w3 = (w - ui.spacing().item_spacing.x * 2.) / 3.;
 
+        // Indexed vertices
         let verts = &mut s.state.ui.edit_collpased.i_vertices;
         ui.horizontal(|ui| {
             let icon = if *verts { "▶" } else { "▼" };
@@ -1207,6 +1339,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui) {
             }
         }
 
+        // Named vertices
         let verts = &mut s.state.ui.edit_collpased.n_vertices;
         ui.horizontal(|ui| {
             let icon = if *verts { "▶" } else { "▼" };
@@ -1266,6 +1399,84 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui) {
                 // remove button
             }
         }
+
+        let verts = &mut s.state.ui.edit_collpased.c_vertices;
+        ui.horizontal(|ui| {
+            let icon = if *verts { "▶" } else { "▼" };
+            if ui.small_button(icon).clicked() {
+                *verts = !*verts;
+            }
+            ui.label("Compute Vertices");
+        });
+
+        if !*verts {
+            for (key, comp) in part.vertices.compute.iter_mut2() {
+                let mut name = key.clone();
+                if let WorkingRenameKey::CompVert(ref name2) = self3.state.ui.working_key
+                    && *name2 == name {
+                    name = self3.state.ui.working_name.take().unwrap_or(name);
+                }
+
+                if ui
+                    .add_sized(
+                        [w, 20.],
+                        egui::TextEdit::singleline(&mut name),
+                    )
+                    .changed()
+                {
+                    let _ = self3.rename(editor::Rename::Vertex {
+                        part: editor::PartId {
+                            view_idx: self3.get_current_mesh_idx().unwrap(),
+                            name: self3.get_current_part_name().unwrap().to_string(),
+                        },
+                        swap: editor::DataSwap {
+                            from: data::VertexId::Named(key.clone()),
+                            to: data::VertexId::Named(name),
+                        }
+                    });
+                    self3.state.ui.working_key = WorkingRenameKey::None;
+                    return;
+                }
+
+                if name != *key {
+                    self3.state.ui.working_key = WorkingRenameKey::CompVert(key.clone());
+                    self3.state.ui.working_name = Some(name);
+                }
+
+                let mut vars = HashMap::new();
+
+                ui.label("d          Easing");
+                delta_function_row(
+                    ui, (&mut comp.function, &mut comp.delta),
+                    key.as_str(),
+                    (w3, w3*2. + ui.spacing().item_spacing.x), &mut vars,
+                    || part2.clone(),
+                    |t| self3.add_history(editor::HistoryEntry::MeshPart(
+                        light_mesh::LightMeshPartSnapshot {
+                            idx: self3.get_current_mesh_idx().unwrap(),
+                            name: self3.get_current_part_name().unwrap().to_string(),
+                            part: Box::new(t)
+                        }
+                    )),
+                );
+
+                ui.label("X          Y          Z");
+                vec3_opt_row(
+                    ui, [&mut comp.x, &mut comp.y, &mut comp.z],
+                    w3, &mut vars,
+                    || part2.clone(),
+                    |t| self3.add_history(editor::HistoryEntry::MeshPart(
+                        light_mesh::LightMeshPartSnapshot {
+                            idx: self3.get_current_mesh_idx().unwrap(),
+                            name: self3.get_current_part_name().unwrap().to_string(),
+                            part: Box::new(t)
+                        }
+                    )),
+                );
+
+            }
+        }
+
     }
 }
 

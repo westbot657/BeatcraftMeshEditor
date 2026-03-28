@@ -168,7 +168,6 @@ impl<'a, T: MapIndexable> egui::Widget for MultiMathValue<'a, T> {
             if let Some(results) = evaluated {
                 *self.values = Some(results);
             }
-            // on eval failure, leave text as-is for the user to correct
         } else if cancel {
             text = String::new();
             *self.values = None;
@@ -181,3 +180,122 @@ impl<'a, T: MapIndexable> egui::Widget for MultiMathValue<'a, T> {
         edit_response
     }
 }
+
+pub struct MathDragValueOpt<'a, T: MapIndexable> {
+    value: &'a mut Option<f32>,
+    vars: &'a mut T,
+    speed: f64,
+    max_decimals: usize,
+    suffix: Option<&'a str>,
+    degrees: bool,
+}
+
+impl<'a, T: MapIndexable> MathDragValueOpt<'a, T> {
+    pub fn new(value: &'a mut Option<f32>, vars: &'a mut T) -> Self {
+        Self {
+            value,
+            vars,
+            speed: 0.1,
+            max_decimals: 3,
+            suffix: None,
+            degrees: false,
+        }
+    }
+    pub fn speed(mut self, speed: f64) -> Self {
+        self.speed = speed;
+        self
+    }
+    pub fn max_decimals(mut self, d: usize) -> Self {
+        self.max_decimals = d;
+        self
+    }
+    pub fn suffix(mut self, s: &'a str) -> Self {
+        self.suffix = Some(s);
+        self
+    }
+    pub fn degrees(mut self) -> Self {
+        self.degrees = true;
+        self
+    }
+}
+
+impl<'a, T: MapIndexable> egui::Widget for MathDragValueOpt<'a, T> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        let id = ui.next_auto_id();
+
+        let (mut editing, mut text) = ui.memory_mut(|m| {
+            let editing = m.data.get_temp::<bool>(id).unwrap_or(false);
+            let text = m.data.get_temp::<String>(id).unwrap_or_else(|| {
+                match self.value {
+                    Some(v) => format!("{:.prec$}", v, prec = self.max_decimals),
+                    None => String::new(),
+                }
+            });
+            (editing, text)
+        });
+
+        let response = if editing || self.value.is_none() {
+            let edit_response = ui.add(
+                egui::TextEdit::singleline(&mut text)
+                    .desired_width(ui.available_width())
+                    .font(egui::TextStyle::Monospace),
+            );
+
+            let commit =
+                edit_response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+            if commit {
+                if text.trim().is_empty() {
+                    *self.value = None;
+                } else if let Some(result) =
+                    crate::math_interp::eval_inner(&text, self.vars, self.degrees)
+                {
+                    *self.value = Some(result);
+                    text = format!("{:.prec$}", result, prec = self.max_decimals);
+                }
+                editing = false;
+            } else if cancel {
+                // revert text to whatever the current value is
+                text = match self.value {
+                    Some(v) => format!("{:.prec$}", v, prec = self.max_decimals),
+                    None => String::new(),
+                };
+                editing = false;
+            }
+
+            edit_response
+        } else {
+            // Some(v) and not editing — show drag
+            let v = self.value.as_mut().unwrap();
+
+            let display = match self.suffix {
+                Some(s) => format!("{:.prec$}{s}", v, prec = self.max_decimals),
+                None => format!("{:.prec$}", v, prec = self.max_decimals),
+            };
+
+            let drag = egui::DragValue::new(v)
+                .speed(self.speed)
+                .max_decimals(self.max_decimals)
+                .custom_formatter(move |_, _| display.clone())
+                .custom_parser(|s| s.parse::<f64>().ok());
+
+            let drag_response = ui.add(drag);
+
+            if drag_response.double_clicked() {
+                editing = true;
+                text = format!("{:.prec$}", v, prec = self.max_decimals);
+            }
+
+            drag_response
+        };
+
+        ui.memory_mut(|m| {
+            m.data.insert_temp(id, editing);
+            m.data.insert_temp(id, text);
+        });
+
+        response
+    }
+}
+
