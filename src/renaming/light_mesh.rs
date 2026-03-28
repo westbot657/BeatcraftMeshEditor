@@ -6,17 +6,15 @@ use anyhow::{Result, anyhow};
 use indexmap::map::MutableKeys;
 
 impl LightMesh {
-
     pub fn rename_vertex(&mut self, part: &str, swap: &DataSwap<VertexId>) -> Result<()> {
         if let Some(part) = self.parts.get_mut(part) {
-
             if !part.contains_vertex(&swap.from) {
-                return Err(anyhow!("vertex is not present"))
+                return Err(anyhow!("vertex is not present"));
             }
 
             let update_vertices = |part: &mut Part| {
                 match &swap.from {
-                    VertexId::Index(_) => { /* Handled by to_update system */ },
+                    VertexId::Index(_) => { /* Handled by to_update system */ }
                     VertexId::Named(n) => {
                         for tri in part.triangles.0.iter_mut() {
                             for vert in tri.vertices.iter_mut() {
@@ -44,7 +42,10 @@ impl LightMesh {
             };
 
             match swap {
-                DataSwap { from: VertexId::Named(from), to: VertexId::Named(to) } => {
+                DataSwap {
+                    from: VertexId::Named(from),
+                    to: VertexId::Named(to),
+                } => {
                     for (name, _) in part.vertices.named.iter_mut2() {
                         if *name == *from {
                             *name = to.clone();
@@ -74,7 +75,9 @@ impl LightMesh {
                                 let res = vert.compute(part)?;
                                 part.vertices.compute.shift_remove(n.as_str());
                                 res
-                            } else { unreachable!() }
+                            } else {
+                                unreachable!()
+                            }
                         }
                     };
                     update_vertices(part);
@@ -92,21 +95,19 @@ impl LightMesh {
                     }
                 }
             }
-
         }
         Ok(())
     }
 
     pub fn rename_uv(&mut self, part: &str, swap: &DataSwap<UvId>) -> Result<()> {
         if let Some(part) = self.parts.get_mut(part) {
-
             if !part.contains_uv(&swap.from) {
-                return Err(anyhow!("uv is not present"))
+                return Err(anyhow!("uv is not present"));
             }
 
             let update_uvs = |part: &mut Part| {
                 match &swap.from {
-                    UvId::Index(_) => { /* Handled by to_update system */ },
+                    UvId::Index(_) => { /* Handled by to_update system */ }
                     UvId::Named(n) => {
                         for tri in part.triangles.0.iter_mut() {
                             for vert in tri.vertices.iter_mut() {
@@ -120,7 +121,10 @@ impl LightMesh {
             };
 
             match swap {
-                DataSwap { from: UvId::Named(from), to: UvId::Named(to) } => {
+                DataSwap {
+                    from: UvId::Named(from),
+                    to: UvId::Named(to),
+                } => {
                     for (name, _) in part.uvs.named.iter_mut2() {
                         if *name == *from {
                             *name = to.clone();
@@ -141,7 +145,9 @@ impl LightMesh {
                         UvId::Named(n) => {
                             if let Some(uv) = part.uvs.named.shift_remove(n.as_str()) {
                                 uv
-                            } else { unreachable!() }
+                            } else {
+                                unreachable!()
+                            }
                         }
                     };
                     update_uvs(part);
@@ -159,21 +165,19 @@ impl LightMesh {
                     }
                 }
             }
-
         }
         Ok(())
     }
 
     pub fn rename_normal(&mut self, part: &str, swap: &DataSwap<NormalId>) -> Result<()> {
         if let Some(part) = self.parts.get_mut(part) {
-
             if !part.contains_normal(&swap.from) {
-                return Err(anyhow!("normal is not present"))
+                return Err(anyhow!("normal is not present"));
             }
 
             let update_normals = |part: &mut Part| {
                 match &swap.from {
-                    NormalId::Index(_) => { /* Handled by to_update system */ },
+                    NormalId::Index(_) => { /* Handled by to_update system */ }
                     NormalId::Named(n) => {
                         for tri in part.triangles.0.iter_mut() {
                             for vert in tri.vertices.iter_mut() {
@@ -187,7 +191,10 @@ impl LightMesh {
             };
 
             match swap {
-                DataSwap { from: NormalId::Named(from), to: NormalId::Named(to) } => {
+                DataSwap {
+                    from: NormalId::Named(from),
+                    to: NormalId::Named(to),
+                } => {
                     for (name, _) in part.normals.named.iter_mut2() {
                         if *name == *from {
                             *name = to.clone();
@@ -208,7 +215,9 @@ impl LightMesh {
                         NormalId::Named(n) => {
                             if let Some(norm) = part.normals.named.shift_remove(n.as_str()) {
                                 norm
-                            } else { unreachable!() }
+                            } else {
+                                unreachable!()
+                            }
                         }
                     };
                     update_normals(part);
@@ -229,10 +238,4 @@ impl LightMesh {
         }
         Ok(())
     }
-
 }
-
-
-
-
-

@@ -512,9 +512,10 @@ impl Renderer {
             gl.enable(glow::PROGRAM_POINT_SIZE);
 
             let blue_noise = {
-                let bn = image::load_from_memory(include_bytes!("assets/textures/noise/blue_noise.png"))
-                    .unwrap()
-                    .to_rgba8();
+                let bn =
+                    image::load_from_memory(include_bytes!("assets/textures/noise/blue_noise.png"))
+                        .unwrap()
+                        .to_rgba8();
 
                 let (w, h) = bn.dimensions();
                 let pixels = bn.into_raw();
@@ -524,8 +525,16 @@ impl Renderer {
 
                 gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::REPEAT as i32);
                 gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::REPEAT as i32);
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32);
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_MIN_FILTER,
+                    glow::LINEAR as i32,
+                );
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_MAG_FILTER,
+                    glow::LINEAR as i32,
+                );
 
                 gl.tex_image_2d(
                     glow::TEXTURE_2D,
@@ -536,7 +545,7 @@ impl Renderer {
                     0,
                     glow::RGBA,
                     glow::UNSIGNED_BYTE,
-                    glow::PixelUnpackData::Slice(Some(pixels.as_slice()))
+                    glow::PixelUnpackData::Slice(Some(pixels.as_slice())),
                 );
 
                 tex
@@ -590,15 +599,12 @@ impl Renderer {
         prog: glow::NativeProgram,
         name: &str,
         texture: Option<glow::NativeTexture>,
-        slot: u32
+        slot: u32,
     ) {
         unsafe {
             gl.active_texture(glow::TEXTURE0 + slot);
             gl.bind_texture(glow::TEXTURE_2D, texture);
-            gl.uniform_1_i32(
-                gl.get_uniform_location(prog, name).as_ref(),
-                slot as i32,
-            );
+            gl.uniform_1_i32(gl.get_uniform_location(prog, name).as_ref(), slot as i32);
         }
     }
 

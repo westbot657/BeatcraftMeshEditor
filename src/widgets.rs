@@ -107,7 +107,6 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
     }
 }
 
-
 pub struct MultiMathValue<'a, T: MapIndexable> {
     values: &'a mut Option<Vec<f32>>,
     vars: &'a mut [&'a mut T],
@@ -147,11 +146,7 @@ impl<'a, T: MapIndexable> egui::Widget for MultiMathValue<'a, T> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         let id = ui.next_auto_id();
 
-        let mut text = ui.memory_mut(|m| {
-            m.data
-                .get_temp::<String>(id)
-                .unwrap_or_else(String::new)
-        });
+        let mut text = ui.memory_mut(|m| m.data.get_temp::<String>(id).unwrap_or_else(String::new));
 
         let edit_response = ui.add(
             egui::TextEdit::singleline(&mut text)
@@ -164,8 +159,8 @@ impl<'a, T: MapIndexable> egui::Widget for MultiMathValue<'a, T> {
         let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
         if commit && !text.trim().is_empty() {
-
-            let evaluated: Option<Vec<f32>> = self.vars
+            let evaluated: Option<Vec<f32>> = self
+                .vars
                 .iter_mut()
                 .map(|vars| crate::math_interp::eval_inner(&text, *vars, self.degrees))
                 .collect();
@@ -186,4 +181,3 @@ impl<'a, T: MapIndexable> egui::Widget for MultiMathValue<'a, T> {
         edit_response
     }
 }
-

@@ -112,7 +112,7 @@ pub struct ViewMesh {
     pub placements: Vec<ViewPlacement>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct ViewPlacement {
     pub position: Vec3,
     pub rotation: Quat,
@@ -392,20 +392,49 @@ impl Default for PartCollapseToggles {
 
 #[derive(Default)]
 pub struct EditCollapsed {
-    pub vertices: bool,
-    pub uvs: bool,
-    pub normal: bool,
+    pub i_vertices: bool,
+    pub n_vertices: bool,
+    pub c_vertices: bool,
+    pub i_uvs: bool,
+    pub n_uvs: bool,
+    pub i_normals: bool,
+    pub n_normals: bool,
+    pub c_normals: bool,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub enum WorkingRenameKey {
+    /// No name is being edited currently
+    #[default]
+    None,
+    /// A Data Tag is being edited currently, id'd by original name
+    DataTag(String),
+    NamedVert(String),
+    CompVert(String),
+    NamedUv(String),
+    NamedNorm(String),
+    CompNorm(String),
 }
 
 #[derive(Default)]
 pub struct UiState {
+    /// Currently displayed view mesh settings
     pub view_mesh: Option<usize>,
+    /// mpsc channel for opening meshes
     pub open_mesh_channel: Option<mpsc::Receiver<Vec<PathBuf>>>,
+    /// mpsc channel for opening a session
     pub open_session_channel: Option<mpsc::Receiver<PathBuf>>,
+    /// Map<viewmesh id, Vec<view placement collapse state>>
     pub collapsed: HashMap<usize, Vec<bool>>,
+    /// Map<viewmesh id, Vec<rotation display modes>>
     pub view_rotation_modes: HashMap<usize, Vec<[RotationDisplayMode; 2]>>,
+    /// Map<Mesh file, part collapse states>
     pub assembly_collapsed: HashMap<PathBuf, PartCollapseToggles>,
+    /// global vertices/uvs/normals section collapse states
     pub edit_collpased: EditCollapsed,
+    /// Currently-modifying item name, paired with working_key
+    pub working_name: Option<String>,
+    pub working_key: WorkingRenameKey,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -424,31 +453,58 @@ impl<T: std::fmt::Debug + PartialEq + Eq + Clone> DataSwap<T> {
     fn invert(self) -> Self {
         Self {
             from: self.to,
-            to: self.from
+            to: self.from,
         }
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Rename {
-    DataTag { view_idx: usize, swap: DataSwap<String> },
-    Part { view_idx: usize, swap: DataSwap<String> },
+    DataTag {
+        view_idx: usize,
+        swap: DataSwap<String>,
+    },
+    Part {
+        view_idx: usize,
+        swap: DataSwap<String>,
+    },
     /// Can rename any vertex between indexed and named.
-    Vertex { part: PartId, swap: DataSwap<VertexId> },
+    Vertex {
+        part: PartId,
+        swap: DataSwap<VertexId>,
+    },
     /// Can rename any uv including jumping between indexed and named.
     Uv { part: PartId, swap: DataSwap<UvId> },
     /// Can rename any normal between indexed and named.
-    Normal { part: PartId, swap: DataSwap<NormalId> },
+    Normal {
+        part: PartId,
+        swap: DataSwap<NormalId>,
+    },
 }
 
 impl Rename {
     pub fn invert(self) -> Self {
         match self {
-            Self::DataTag { view_idx, swap } => Self::DataTag { view_idx, swap: swap.invert() },
-            Self::Part { view_idx, swap } => Self::Part { view_idx, swap: swap.invert() },
-            Self::Uv { part, swap } => Self::Uv { part, swap: swap.invert() },
-            Self::Normal { part, swap } => Self::Normal { part, swap: swap.invert() },
-            Self::Vertex { part, swap } => Self::Vertex { part, swap: swap.invert() },
+            Self::DataTag { view_idx, swap } => Self::DataTag {
+                view_idx,
+                swap: swap.invert(),
+            },
+            Self::Part { view_idx, swap } => Self::Part {
+                view_idx,
+                swap: swap.invert(),
+            },
+            Self::Uv { part, swap } => Self::Uv {
+                part,
+                swap: swap.invert(),
+            },
+            Self::Normal { part, swap } => Self::Normal {
+                part,
+                swap: swap.invert(),
+            },
+            Self::Vertex { part, swap } => Self::Vertex {
+                part,
+                swap: swap.invert(),
+            },
         }
     }
 }
@@ -489,7 +545,7 @@ impl History {
         &mut self,
         editor: &mut App,
         gl: &Context,
-        entry: HistoryEntry
+        entry: HistoryEntry,
     ) -> HistoryEntry {
         match entry {
             HistoryEntry::MeshPart(LightMeshPartSnapshot { idx, name, part }) => {
@@ -549,8 +605,9 @@ impl History {
                 HistoryEntry::ViewPlacement(ViewPlacementsSnapshot { idx, placements })
             }
             HistoryEntry::Rename(rename) => {
-
-                editor.rename(rename.clone()).expect("Renames shouldn't end up in history if they are invalid");
+                editor
+                    .rename(rename.clone())
+                    .expect("Renames shouldn't end up in history if they are invalid");
 
                 HistoryEntry::Rename(rename.invert())
             }
@@ -564,12 +621,7 @@ impl History {
         }
     }
 
-    pub fn cycle_history(
-        &mut self,
-        dir: HistoryCycleDir,
-        editor: &mut App,
-        gl: &Context,
-    ) {
+    pub fn cycle_history(&mut self, dir: HistoryCycleDir, editor: &mut App, gl: &Context) {
         let front = match dir {
             HistoryCycleDir::Future => &mut self.future,
             HistoryCycleDir::Past => &mut self.history,
@@ -578,7 +630,9 @@ impl History {
         let save = if let Some(restore) = front.pop_back() {
             println!("Restoring {:?}", restore);
             self.process_history(editor, gl, restore)
-        } else { return };
+        } else {
+            return;
+        };
 
         let back = match dir {
             HistoryCycleDir::Future => &mut self.history,
@@ -1012,8 +1066,7 @@ impl App {
     pub fn undo(&mut self, gl: &Context) {
         let rd = RefDuper;
         let self2 = unsafe { rd.detach_mut_ref(self) };
-        self.history
-            .cycle_history(HistoryCycleDir::Past, self2, gl);
+        self.history.cycle_history(HistoryCycleDir::Past, self2, gl);
     }
 
     pub fn redo(&mut self, gl: &Context) {
@@ -1117,27 +1170,27 @@ impl App {
                 if let Some(vm) = self.view.meshes.get_mut(*view_idx) {
                     vm.data.rename_data(swap);
                 }
-            },
+            }
             Rename::Part { view_idx, swap } => {
                 if let Some(vm) = self.view.meshes.get_mut(*view_idx) {
                     vm.data.rename_part(swap);
                 }
-            },
+            }
             Rename::Vertex { part, swap } => {
                 if let Some(vm) = self.view.meshes.get_mut(part.view_idx) {
                     vm.data.rename_vertex(part.name.as_str(), swap)?
                 }
-            },
+            }
             Rename::Uv { part, swap } => {
                 if let Some(vm) = self.view.meshes.get_mut(part.view_idx) {
                     vm.data.rename_uv(part.name.as_str(), swap)?
                 }
-            },
+            }
             Rename::Normal { part, swap } => {
                 if let Some(vm) = self.view.meshes.get_mut(part.view_idx) {
                     vm.data.rename_normal(part.name.as_str(), swap)?
                 }
-            },
+            }
         }
         self.add_history(HistoryEntry::Rename(rename.invert()));
         Ok(())
@@ -1238,10 +1291,9 @@ impl App {
                         self.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
                             idx,
                             name: name.to_string(),
-                            part: Box::new(part.clone())
+                            part: Box::new(part.clone()),
                         }));
                     }
-
                 } else if shift {
                     self.drag.state = DragState::Marquee(Vec4::new(mx, my, mx, my));
                 }

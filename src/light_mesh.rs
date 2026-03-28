@@ -11,9 +11,8 @@ use indexmap::map::MutableKeys;
 
 use crate::RefDuper;
 use crate::data::{
-    ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, 
-    NormalId, PartData, PlacementData, StateSet, TriangleData,
-    TriangleEntry, UvId, VertRefData, VertexId
+    ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, NormalId, PartData,
+    PlacementData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId,
 };
 use crate::easing::Easing;
 use crate::editor::DataSwap;
@@ -115,7 +114,6 @@ impl Vertices {
 
         out
     }
-
 }
 
 impl
@@ -641,7 +639,9 @@ impl Part {
 
     pub fn rename_data(&mut self, swap: &DataSwap<String>) {
         for tri in self.triangles.0.iter_mut() {
-            if let Some(mat) = tri.material.as_mut() && *mat == swap.from {
+            if let Some(mat) = tri.material.as_mut()
+                && *mat == swap.from
+            {
                 *mat = swap.to.clone();
             }
         }
@@ -699,7 +699,9 @@ impl Part {
     pub fn contains_vertex(&self, id: &VertexId) -> bool {
         match id {
             VertexId::Index(i) => *i < self.vertices.indexed.len(),
-            VertexId::Named(n) => self.vertices.named.contains_key(n) || self.vertices.compute.contains_key(n),
+            VertexId::Named(n) => {
+                self.vertices.named.contains_key(n) || self.vertices.compute.contains_key(n)
+            }
         }
     }
 
@@ -713,11 +715,17 @@ impl Part {
     pub fn contains_normal(&self, id: &NormalId) -> bool {
         match id {
             NormalId::Index(i) => *i < self.normals.indexed.len(),
-            NormalId::Named(n) => self.normals.named.contains_key(n) || self.normals.compute.contains_key(n),
+            NormalId::Named(n) => {
+                self.normals.named.contains_key(n) || self.normals.compute.contains_key(n)
+            }
         }
     }
 
-    pub(crate) unsafe fn get_detached_vertex_refs<'a>(&mut self, lifeline: &'a mut RefDuper, target: usize) -> Vec<&'a mut VertexId> {
+    pub(crate) unsafe fn get_detached_vertex_refs<'a>(
+        &mut self,
+        lifeline: &'a mut RefDuper,
+        target: usize,
+    ) -> Vec<&'a mut VertexId> {
         let mut refs = Vec::new();
 
         for comp in self.vertices.compute.values_mut() {
@@ -744,7 +752,11 @@ impl Part {
         refs
     }
 
-    pub(crate) unsafe fn get_detached_uv_refs<'a>(&mut self, lifeline: &'a mut RefDuper, target: usize) -> Vec<&'a mut UvId> {
+    pub(crate) unsafe fn get_detached_uv_refs<'a>(
+        &mut self,
+        lifeline: &'a mut RefDuper,
+        target: usize,
+    ) -> Vec<&'a mut UvId> {
         let mut refs = Vec::new();
 
         for tri in self.triangles.0.iter_mut() {
@@ -757,7 +769,11 @@ impl Part {
         refs
     }
 
-    pub(crate) unsafe fn get_detached_normal_refs<'a>(&mut self, lifeline: &'a mut RefDuper, target: usize) -> Vec<&'a mut NormalId> {
+    pub(crate) unsafe fn get_detached_normal_refs<'a>(
+        &mut self,
+        lifeline: &'a mut RefDuper,
+        target: usize,
+    ) -> Vec<&'a mut NormalId> {
         let mut refs = Vec::new();
 
         for tri in self.triangles.0.iter_mut() {
@@ -1097,7 +1113,6 @@ impl LightMesh {
             }
         }
     }
-
 }
 
 impl From<crate::data::LightMeshData> for LightMesh {

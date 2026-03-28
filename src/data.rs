@@ -174,7 +174,9 @@ pub struct LightMeshData {
     pub bloomfog_style: u8,
 }
 
-fn is_zero(v: &u8) -> bool { *v == 0 }
+fn is_zero(v: &u8) -> bool {
+    *v == 0
+}
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SessionPlacementData {
