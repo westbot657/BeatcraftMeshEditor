@@ -1,5 +1,5 @@
 use core::f32;
-use std::collections::{HashMap, hash_map};
+use std::collections::{HashMap, HashSet, hash_map};
 use std::fs;
 use std::hash::Hash;
 use std::path::Path;
@@ -664,34 +664,19 @@ impl Part {
 
         for tri in self.triangles.0.iter_mut() {
             for vert in tri.vertices.iter_mut() {
-                match &mut vert.vertex {
-                    VertexId::Index(i) => shift(i, deltas.0),
-                    _ => {}
-                }
-                match &mut vert.uv {
-                    UvId::Index(i) => shift(i, deltas.1),
-                    _ => {}
-                }
-                match &mut vert.normal {
-                    NormalId::Index(i) => shift(i, deltas.2),
-                    _ => {}
-                }
+                if let VertexId::Index(i) = &mut vert.vertex { shift(i, deltas.0) }
+                if let UvId::Index(i) = &mut vert.uv { shift(i, deltas.1) }
+                if let NormalId::Index(i) = &mut vert.normal { shift(i, deltas.2) }
             }
         }
         for comp in self.vertices.compute.values_mut() {
             for id in comp.points.iter_mut() {
-                match id {
-                    VertexId::Index(i) => shift(i, deltas.0),
-                    _ => {}
-                }
+                if let VertexId::Index(i) = id { shift(i, deltas.0) }
             }
         }
         for comp in self.normals.compute.values_mut() {
             for id in comp.points.iter_mut() {
-                match id {
-                    VertexId::Index(i) => shift(i, deltas.0),
-                    _ => {}
-                }
+                if let VertexId::Index(i) = id { shift(i, deltas.0) }
             }
         }
     }
@@ -924,6 +909,50 @@ impl Part {
             );
         }
     }
+
+    /// Iterates over triangles where all 3 vertices of the triangle are in `ids`
+    pub fn filter_triangles(&mut self, ids: &[VertexId]) -> impl Iterator<Item = &mut Triangle> {
+        self.triangles.0.iter_mut()
+            .filter(|t| t.vertices.iter().all(|v| ids.contains(&v.vertex)))
+    }
+
+    /// Filters the input `ids` to only contain ids that are part of triangles.
+    pub fn filter_triangle_vertices<'a>(&mut self, ids: &'a [VertexId]) -> impl Iterator<Item = &'a VertexId> {
+        let set: HashSet<&VertexId> = self.triangles.0.iter()
+            .filter_map(|t| {
+                if t.vertices.iter().all(|v| ids.contains(&v.vertex)) {
+                    Some(ids.iter().filter(|id| **id == t.vertices[0].vertex || **id == t.vertices[1].vertex || **id == t.vertices[2].vertex))
+                } else {
+                    None
+                }
+            })
+            .flatten().collect();
+        set.into_iter()
+    }
+
+    /// Iterates over Vec3 positions for indexed/named vertices in `ids`
+    pub fn filter_non_compute_vertices(&mut self, ids: &[&VertexId]) -> impl Iterator<Item = &mut Vec3> {
+        self.vertices.indexed.iter_mut()
+            .enumerate()
+            .filter_map(|(n, v)| {
+                if ids.contains(&&VertexId::Index(n)) {
+                    Some(v)
+                } else {
+                    None
+                }
+            })
+            .chain(
+                self.vertices.named.iter_mut()
+                    .filter_map(|(n, v)| {
+                        if ids.contains(&&VertexId::Named(n.clone())) {
+                            Some(v)
+                        } else {
+                            None
+                        }
+                    })
+            )
+    }
+
 }
 
 impl Triangle {

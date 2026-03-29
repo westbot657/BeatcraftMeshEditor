@@ -107,17 +107,19 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
     }
 }
 
-pub struct MultiMathValue<'a, T: MapIndexable> {
-    values: &'a mut Option<Vec<f32>>,
-    vars: &'a mut [&'a mut T],
+pub struct MultiMathValue<'a, 'b, 'c, 'd, T: MapIndexable> {
+    hint_text: &'static str,
+    values: &'b mut Option<Vec<f32>>,
+    vars: &'c mut [&'d mut T],
     max_decimals: usize,
     suffix: Option<&'a str>,
     degrees: bool,
 }
 
-impl<'a, T: MapIndexable> MultiMathValue<'a, T> {
-    pub fn new(values: &'a mut Option<Vec<f32>>, vars: &'a mut [&'a mut T]) -> Self {
+impl<'a, 'b, 'c, 'd, T: MapIndexable> MultiMathValue<'a, 'b, 'c, 'd, T> {
+    pub fn new(hint_text: &'static str, values: &'b mut Option<Vec<f32>>, vars: &'c mut [&'d mut T]) -> Self {
         Self {
+            hint_text,
             values,
             vars,
             max_decimals: 3,
@@ -142,7 +144,7 @@ impl<'a, T: MapIndexable> MultiMathValue<'a, T> {
     }
 }
 
-impl<'a, T: MapIndexable> egui::Widget for MultiMathValue<'a, T> {
+impl<'a, 'b, 'c, 'd, T: MapIndexable> egui::Widget for MultiMathValue<'a, 'b, 'c, 'd, T> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         let id = ui.next_auto_id();
 
@@ -152,7 +154,7 @@ impl<'a, T: MapIndexable> egui::Widget for MultiMathValue<'a, T> {
             egui::TextEdit::singleline(&mut text)
                 .desired_width(ui.available_width())
                 .font(egui::TextStyle::Monospace)
-                .hint_text("x, y, z"),
+                .hint_text(self.hint_text),
         );
 
         let commit = ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -166,6 +168,7 @@ impl<'a, T: MapIndexable> egui::Widget for MultiMathValue<'a, T> {
                 .collect();
 
             if let Some(results) = evaluated {
+                text.clear();
                 *self.values = Some(results);
             }
         } else if cancel {

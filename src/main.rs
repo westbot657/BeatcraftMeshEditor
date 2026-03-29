@@ -31,11 +31,12 @@ use glam::{Mat4, Quat, Vec3};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 
+use self::data::VertexId;
 use self::easing::Easing;
-use self::editor::{App, RotationDisplayMode, ViewPlacement, WorkingRenameKey};
+use self::editor::{App, RotationDisplayMode, Selection, ViewPlacement, WorkingRenameKey};
 use self::light_mesh::BloomfogStyle;
 use self::render::{InstanceData, MeshDrawCall, PointDrawCall};
-use self::widgets::{MathDragValue, MathDragValueOpt};
+use self::widgets::{MathDragValue, MathDragValueOpt, MultiMathValue};
 
 pub mod data;
 pub mod easing;
@@ -130,7 +131,7 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
                         ui.memory_mut(|m| {
                             m.data.insert_temp(id, *v);
                             m.data.insert_temp(id, snapshot_provider());
-                        });
+    });
                     }
                     if (resp.drag_stopped() || (resp.lost_focus() && !resp.dragged()))
                     && let Some((old, t)) = ui.memory_mut(|m| {
@@ -146,6 +147,94 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
         }
         *v = current;
     });
+}
+
+fn multi_vec3_row<T: 'static + Clone + Send + Sync>(
+    ui: &mut Ui,
+    vertices: &mut [&mut Vec3],
+    w3: f32,
+    snapshot_provider: impl Fn() -> T,
+    mut history_pusher: impl FnMut(T),
+    mut on_change: impl FnMut(),
+) {
+    let mut vars = Vec::with_capacity(vertices.len());
+    for v3 in vertices.iter() {
+        let mut v = Box::new(HashMap::with_capacity(3));
+        v.insert("x".to_string(), v3.x);
+        v.insert("y".into(), v3.y);
+        v.insert("z".into(), v3.z);
+        let b = Box::into_raw(v);
+        vars.push(unsafe { &mut *b });
+    }
+
+    let mut current: Vec<_> = vertices.iter().map(|r| **r).collect();
+    let mut changed = false;
+    fn axis_value(
+        ui: &mut Ui, v: &'static str,
+        vars: &mut [&mut HashMap<String, f32>],
+        w3: f32,
+        vals: &mut Option<Vec<f32>>
+    ) {
+        ui.allocate_ui_with_layout(
+            (w3, 20.).into(),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.add_sized(
+                    [w3, 20.],
+                    MultiMathValue::new(v, vals, vars).max_decimals(3)
+                );
+            }
+        );
+    }
+
+    ui.horizontal(|ui| {
+        let mut vals = None;
+        axis_value(
+            ui, "x", &mut vars, w3, &mut vals
+        );
+        if let Some(x) = vals {
+            for ((c, vs), x) in current.iter_mut().zip(vars.iter_mut()).zip(x.into_iter()) {
+                c.x = x;
+                vs.insert("x".into(), x);
+            }
+            changed = true;
+        }
+        let mut vals = None;
+        axis_value(
+            ui, "y", &mut vars, w3, &mut vals
+        );
+        if let Some(y) = vals {
+            for ((c, vs), y) in current.iter_mut().zip(vars.iter_mut()).zip(y.into_iter()) {
+                c.y = y;
+                vs.insert("y".into(), y);
+            }
+            changed = true;
+        }
+        vals = None;
+        axis_value(
+            ui, "z", &mut vars, w3, &mut vals
+        );
+        if let Some(z) = vals {
+            for ((c, vs), z) in current.iter_mut().zip(vars.iter_mut()).zip(z.into_iter()) {
+                c.z = z;
+                vs.insert("z".into(), z);
+            }
+            changed = true;
+        }
+
+    });
+
+    for (v, c) in vertices.iter_mut().zip(current.into_iter()) {
+        **v = c;
+    }
+
+    for var in vars {
+        let _ = unsafe { Box::from_raw(var as *mut _) };
+    }
+    if changed {
+        history_pusher(snapshot_provider());
+        on_change();
+    }
 }
 
 fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
@@ -166,6 +255,7 @@ fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
     if let Some(z) = v[2] {
         vars.insert("z".into(), *z);
     }
+    let mut changed = false;
     ui.horizontal(|ui| {
         let mut current = [*v[0], *v[1], *v[2]];
         for val in current.iter_mut() {
@@ -182,9 +272,7 @@ fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
                             .max_decimals(3),
                     );
 
-                    if resp.changed() {
-                        on_change();
-                    }
+                    changed |= resp.changed();
 
                     if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
                         ui.memory_mut(|m| {
@@ -208,6 +296,9 @@ fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
         *v[0] = current[0];
         *v[1] = current[1];
         *v[2] = current[2];
+        if changed {
+            on_change();
+        }
     });
 }
 
@@ -225,7 +316,7 @@ fn delta_function_row<T: 'static + Clone + Send + Sync>(
     if let Some(d) = delta {
         vars.insert("d".into(), *d);
     }
-
+    let mut changed = false;
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(
             (w2, 20.).into(),
@@ -240,9 +331,7 @@ fn delta_function_row<T: 'static + Clone + Send + Sync>(
                         .max_decimals(3),
                 );
 
-                if resp.changed() {
-                    on_change();
-                }
+                changed |= resp.changed();
 
                 if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
                     ui.memory_mut(|m| {
@@ -285,6 +374,9 @@ fn delta_function_row<T: 'static + Clone + Send + Sync>(
             }
         );
     });
+    if changed {
+        on_change();
+    }
 }
 
 
@@ -308,6 +400,7 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
         }
     });
     let current = *q;
+    let mut changed = false;
     match mode {
         RotationDisplayMode::Quaternion => {
             let mut v = current.to_array();
@@ -331,9 +424,7 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
                                     .max_decimals(3),
                             );
 
-                            if resp.changed() {
-                                on_change();
-                            }
+                            changed |= resp.changed();
 
                             if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
                                 ui.memory_mut(|m| {
@@ -371,9 +462,7 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
                                     .max_decimals(3),
                             );
 
-                            if resp.changed() {
-                                on_change();
-                            }
+                            changed |= resp.changed();
 
                             if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
                                 ui.memory_mut(|m| {
@@ -436,9 +525,7 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
                                     .degrees(),
                             );
 
-                            if resp.changed() {
-                                on_change();
-                            }
+                            changed |= resp.changed();
 
                             if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
                                 ui.memory_mut(|m| {
@@ -467,6 +554,9 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
                 degrees[2].to_radians(),
             );
         }
+    }
+    if changed {
+        on_change();
     }
 }
 
@@ -641,7 +731,7 @@ impl eframe::App for App {
                         draw_assembly_right();
                     }
                     editor::EditorMode::Edit => {
-                        draw_edit_right();
+                        draw_edit_right(self, ui, gl);
                     }
                 });
             });
@@ -1531,7 +1621,37 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_edit_right() {
+fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
+    let rd = RefDuper;
+    let s2 = unsafe { rd.detach_mut_ref(s) };
+    let self3 = unsafe { rd.detach_mut_ref(s) };
+    let self4 = unsafe { rd.detach_mut_ref(s) };
+    if let Selection::Vertices(verts) = &mut s2.selection
+    && let Some(part) = s.get_current_part_mut() {
+        let rd2 = RefDuper;
+        let part2 = unsafe { rd2.detach_mut_ref(part) };
+        //let tri_verts: Vec<&VertexId> = part.filter_triangle_vertices(verts).collect();
+        let verts2: Vec<&VertexId> = verts.iter().collect();
+        let mut values: Vec<&mut Vec3> = part.filter_non_compute_vertices(&verts2).collect();
+        let w = ui.available_width();
+        //let w2 = (w - ui.spacing().item_spacing.x) / 2.;
+        let w3 = (w - ui.spacing().item_spacing.x * 2.) / 3.;
+
+        ui.label("Multi-Vertex");
+        multi_vec3_row(
+            ui, &mut values, w3,
+            || part2.clone(),
+            |t| self3.add_history(editor::HistoryEntry::MeshPart(
+                light_mesh::LightMeshPartSnapshot {
+                    idx: self3.get_current_mesh_idx().unwrap(),
+                    name: self3.get_current_part_name().unwrap().to_string(),
+                    part: Box::new(t)
+                }
+            )),
+            || self4.rebuild_meshes(gl)
+        );
+
+    }
     // TODO:
     // if vertices == 2:
     //     add compute vertex button

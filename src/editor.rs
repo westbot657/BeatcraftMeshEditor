@@ -536,7 +536,7 @@ pub enum HistoryCycleDir {
 
 impl History {
     pub fn add_history(&mut self, entry: HistoryEntry) {
-        println!("Saving history: {:?}", entry);
+        // println!("Saving history: {:?}", entry);
         self.history.push_back(entry);
         self.future.clear();
         if self.history.len() > self.limit {
@@ -631,7 +631,7 @@ impl History {
         };
 
         let save = if let Some(restore) = front.pop_back() {
-            println!("Restoring {:?}", restore);
+            // println!("Restoring {:?}", restore);
             self.process_history(editor, gl, restore)
         } else {
             return;
@@ -809,6 +809,7 @@ impl App {
         for view_mesh in self.view.meshes.iter_mut() {
             view_mesh.rebuild(gl);
         }
+        self.upload_selection_points(gl);
     }
 
     pub fn block_input(&self) -> bool {
@@ -869,6 +870,10 @@ impl App {
 
     pub fn handle_keys(&mut self, ctx: &egui::Context, gl: &Context) {
         if self.block_input() {
+            return;
+        }
+
+        if ctx.wants_keyboard_input() {
             return;
         }
 
