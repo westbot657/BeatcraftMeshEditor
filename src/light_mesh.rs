@@ -911,9 +911,9 @@ impl Part {
     }
 
     /// Iterates over triangles where all 3 vertices of the triangle are in `ids`
-    pub fn filter_triangles(&mut self, ids: &[VertexId]) -> impl Iterator<Item = &mut Triangle> {
+    pub fn filter_triangles(&mut self, ids: &[&VertexId]) -> impl Iterator<Item = &mut Triangle> {
         self.triangles.0.iter_mut()
-            .filter(|t| t.vertices.iter().all(|v| ids.contains(&v.vertex)))
+            .filter(|t| t.vertices.iter().all(|v| ids.contains(&&v.vertex)))
     }
 
     /// Filters the input `ids` to only contain ids that are part of triangles.
@@ -953,6 +953,40 @@ impl Part {
             )
     }
 
+    pub fn get_valid_vertex_ids(&self) -> impl Iterator<Item = VertexId> {
+        (0..self.vertices.indexed.len())
+            .map(VertexId::Index)
+            .chain(
+                self.vertices.named.keys()
+                    .map(|n| VertexId::Named(n.clone()))
+            )
+            .chain(
+                self.vertices.compute.keys()
+                    .map(|c| VertexId::Named(c.clone()))
+            )
+    }
+
+    pub fn get_valid_uv_ids(&self) -> impl Iterator<Item = UvId> {
+        (0..self.uvs.indexed.len())
+            .map(UvId::Index)
+            .chain(
+                self.uvs.named.keys()
+                    .map(|n| UvId::Named(n.clone()))
+            )
+    }
+
+    pub fn get_valid_normal_ids(&self) -> impl Iterator<Item = NormalId> {
+        (0..self.normals.indexed.len())
+            .map(NormalId::Index)
+            .chain(
+                self.normals.named.keys()
+                    .map(|n| NormalId::Named(n.clone()))
+            )
+            .chain(
+                self.normals.compute.keys()
+                    .map(|c| NormalId::Named(c.clone()))
+            )
+    }
 }
 
 impl Triangle {

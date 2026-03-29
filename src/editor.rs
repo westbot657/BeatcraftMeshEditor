@@ -391,7 +391,6 @@ impl Default for PartCollapseToggles {
     }
 }
 
-#[derive(Default)]
 pub struct EditCollapsed {
     pub i_vertices: bool,
     pub n_vertices: bool,
@@ -401,6 +400,21 @@ pub struct EditCollapsed {
     pub i_normals: bool,
     pub n_normals: bool,
     pub c_normals: bool,
+}
+
+impl Default for EditCollapsed {
+    fn default() -> Self {
+        Self {
+            i_vertices: true,
+            n_vertices: true,
+            c_vertices: true,
+            i_uvs: true,
+            n_uvs: true,
+            i_normals: true,
+            n_normals: true,
+            c_normals: true,
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]

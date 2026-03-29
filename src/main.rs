@@ -27,14 +27,14 @@ use std::sync::{Arc, mpsc};
 
 use eframe::glow::{self, HasContext};
 use egui::{Frame, Sense, Ui};
-use glam::{Mat4, Quat, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 
-use self::data::VertexId;
+use self::data::{NormalId, UvId, VertexId};
 use self::easing::Easing;
 use self::editor::{App, RotationDisplayMode, Selection, ViewPlacement, WorkingRenameKey};
-use self::light_mesh::BloomfogStyle;
+use self::light_mesh::{BloomfogStyle, Triangle};
 use self::render::{InstanceData, MeshDrawCall, PointDrawCall};
 use self::widgets::{MathDragValue, MathDragValueOpt, MultiMathValue};
 
@@ -136,6 +136,58 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
                     if (resp.drag_stopped() || (resp.lost_focus() && !resp.dragged()))
                     && let Some((old, t)) = ui.memory_mut(|m| {
                         let o = m.data.get_temp::<Vec3>(id)?;
+                        let t = m.data.get_temp::<T>(id)?;
+                        Some((o, t))
+                    })
+                    && old != *v {
+                        history_pusher(t);
+                    }
+                },
+            );
+        }
+        *v = current;
+    });
+}
+
+fn vec2_row<T: 'static + Clone + Send + Sync>(
+    ui: &mut egui::Ui,
+    v: &mut Vec2,
+    w2: f32,
+    snapshot_provider: impl Fn() -> T,
+    mut history_pusher: impl FnMut(T),
+    mut on_change: impl FnMut(),
+) {
+    let mut vars = HashMap::new();
+    vars.insert("x".to_string(), v.x);
+    vars.insert("y".to_string(), v.y);
+    ui.horizontal(|ui| {
+        let mut current = *v;
+        for val in current.as_mut() {
+            ui.allocate_ui_with_layout(
+                (w2, 20.).into(),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    let id = ui.next_auto_id();
+                    ui.set_clip_rect(ui.max_rect());
+                    let resp = ui.add_sized(
+                        [w2, 20.],
+                        MathDragValue::new(val, &mut vars)
+                            .speed(0.1)
+                            .max_decimals(3),
+                    );
+
+                    if resp.changed() {
+                        on_change();
+                    }
+                    if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
+                        ui.memory_mut(|m| {
+                            m.data.insert_temp(id, *v);
+                            m.data.insert_temp(id, snapshot_provider());
+                        });
+                    }
+                    if (resp.drag_stopped() || (resp.lost_focus() && !resp.dragged()))
+                    && let Some((old, t)) = ui.memory_mut(|m| {
+                        let o = m.data.get_temp::<Vec2>(id)?;
                         let t = m.data.get_temp::<T>(id)?;
                         Some((o, t))
                     })
@@ -556,6 +608,181 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
         }
     }
     if changed {
+        on_change();
+    }
+}
+
+fn multi_quat_row<T: 'static + Clone + Send + Sync>(
+    ui: &mut egui::Ui,
+    quats: &mut [&mut Quat],
+    mode: &mut RotationDisplayMode,
+    w: (f32, f32),
+    snapshot_provider: impl Fn() -> T,
+    mut history_pusher: impl FnMut(T),
+    mut on_change: impl FnMut(),
+) {
+    let (w2, w3) = w;
+
+    ui.horizontal(|ui| {
+        let mode_label = match mode {
+            RotationDisplayMode::Quaternion => "QUAT",
+            RotationDisplayMode::Euler(s) => s.label(),
+        };
+        if ui.small_button(mode_label).clicked() {
+            *mode = mode.cycle();
+        }
+    });
+
+    let mut changed = false;
+
+    match mode {
+        RotationDisplayMode::Quaternion => {
+            let mut arrays: Vec<[f32; 4]> = quats.iter().map(|q| q.to_array()).collect();
+
+            let mut vars: Vec<Box<HashMap<String, f32>>> = arrays.iter().map(|a| {
+                let mut m = Box::new(HashMap::with_capacity(4));
+                m.insert("x".into(), a[0]);
+                m.insert("y".into(), a[1]);
+                m.insert("z".into(), a[2]);
+                m.insert("w".into(), a[3]);
+                m
+            }).collect();
+            let mut var_ptrs: Vec<&mut HashMap<String, f32>> =
+                vars.iter_mut().map(|b| b.as_mut()).collect();
+
+            fn component_col(
+                ui: &mut egui::Ui,
+                axis: &'static str,
+                var_ptrs: &mut [&mut HashMap<String, f32>],
+                arrays: &mut [[f32; 4]],
+                axis_idx: usize,
+                w2: f32,
+                changed: &mut bool,
+            ) {
+                ui.allocate_ui_with_layout(
+                    egui::Vec2::new(w2, 20.0),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        let mut vals: Option<Vec<f32>> = None;
+                        ui.add_sized(
+                            [w2, 20.],
+                            MultiMathValue::new(axis, &mut vals, var_ptrs)
+                        );
+                        if let Some(new_vals) = vals {
+                            for (arr, &v) in arrays.iter_mut().zip(new_vals.iter()) {
+                                arr[axis_idx] = v;
+                            }
+                            // sync vars back
+                            for (vp, &v) in var_ptrs.iter_mut().zip(new_vals.iter()) {
+                                vp.insert(axis.into(), v);
+                            }
+                            *changed = true;
+                        }
+                    },
+                );
+            }
+
+            // Row 1: x, y
+            ui.horizontal(|ui| {
+                component_col(ui, "x", &mut var_ptrs, &mut arrays, 0, w2, &mut changed);
+                component_col(ui, "y", &mut var_ptrs, &mut arrays, 1, w2, &mut changed);
+            });
+            // Row 2: z, w
+            ui.horizontal(|ui| {
+                component_col(ui, "z", &mut var_ptrs, &mut arrays, 2, w2, &mut changed);
+                component_col(ui, "w", &mut var_ptrs, &mut arrays, 3, w2, &mut changed);
+            });
+
+            for (q, arr) in quats.iter_mut().zip(arrays.into_iter()) {
+                **q = Quat::from_array(arr);
+            }
+        }
+
+        RotationDisplayMode::Euler(swizzle) => {
+            let normalize_angle = |d: f32| {
+                let d = if d == -0.0 { 0.0 } else { d };
+                if (d - 180.0).abs() < 0.001 || (d + 180.0).abs() < 0.001 {
+                    180.0
+                } else {
+                    d
+                }
+            };
+
+            let [n1, n2, n3] = swizzle.names();
+            let glam_rot = glam::EulerRot::from(*swizzle);
+
+            // degrees[i] = [ax, ay, az] for quats[i]
+            let mut degrees: Vec<[f32; 3]> = quats.iter().map(|q| {
+                let (ax, ay, az) = q.to_euler(swizzle.to_glam());
+                [
+                    normalize_angle(ax.to_degrees()),
+                    normalize_angle(ay.to_degrees()),
+                    normalize_angle(az.to_degrees()),
+                ]
+            }).collect();
+
+            let mut vars: Vec<Box<HashMap<String, f32>>> = degrees.iter().map(|d| {
+                let mut m = Box::new(HashMap::with_capacity(3));
+                m.insert(n1.into(), d[0]);
+                m.insert(n2.into(), d[1]);
+                m.insert(n3.into(), d[2]);
+                m
+            }).collect();
+            let mut var_ptrs: Vec<&mut HashMap<String, f32>> =
+                vars.iter_mut().map(|b| b.as_mut()).collect();
+
+            fn euler_col(
+                ui: &mut egui::Ui,
+                axis: &'static str,
+                var_ptrs: &mut [&mut HashMap<String, f32>],
+                degrees: &mut [[f32; 3]],
+                axis_idx: usize,
+                w3: f32,
+                changed: &mut bool,
+            ) {
+                ui.allocate_ui_with_layout(
+                    (w3, 20.).into(),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        let mut vals: Option<Vec<f32>> = None;
+                        ui.add_sized(
+                            [w3, 20.],
+                            MultiMathValue::new(axis, &mut vals, var_ptrs)
+                                .suffix("\u{b0}")
+                                .degrees(),
+                        );
+                        if let Some(new_vals) = vals {
+                            for (deg, &v) in degrees.iter_mut().zip(new_vals.iter()) {
+                                deg[axis_idx] = v;
+                            }
+                            for (vp, &v) in var_ptrs.iter_mut().zip(new_vals.iter()) {
+                                vp.insert(axis.into(), v);
+                            }
+                            *changed = true;
+                        }
+                    },
+                );
+            }
+
+            ui.horizontal(|ui| {
+                euler_col(ui, n1, &mut var_ptrs, &mut degrees, 0, w3, &mut changed);
+                euler_col(ui, n2, &mut var_ptrs, &mut degrees, 1, w3, &mut changed);
+                euler_col(ui, n3, &mut var_ptrs, &mut degrees, 2, w3, &mut changed);
+            });
+
+            for (q, deg) in quats.iter_mut().zip(degrees.into_iter()) {
+                **q = Quat::from_euler(
+                    glam_rot,
+                    deg[0].to_radians(),
+                    deg[1].to_radians(),
+                    deg[2].to_radians(),
+                );
+            }
+        }
+    }
+
+    if changed {
+        history_pusher(snapshot_provider());
         on_change();
     }
 }
@@ -1277,13 +1504,11 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                 if !*di_collapsed {
                     ui.horizontal(|ui| {
-                        // Mat: click-cycle 0->1->2->0
                         let mat_label = format!("Material {}", entry.material);
                         if ui.button(mat_label).clicked() {
                             entry.material = (entry.material + 1) % 3;
                         }
 
-                        // Ch: dropdown 0..7
                         egui::ComboBox::from_id_salt(egui::Id::new("data_ch").with(di))
                             .selected_text(format!("Channel {}", entry.color))
                             .show_ui(ui, |ui| {
@@ -1438,7 +1663,6 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4, eye: V
 }
 
 fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
-    // TODO: add raw vertices, uvs, and normals
     let rd = RefDuper;
     let self2 = unsafe { rd.detach_mut_ref(s) };
     let self3 = unsafe { rd.detach_mut_ref(s) };
@@ -1447,7 +1671,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         let rd2 = RefDuper;
         let part2 = unsafe { rd2.detach_mut_ref(part) };
         let w = ui.available_width();
-        //let w2 = (w - ui.spacing().item_spacing.x) / 2.;
+        let w2 = (w - ui.spacing().item_spacing.x) / 2.;
         let w3 = (w - ui.spacing().item_spacing.x * 2.) / 3.;
 
         // Indexed vertices
@@ -1488,7 +1712,10 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         });
 
         if !*verts {
-            for (key, vert) in part.vertices.named.iter_mut2() {
+            for (i, (key, vert)) in part.vertices.named.iter_mut().enumerate() {
+                if i != 0 {
+                    ui.separator();
+                }
                 let mut name = key.clone();
                 if let WorkingRenameKey::NamedVert(ref name2) = self3.state.ui.working_key
                     && *name2 == name
@@ -1539,6 +1766,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
         }
 
+        // Compute vertices
         let verts = &mut s.state.ui.edit_collpased.c_vertices;
         ui.horizontal(|ui| {
             let icon = if *verts { "▶" } else { "▼" };
@@ -1549,7 +1777,10 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         });
 
         if !*verts {
-            for (key, comp) in part.vertices.compute.iter_mut2() {
+            for (i, (key, comp)) in part.vertices.compute.iter_mut().enumerate() {
+                if i != 0 {
+                    ui.separator();
+                }
                 let mut name = key.clone();
                 if let WorkingRenameKey::CompVert(ref name2) = self3.state.ui.working_key
                     && *name2 == name {
@@ -1581,6 +1812,42 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     self3.state.ui.working_key = WorkingRenameKey::CompVert(key.clone());
                     self3.state.ui.working_name = Some(name);
                 }
+
+                // TODO: 2 point selector
+                ui.horizontal(|ui| {
+                    for idx in 0..2 {
+                        let id = &mut comp.points[idx];
+                        let check = id.clone();
+                        let disp = match id {
+                            VertexId::Named(n) => format!("  {n}"),
+                            VertexId::Index(i) => format!("{i}"),
+                        };
+
+                        egui::ComboBox::from_id_salt(format!("{key}-{idx}"))
+                            .selected_text(disp)
+                            .width(w2)
+                            .show_ui(ui, |ui| {
+                                for name in part2.get_valid_vertex_ids() {
+                                    let disp = match &name {
+                                        VertexId::Named(n) => format!("  {n}"),
+                                        VertexId::Index(i) => format!("{i}"),
+                                    };
+                                    ui.selectable_value(id, name, disp);
+                                }
+                            });
+
+                        if *id != check {
+                            self3.add_history(editor::HistoryEntry::MeshPart(
+                                light_mesh::LightMeshPartSnapshot {
+                                    idx: self3.get_current_mesh_idx().unwrap(),
+                                    name: self3.get_current_part_name().unwrap().to_string(),
+                                    part: Box::new(part2.clone())
+                                }
+                            ));
+                            self3.rebuild_meshes(gl);
+                        }
+                    }
+                });
 
                 let mut vars = HashMap::new();
 
@@ -1618,6 +1885,255 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
         }
 
+        // Indexed uvs
+        let uvs = &mut s.state.ui.edit_collpased.i_uvs;
+        ui.horizontal(|ui| {
+            let icon = if *uvs { "▶" } else { "▼" };
+            if ui.small_button(icon).clicked() {
+                *uvs = !*uvs;
+            }
+            ui.label("Indexed UVs");
+        });
+
+        if !*uvs {
+            for uv in part.uvs.indexed.iter_mut() {
+                vec2_row(
+                    ui, uv, w2,
+                    || part2.clone(),
+                    |t| self3.add_history(editor::HistoryEntry::MeshPart(
+                        light_mesh::LightMeshPartSnapshot {
+                            idx: self3.get_current_mesh_idx().unwrap(),
+                            name: self3.get_current_part_name().unwrap().to_string(),
+                            part: Box::new(t)
+                        }
+                    )),
+                    || self4.rebuild_meshes(gl)
+                );
+            }
+        }
+
+        // Named uvs
+        let uvs = &mut s.state.ui.edit_collpased.n_uvs;
+        ui.horizontal(|ui| {
+            let icon = if *uvs { "▶" } else { "▼" };
+            if ui.small_button(icon).clicked() {
+                *uvs = !*uvs;
+            }
+            ui.label("Named UVs");
+        });
+
+        if !*uvs {
+            for (i, (key, uv)) in part.uvs.named.iter_mut().enumerate() {
+                if i != 0 {
+                    ui.separator();
+                }
+                let mut name = key.clone();
+                if let WorkingRenameKey::NamedUv(ref name2) = self3.state.ui.working_key
+                    && *name2 == name {
+                    name = self3.state.ui.working_name.take().unwrap_or(name);
+                }
+
+                if ui.add_sized([w, 20.], egui::TextEdit::singleline(&mut name))
+                    .changed() {
+                    let _ = self3.rename(editor::Rename::Uv {
+                        part: editor::PartId {
+                            view_idx: self3.get_current_mesh_idx().unwrap(),
+                            name: self3.get_current_part_name().unwrap().to_string(),
+                        },
+                        swap: editor::DataSwap {
+                            from: UvId::Named(key.clone()),
+                            to: UvId::Named(name)
+                        }
+                    });
+                    self3.state.ui.working_key = WorkingRenameKey::None;
+                    return;
+                }
+
+                if name != *key {
+                    self3.state.ui.working_key = WorkingRenameKey::NamedUv(key.clone());
+                    self3.state.ui.working_name = Some(name);
+                }
+
+                vec2_row(
+                    ui, uv, w2,
+                    || part2.clone(),
+                    |t| self3.add_history(editor::HistoryEntry::MeshPart(
+                        light_mesh::LightMeshPartSnapshot {
+                            idx: self3.get_current_mesh_idx().unwrap(),
+                            name: self3.get_current_part_name().unwrap().to_string(),
+                            part: Box::new(t)
+                        }
+                    )),
+                    || self4.rebuild_meshes(gl)
+                );
+            }
+        }
+
+        // Indexed normals
+        let norms = &mut s.state.ui.edit_collpased.i_normals;
+        ui.horizontal(|ui| {
+            let icon = if *norms { "▶" } else { "▼" };
+            if ui.small_button(icon).clicked() {
+                *norms = !*norms;
+            }
+            ui.label("Indexed Normals");
+        });
+
+        if !*norms {
+            for norm in part.normals.indexed.iter_mut() {
+                vec3_row(
+                    ui, norm, w3,
+                    || part2.clone(),
+                    |t| self3.add_history(editor::HistoryEntry::MeshPart(
+                        light_mesh::LightMeshPartSnapshot {
+                            idx: self3.get_current_mesh_idx().unwrap(),
+                            name: self3.get_current_part_name().unwrap().to_string(),
+                            part: Box::new(t)
+                        }
+                    )),
+                    || self4.rebuild_meshes(gl)
+                );
+            }
+        }
+
+        // Named normals
+        let norms = &mut s.state.ui.edit_collpased.n_normals;
+        ui.horizontal(|ui| {
+            let icon = if *norms { "▶" } else { "▼" };
+            if ui.small_button(icon).clicked() {
+                *norms = !*norms;
+            }
+            ui.label("Named Normals");
+        });
+
+        if !*norms {
+            for (i, (key, norm)) in part.normals.named.iter_mut().enumerate() {
+                if i != 0 {
+                    ui.separator();
+                }
+                let mut name = key.clone();
+                if let WorkingRenameKey::NamedNorm(ref name2) = self3.state.ui.working_key
+                    && *name2 == name {
+                    name = self3.state.ui.working_name.take().unwrap_or(name);
+                }
+
+                if ui.add_sized([w, 20.], egui::TextEdit::singleline(&mut name))
+                    .changed() {
+                    let _ = self3.rename(editor::Rename::Normal {
+                        part: editor::PartId {
+                            view_idx: self3.get_current_mesh_idx().unwrap(),
+                            name: self3.get_current_part_name().unwrap().to_string(),
+                        },
+                        swap: editor::DataSwap {
+                            from: data::NormalId::Named(key.clone()),
+                            to: data::NormalId::Named(name)
+                        }
+                    });
+                    self3.state.ui.working_key = WorkingRenameKey::None;
+                    return;
+                }
+
+                if name != *key {
+                    self3.state.ui.working_key = WorkingRenameKey::NamedNorm(key.clone());
+                    self3.state.ui.working_name = Some(name);
+                }
+
+                vec3_row(
+                    ui, norm, w3,
+                    || part2.clone(),
+                    |t| self3.add_history(editor::HistoryEntry::MeshPart(
+                        light_mesh::LightMeshPartSnapshot {
+                            idx: self3.get_current_mesh_idx().unwrap(),
+                            name: self3.get_current_part_name().unwrap().to_string(),
+                            part: Box::new(t)
+                        }
+                    )),
+                    || self4.rebuild_meshes(gl)
+                );
+            }
+        }
+
+        // Compute normals
+        let norms = &mut s.state.ui.edit_collpased.c_normals;
+        ui.horizontal(|ui| {
+            let icon = if *norms { "▶" } else { "▼" };
+            if ui.small_button(icon).clicked() {
+                *norms = !*norms;
+            }
+            ui.label("Compute Normals");
+        });
+
+        if !*norms {
+            for (i, (key, comp)) in part.normals.compute.iter_mut().enumerate() {
+                if i != 0 {
+                    ui.separator();
+                }
+                let mut name = key.clone();
+                if let WorkingRenameKey::CompNorm(ref name2) = self3.state.ui.working_key
+                    && *name2 == name {
+                    name = self3.state.ui.working_name.take().unwrap_or(name);
+                }
+
+                if ui.add_sized([w, 20.], egui::TextEdit::singleline(&mut name))
+                    .changed() {
+                    let _ = self3.rename(editor::Rename::Normal {
+                        part: editor::PartId {
+                            view_idx: self3.get_current_mesh_idx().unwrap(),
+                            name: self3.get_current_part_name().unwrap().to_string(),
+                        },
+                        swap: editor::DataSwap {
+                            from: NormalId::Named(key.clone()),
+                            to: NormalId::Named(name)
+                        }
+                    });
+                    self3.state.ui.working_key = WorkingRenameKey::None;
+                    return;
+                }
+
+                if name != *key {
+                    self3.state.ui.working_key = WorkingRenameKey::CompNorm(key.clone());
+                    self3.state.ui.working_name = Some(name);
+                }
+
+                // TODO: 3 point selectors
+
+                ui.horizontal(|ui| {
+                    for idx in 0..3 {
+                        let id = &mut comp.points[idx];
+                        let check = id.clone();
+                        let disp = match id {
+                            VertexId::Named(n) => format!("  {n}"),
+                            VertexId::Index(i) => format!("{i}"),
+                        };
+
+                        egui::ComboBox::from_id_salt(format!("{key}-{idx}"))
+                            .selected_text(disp)
+                            .width(w3)
+                            .show_ui(ui, |ui| {
+                                for name in part2.get_valid_vertex_ids() {
+                                    let disp = match &name {
+                                        VertexId::Named(n) => format!("  {n}"),
+                                        VertexId::Index(i) => format!("{i}"),
+                                    };
+                                    ui.selectable_value(id, name, disp);
+                                }
+                            });
+
+                        if *id != check {
+                            self3.add_history(editor::HistoryEntry::MeshPart(
+                                light_mesh::LightMeshPartSnapshot {
+                                    idx: self3.get_current_mesh_idx().unwrap(),
+                                    name: self3.get_current_part_name().unwrap().to_string(),
+                                    part: Box::new(part2.clone())
+                                }
+                            ));
+                            self3.rebuild_meshes(gl);
+                        }
+                    }
+                });
+            }
+        }
+
     }
 }
 
@@ -1651,16 +2167,86 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             || self4.rebuild_meshes(gl)
         );
 
+        let mut tris: Vec<[(&mut NormalId, &mut UvId); 3]> = part2
+            .filter_triangles(&verts2)
+            .map(|tri| {
+                let [a, b, c] = &mut tri.vertices;
+                [
+                    (&mut a.normal, &mut a.uv),
+                    (&mut b.normal, &mut b.uv),
+                    (&mut c.normal, &mut c.uv),
+                ]
+            })
+            .collect();
+
+        if !tris.is_empty() {
+
+            ui.label("Multi-Triangle Data");
+
+            let names = part.get_valid_normal_ids();
+            let mut normal = NormalId::Named(String::new());
+
+            egui::ComboBox::from_id_salt("multi_normals")
+                .selected_text("normal")
+                .width(w)
+                .show_ui(ui, |ui| {
+                    for name in names {
+                        let disp = match &name {
+                            NormalId::Named(n) => format!("  {n}"),
+                            NormalId::Index(i) => format!("{i}"),
+                        };
+                        ui.selectable_value(&mut normal, name, disp);
+                    }
+                });
+
+            if normal != NormalId::Named(String::new()) {
+                self3.add_history(editor::HistoryEntry::MeshPart(
+                    light_mesh::LightMeshPartSnapshot {
+                        idx: self3.get_current_mesh_idx().unwrap(),
+                        name: self3.get_current_part_name().unwrap().to_string(),
+                        part: Box::new(part.clone())
+                    }
+                ));
+                for tri in tris.iter_mut() {
+                    for (n, _u) in tri {
+                        **n = normal.clone();
+                    }
+                }
+                self3.rebuild_meshes(gl);
+            }
+
+            ui.horizontal(|ui| {
+                for (idx, v) in [(0, "x"), (1, "y"), (2, "z")] {
+                    let mut uv = UvId::Named(String::new());
+                    egui::ComboBox::from_id_salt(format!("multi-uv-{v}"))
+                        .selected_text(format!("<uv-{v}>"))
+                        .width(w3)
+                        .show_ui(ui, |ui| {
+                            for name in part.get_valid_uv_ids() {
+                                let disp = match &name {
+                                    UvId::Named(n) => format!("  {n}"),
+                                    UvId::Index(i) => format!("{i}"),
+                                };
+                                ui.selectable_value(&mut uv, name.clone(), disp);
+                            }
+                        });
+                    if uv != UvId::Named(String::new()) {
+                        self3.add_history(editor::HistoryEntry::MeshPart(
+                            light_mesh::LightMeshPartSnapshot {
+                                idx: self3.get_current_mesh_idx().unwrap(),
+                                name: self3.get_current_part_name().unwrap().to_string(),
+                                part: Box::new(part.clone())
+                            }
+                        ));
+                        for tri in tris.iter_mut() {
+                            *tri[idx].1 = uv.clone();
+                        }
+                        self3.rebuild_meshes(gl);
+                    }
+                }
+            });
+        }
     }
-    // TODO:
-    // if vertices == 2:
-    //     add compute vertex button
-    // elif vertices >= 3:
-    //     allow creating/removing triangles
-    // if vertices > 1:
-    //     multiplexed position input
-    // if vertices make up triangles:
-    //     multiplexed normal and uv inputs
 }
 
 fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4, eye: Vec3) {
