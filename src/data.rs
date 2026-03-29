@@ -15,6 +15,12 @@ pub enum VertexId {
     Named(String),
 }
 
+impl AsRef<VertexId> for VertexId {
+    fn as_ref(&self) -> &VertexId {
+        self
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
 #[serde(untagged)]
 pub enum UvId {

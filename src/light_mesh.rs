@@ -4,7 +4,7 @@ use std::fs;
 use std::hash::Hash;
 use std::path::Path;
 
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use glam::{FloatExt, Mat4, Quat, Vec2, Vec3};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
@@ -987,6 +987,97 @@ impl Part {
                     .map(|c| NormalId::Named(c.clone()))
             )
     }
+
+    /// Deletes all listed vertices, and deletes all triangles that contain
+    /// a deleted vertex
+    pub fn delete_vertices<L, V>(&mut self, ids: L)
+    where
+        L: AsRef<[V]>,
+        V: AsRef<VertexId>
+    {
+        if || -> Result<()> {
+            let sentinel_name = unsafe { String::from_utf8_unchecked(vec![0]) };
+            let sentinel = VertexId::Named(sentinel_name.clone());
+            let ids = ids.as_ref();
+            for id in ids {
+                let id = id.as_ref().clone();
+                self.rename_vertex(&DataSwap {
+                    from: id,
+                    to: sentinel.clone(),
+                })?;
+            }
+            let _ = self.vertices.named.shift_remove(&sentinel_name);
+            self.triangles.0.retain(|tri| {
+                tri.vertices.iter().all(|v| v.vertex != sentinel)
+            });
+            self.normals.compute.retain(|_, c| {
+                c.points.iter().all(|v| *v != sentinel)
+            });
+            self.vertices.compute.retain(|_, c| {
+                c.points.iter().all(|v| *v != sentinel)
+            });
+            Ok(())
+        }().is_err() {
+            // cleanup
+            todo!("Add delete vertices sentinel cleanup")
+        }
+    }
+
+    /// Deletes all listed uvs, and sets references to Index(0)
+    pub fn delete_uvs<L, U>(&mut self, ids: L)
+    where
+        L: AsRef<[U]>,
+        U: AsRef<UvId>,
+    {
+        if || -> Result<()> {
+            let sentinel_name = unsafe { String::from_utf8_unchecked(vec![0]) };
+            let sentinel = UvId::Named(sentinel_name.clone());
+            let ids = ids.as_ref();
+            for id in ids {
+                let id = id.as_ref().clone();
+                self.rename_uv(&DataSwap {
+                    from: id,
+                    to: sentinel.clone(),
+                })?;
+            }
+            let _ = self.uvs.named.shift_remove(&sentinel_name);
+            self.rename_uv(&DataSwap {
+                from: sentinel,
+                to: UvId::Index(0)
+            })
+        }().is_err() {
+            todo!("Add delete uvs sentinel cleanup")
+        }
+    }
+
+    /// Deletes all listed normals, and sets references to Index(0)
+    pub fn delete_normals<L, N>(&mut self, ids: L)
+    where
+        L: AsRef<[N]>,
+        N: AsRef<NormalId>,
+    {
+        if || -> Result<()> {
+            let sentinel_name = unsafe { String::from_utf8_unchecked(vec![0]) };
+            let sentinel = NormalId::Named(sentinel_name.clone());
+            let ids = ids.as_ref();
+            for id in ids {
+                let id = id.as_ref().clone();
+                self.rename_normal(&DataSwap {
+                    from: id,
+                    to: sentinel.clone(),
+                })?;
+            }
+            let _ = self.normals.named.shift_remove(&sentinel_name);
+            self.rename_normal(&DataSwap {
+                from: sentinel,
+                to: NormalId::Index(0)
+            })
+        }().is_err() {
+            // cleanup
+            todo!("Add delete vertices sentinel cleanup")
+        }
+    }
+
 }
 
 impl Triangle {

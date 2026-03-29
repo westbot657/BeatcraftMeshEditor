@@ -225,10 +225,18 @@ pub struct Editor {
     pub hovered: Option<VertexId>,
 }
 
+#[derive(Default)]
 pub enum Selection {
+    #[default]
     None,
     Vertices(Vec<VertexId>),
     Instances(Vec<usize>),
+}
+
+impl Selection {
+    pub fn take(&mut self) -> Self {
+        std::mem::take(self)
+    }
 }
 
 pub struct Drag {
@@ -999,6 +1007,23 @@ impl App {
                                 .map(|x| (x + 1) % mesh.data.part_names.len())
                                 .unwrap_or(0),
                         );
+                    }
+                }
+                if (input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace))
+                && let Selection::Vertices(_) = self.selection {
+                    let Selection::Vertices(verts) = self.selection.take() else { unreachable!() };
+                    let rd = RefDuper;
+                    let self2 = unsafe { rd.detach_mut_ref(self) };
+                    if let Some(part) = self.get_current_part_mut() {
+                        self2.add_history(HistoryEntry::MeshPart(
+                            LightMeshPartSnapshot {
+                                idx: self2.get_current_mesh_idx().unwrap(),
+                                name: self2.get_current_part_name().unwrap().to_string(),
+                                part: Box::new(part.clone())
+                            }
+                        ));
+                        part.delete_vertices(verts);
+                        self.rebuild_meshes(gl);
                     }
                 }
             }
