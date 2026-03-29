@@ -34,7 +34,7 @@ use indexmap::map::MutableKeys;
 use self::data::{NormalId, UvId, VertexId};
 use self::easing::Easing;
 use self::editor::{App, RotationDisplayMode, Selection, ViewPlacement, WorkingRenameKey};
-use self::light_mesh::{BloomfogStyle, Triangle};
+use self::light_mesh::BloomfogStyle;
 use self::render::{InstanceData, MeshDrawCall, PointDrawCall};
 use self::widgets::{MathDragValue, MathDragValueOpt, MultiMathValue};
 

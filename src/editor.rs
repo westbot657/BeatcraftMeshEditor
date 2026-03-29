@@ -166,7 +166,7 @@ impl ViewMesh {
         let full = self
             .gpu_bufs
             .1
-            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[]));
+            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[]));
         full.set_from_full_light_mesh(gl, &self.data);
     }
 
@@ -1055,6 +1055,12 @@ impl App {
         let mx = mouse_pos.x;
         let my = h - mouse_pos.y;
 
+        let input = if ctx.wants_keyboard_input() {
+            None
+        } else {
+            Some(ctx.input(|i| i.clone()))
+        };
+
         if resp.hovered() {
             let scroll = ctx.input(|i| {
                 if shift {
@@ -1072,6 +1078,16 @@ impl App {
                     1.12
                 };
                 self.cam().dist = (self.cam().dist * factor).clamp(0.05, 5000.);
+            }
+
+            if let Some(i) = input
+            && i.key_pressed(Key::C)
+            && !i.modifiers.ctrl
+            && let vp = self.cam().vp(w, h)
+            && let Some(part) = self.get_current_part_mut() {
+                let (orig, dir) = Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &vp);
+                part.vertices.indexed.push(orig + dir * 10.);
+                self.rebuild_meshes(gl);
             }
         }
 
@@ -1553,9 +1569,7 @@ impl App {
                     };
                     return;
                 }
-                let nrm = vec![Vec3::Y; selected.len()];
-                let ch = vec![0i32; 3 * selected.len()];
-                self.render.sel_points = Some(GpuMesh::new(gl, &selected, &nrm, &ch));
+                self.render.sel_points = Some(GpuMesh::new(gl, &selected, &[], &[], &selected, &[], &[]));
             }
         } else if matches!(self.selection, Selection::None)
             && let Some(buf) = self.render.sel_points.take()

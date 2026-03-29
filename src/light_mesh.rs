@@ -999,8 +999,16 @@ impl Part {
             let sentinel_name = unsafe { String::from_utf8_unchecked(vec![0]) };
             let sentinel = VertexId::Named(sentinel_name.clone());
             let ids = ids.as_ref();
+            let mut ids: Vec<VertexId> = ids.iter().map(|i| i.as_ref().clone()).collect();
+            ids.sort_by(|a, b| {
+                match (a, b) {
+                    (VertexId::Index(a), VertexId::Index(b)) => b.cmp(a),
+                    (VertexId::Index(_), VertexId::Named(_)) => std::cmp::Ordering::Less,
+                    (VertexId::Named(_), VertexId::Index(_)) => std::cmp::Ordering::Greater,
+                    (VertexId::Named(a), VertexId::Named(b)) => b.cmp(a),
+                }
+            });
             for id in ids {
-                let id = id.as_ref().clone();
                 self.rename_vertex(&DataSwap {
                     from: id,
                     to: sentinel.clone(),

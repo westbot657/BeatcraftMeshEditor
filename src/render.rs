@@ -99,12 +99,19 @@ impl GpuMesh {
         positions: &[Vec3],
         normals: &[Vec3],
         channels: &[i32],
+        point_positions: &[Vec3],
+        point_normals: &[Vec3],
+        point_channels: &[i32],
     ) {
         self.vertex_count = positions.len();
 
         let pos: &[u8] = bytemuck::cast_slice(positions);
         let norm: &[u8] = bytemuck::cast_slice(normals);
         let chan: &[u8] = bytemuck::cast_slice(channels);
+
+        let p_pos: &[u8] = bytemuck::cast_slice(point_positions);
+        let p_norm: &[u8] = bytemuck::cast_slice(point_normals);
+        let p_chan: &[u8] = bytemuck::cast_slice(point_channels);
 
         unsafe {
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbos[0]));
@@ -117,19 +124,23 @@ impl GpuMesh {
             gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, chan, glow::DYNAMIC_DRAW);
 
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.point_vbos[0]));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, pos, glow::DYNAMIC_DRAW);
+            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, p_pos, glow::DYNAMIC_DRAW);
 
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.point_vbos[1]));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, norm, glow::DYNAMIC_DRAW);
+            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, p_norm, glow::DYNAMIC_DRAW);
 
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.point_vbos[2]));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, chan, glow::DYNAMIC_DRAW);
+            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, p_chan, glow::DYNAMIC_DRAW);
 
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
         }
     }
 
-    pub fn new(gl: &glow::Context, positions: &[Vec3], normals: &[Vec3], channels: &[i32]) -> Self {
+    pub fn new(
+        gl: &glow::Context,
+        positions: &[Vec3], normals: &[Vec3], channels: &[i32],
+        point_positions: &[Vec3], point_normals: &[Vec3], point_channels: &[i32],
+    ) -> Self {
         unsafe {
             let vao = gl.create_vertex_array().unwrap();
             gl.bind_vertex_array(Some(vao));
@@ -196,7 +207,7 @@ impl GpuMesh {
                 point_instance_vbo,
                 vertex_count: 0,
             };
-            mesh.rebuild(gl, positions, normals, channels);
+            mesh.rebuild(gl, positions, normals, channels, point_positions, point_normals, point_channels);
             mesh
         }
     }
@@ -269,7 +280,7 @@ impl GpuMesh {
         for (name, part) in mesh.parts.iter() {
             let mut gpu_mesh = gpu_meshes
                 .remove(name)
-                .unwrap_or_else(|| GpuMesh::new(gl, &[], &[], &[]));
+                .unwrap_or_else(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[]));
             gpu_mesh.set_from_light_mesh_part(gl, part, &mesh.data);
             out.insert(name.clone(), gpu_mesh);
         }
@@ -361,6 +372,24 @@ impl GpuMesh {
         }
     }
 
+    pub fn add_point_data(
+        points: &mut Vec<Vec3>,
+        part: &Part,
+        tranform: &Mat4,
+    ) {
+        for p in part.vertices.indexed.iter() {
+            points.push(tranform.transform_point3(*p));
+        }
+        for p in part.vertices.named.values() {
+            points.push(tranform.transform_point3(*p));
+        }
+        for p in part.vertices.compute.values() {
+            if let Ok(p) = p.compute(part) {
+                points.push(tranform.transform_point3(p));
+            }
+        }
+    }
+
     pub fn set_from_full_light_mesh(&mut self, gl: &glow::Context, light_mesh: &LightMesh) {
         let mut vertices = Vec::new();
         let mut normals = Vec::new();
@@ -380,7 +409,7 @@ impl GpuMesh {
             );
         }
 
-        self.rebuild(gl, &vertices, &normals, &channels);
+        self.rebuild(gl, &vertices, &normals, &channels, &[], &[], &[]);
     }
 
     pub fn set_from_light_mesh_part(
@@ -392,6 +421,7 @@ impl GpuMesh {
         let mut vertices = Vec::new();
         let mut normals = Vec::new();
         let mut channels = Vec::new();
+        let mut points = Vec::new();
 
         Self::add_triangle_data(
             &mut vertices,
@@ -402,8 +432,16 @@ impl GpuMesh {
             &Mat4::IDENTITY,
             &IndexMap::default(),
         );
+        Self::add_point_data(
+            &mut points,
+            part,
+            &Mat4::IDENTITY
+        );
 
-        self.rebuild(gl, &vertices, &normals, &channels);
+        let p_normals = vec![Vec3::ZERO; points.len()];
+        let p_channels = vec![0; 3 * points.len()];
+
+        self.rebuild(gl, &vertices, &normals, &channels, &points, &p_normals, &p_channels);
     }
 }
 
