@@ -302,3 +302,43 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValueOpt<'a, T> {
     }
 }
 
+pub struct TextInput<'a> {
+    hint_text: &'static str,
+    value: &'a mut Option<String>,
+}
+
+impl<'a> TextInput<'a> {
+    pub fn new(hint_text: &'static str, value: &'a mut Option<String>) -> Self {
+        Self { hint_text, value }
+    }
+}
+
+impl<'a> egui::Widget for TextInput<'a> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        let id = ui.next_auto_id();
+
+        let mut text = ui.memory_mut(|m| m.data.get_temp::<String>(id).unwrap_or_else(String::new));
+
+        let edit_response = ui.add(
+            egui::TextEdit::singleline(&mut text)
+                .desired_width(ui.available_width())
+                .hint_text(self.hint_text),
+        );
+
+        let commit = ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+        if commit && !text.trim().is_empty() {
+            *self.value = Some(text.clone());
+            text.clear();
+        } else if cancel {
+            text.clear();
+            *self.value = None;
+        }
+
+        ui.memory_mut(|m| m.data.insert_temp(id, text));
+
+        edit_response
+    }
+}
+

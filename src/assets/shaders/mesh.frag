@@ -41,7 +41,7 @@ void main() {
     float depth = gl_FragCoord.z / gl_FragCoord.w + (noise - 0.5) * 3.5;
     vec4 vColor = vColorAlpha;
     if (!gl_FrontFacing) {
-        float t = 1.0 - clamp(depth / 50.0, 0.0, 1.0);
+        float t = 1.0 - clamp(depth / 100.0, 0.0, 1.0);
         int threshold = int(mix(15.0, 1.0, t));
         if (bayer >= threshold) discard;
         vColor = vec4(vColor.rgb * vec3(2.0, 2.0, 4.0), vColor.a);

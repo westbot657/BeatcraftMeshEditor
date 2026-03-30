@@ -1026,6 +1026,42 @@ impl App {
                         self.rebuild_meshes(gl);
                     }
                 }
+                if input.key_pressed(Key::N)
+                && let Selection::Vertices(ref verts) = self.selection {
+                    let rd = RefDuper;
+                    let verts = unsafe { rd.detach_ref(verts) };
+                    let self2 = unsafe { rd.detach_mut_ref(self) };
+                    let eye = self.cam().eye();
+                    if let Some(part) = self.get_current_part_mut() {
+                        self2.add_history(HistoryEntry::MeshPart(
+                            LightMeshPartSnapshot {
+                                idx: self2.get_current_mesh_idx().unwrap(),
+                                name: self2.get_current_part_name().unwrap().to_string(),
+                                part: Box::new(part.clone())
+                            }
+                        ));
+                        part.toggle_triangles(verts, eye);
+                        self.rebuild_meshes(gl);
+                    }
+                }
+                if input.key_pressed(Key::R)
+                && let Selection::Vertices(ref verts) = self.selection {
+                    let rd = RefDuper;
+                    let verts = unsafe { rd.detach_ref(verts) };
+                    let self2 = unsafe { rd.detach_mut_ref(self) };
+                    if let Some(part) = self.get_current_part_mut() {
+                        self2.add_history(HistoryEntry::MeshPart(
+                            LightMeshPartSnapshot {
+                                idx: self2.get_current_mesh_idx().unwrap(),
+                                name: self2.get_current_part_name().unwrap().to_string(),
+                                part: Box::new(part.clone())
+                            }
+                        ));
+                        part.flip_triangles(verts);
+                        self.rebuild_meshes(gl);
+                    }
+                }
+
             }
         }
     }
@@ -1080,15 +1116,27 @@ impl App {
                 self.cam().dist = (self.cam().dist * factor).clamp(0.05, 5000.);
             }
 
-            if let Some(i) = input
+            let rd = RefDuper;
+            let self2 = unsafe { rd.detach_mut_ref(self) };
+            if self.mode == EditorMode::Edit
+            && let Some(i) = input
             && i.key_pressed(Key::C)
             && !i.modifiers.ctrl
             && let vp = self.cam().vp(w, h)
             && let Some(part) = self.get_current_part_mut() {
+                self2.add_history(HistoryEntry::MeshPart(
+                    LightMeshPartSnapshot {
+                        idx: self2.get_current_mesh_idx().unwrap(),
+                        name: self2.get_current_part_name().unwrap().to_string(),
+                        part: Box::new(part.clone())
+                    }
+                ));
                 let (orig, dir) = Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &vp);
                 part.vertices.indexed.push(orig + dir * 10.);
                 self.rebuild_meshes(gl);
             }
+
+
         }
 
         if primary_pressed {

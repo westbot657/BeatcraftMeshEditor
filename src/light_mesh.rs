@@ -911,9 +911,12 @@ impl Part {
     }
 
     /// Iterates over triangles where all 3 vertices of the triangle are in `ids`
-    pub fn filter_triangles(&mut self, ids: &[&VertexId]) -> impl Iterator<Item = &mut Triangle> {
+    pub fn filter_triangles(&mut self, ids: &[impl AsRef<VertexId>]) -> impl Iterator<Item = &mut Triangle> {
         self.triangles.0.iter_mut()
-            .filter(|t| t.vertices.iter().all(|v| ids.contains(&&v.vertex)))
+            .filter(|t| t.vertices.iter().all(|v| {
+                let ids: Vec<_> = ids.iter().map(AsRef::as_ref).collect();
+                ids.contains(&&v.vertex)
+            }))
     }
 
     /// Filters the input `ids` to only contain ids that are part of triangles.
@@ -1083,6 +1086,72 @@ impl Part {
         }().is_err() {
             // cleanup
             todo!("Add delete vertices sentinel cleanup")
+        }
+    }
+
+    pub fn delete_triangles_with_vertices<L, V>(&mut self, vertices: L)
+    where
+        L: AsRef<[V]>,
+        V: AsRef<VertexId>
+    {
+        let verts: Vec<_> = vertices.as_ref().iter().map(AsRef::as_ref).collect();
+        self.triangles.0.retain(|tri| {
+            !tri.vertices.iter().any(|v| verts.contains(&&v.vertex))
+        })
+    }
+
+    /// If the given vertices make up any triangles, the triangles are deleted,
+    /// otherwise a triangle strip is created
+    pub fn toggle_triangles(&mut self, vertices: &[VertexId], eye: Vec3) {
+        if vertices.len() < 3 {
+            return
+        }
+        let tri_verts: Vec<_> = self.filter_triangle_vertices(vertices).collect();
+        if tri_verts.is_empty() {
+            for i in 0..vertices.len()-2 {
+                let [a, b, c] = &vertices[i..i+3] else { unreachable!() };
+                let va = self.resolve_vertex(a).unwrap();
+                let vb = self.resolve_vertex(b).unwrap();
+                let vc = self.resolve_vertex(c).unwrap();
+                let mut a = a.clone();
+                let mut c = c.clone();
+                let ab = vb - va;
+                let ac = vc - va;
+                let normal = ab.cross(ac);
+                if normal.dot(va - eye) > 0. {
+                    std::mem::swap(&mut a, &mut c);
+                }
+                let tri = Triangle {
+                    vertices: [
+                        Vertex {
+                            vertex: a.clone(),
+                            uv: UvId::Index(0),
+                            normal: NormalId::Index(0),
+                        },
+                        Vertex {
+                            vertex: b.clone(),
+                            uv: UvId::Index(0),
+                            normal: NormalId::Index(0),
+                        },
+                        Vertex {
+                            vertex: c.clone(),
+                            uv: UvId::Index(0),
+                            normal: NormalId::Index(0),
+                        },
+                    ],
+                    material: None,
+                };
+                self.triangles.0.push(tri);
+            }
+        } else {
+            self.delete_triangles_with_vertices(tri_verts);
+        }
+    }
+
+    pub fn flip_triangles(&mut self, vertices: &[VertexId]) {
+        for tri in self.filter_triangles(vertices) {
+            let [a, _, c] = &mut tri.vertices;
+            std::mem::swap(a, c);
         }
     }
 

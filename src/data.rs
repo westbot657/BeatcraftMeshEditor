@@ -28,11 +28,23 @@ pub enum UvId {
     Named(String),
 }
 
+impl AsRef<UvId> for UvId {
+    fn as_ref(&self) -> &UvId {
+        self
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
 #[serde(untagged)]
 pub enum NormalId {
     Index(usize),
     Named(String),
+}
+
+impl AsRef<NormalId> for NormalId {
+    fn as_ref(&self) -> &NormalId {
+        self
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

@@ -5,6 +5,7 @@ use crate::data::{NormalId, UvId, VertexId};
 use crate::editor::DataSwap;
 use crate::light_mesh::{LightMesh, Part};
 use anyhow::{Result, anyhow};
+use glam::{Vec2, Vec3};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 
@@ -105,7 +106,7 @@ impl Part {
                             self.vertices.compute.shift_remove(n.as_str());
                             res
                         } else {
-                            unreachable!()
+                            Vec3::ZERO
                         }
                     }
                 };
@@ -177,7 +178,7 @@ impl Part {
                         if let Some(uv) = self.uvs.named.shift_remove(n.as_str()) {
                             uv
                         } else {
-                            unreachable!()
+                            Vec2::ZERO
                         }
                     }
                 };
@@ -248,7 +249,7 @@ impl Part {
                         if let Some(norm) = self.normals.named.shift_remove(n.as_str()) {
                             norm
                         } else {
-                            unreachable!()
+                            Vec3::Y
                         }
                     }
                 };
