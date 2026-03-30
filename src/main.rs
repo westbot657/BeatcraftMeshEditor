@@ -1799,6 +1799,7 @@ fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         mesh: Box::new(mesh2.data.clone())
                     }));
                     let _ = mesh2.data.parts.shift_remove(name);
+                    mesh2.data.placements.retain(|p| p.part != *name);
                     s2.rebuild_meshes(gl);
                     return true
                 }
