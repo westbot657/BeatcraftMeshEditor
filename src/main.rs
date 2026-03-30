@@ -847,7 +847,7 @@ fn compute_vertex_row(
     ui.horizontal(|ui| {
         let size = egui::vec2(w3, 20.);
         let size2 = egui::vec2(w4, 20.);
-        let layout = egui::Layout::left_to_right(egui::Align::Min);
+        let layout = egui::Layout::left_to_right(egui::Align::Center);
         ui.allocate_ui_with_layout(size, layout, |ui| { ui.set_min_width(w3); ui.label("D"); });
         ui.allocate_ui_with_layout(size2, layout, |ui| { ui.set_min_width(w4); ui.label("Easing"); });
     });
@@ -868,7 +868,7 @@ fn compute_vertex_row(
 
     ui.horizontal(|ui| {
         let size = egui::vec2(w3, 20.);
-        let layout = egui::Layout::left_to_right(egui::Align::Min);
+        let layout = egui::Layout::left_to_right(egui::Align::Center);
         ui.allocate_ui_with_layout(size, layout, |ui| { ui.set_min_width(w3); ui.label("X"); });
         ui.allocate_ui_with_layout(size, layout, |ui| { ui.set_min_width(w3); ui.label("Y"); });
         ui.allocate_ui_with_layout(size, layout, |ui| { ui.set_min_width(w3); ui.label("Z"); });
@@ -1717,12 +1717,16 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         if !toggles.settings {
             ui.horizontal(|ui| {
-                ui.checkbox(&mut mesh.data.cull, "Cull");
-                ui.checkbox(&mut mesh.data.do_bloom, "Bloom");
+                let size = egui::vec2(w2, 20.);
+                let layout = egui::Layout::left_to_right(egui::Align::Center);
+                ui.allocate_ui_with_layout(size, layout, |ui| { ui.set_min_width(w2); ui.checkbox(&mut mesh.data.cull, "Cull") });
+                ui.allocate_ui_with_layout(size, layout, |ui| { ui.set_min_width(w2); ui.checkbox(&mut mesh.data.do_bloom, "Bloom") });
             });
             ui.horizontal(|ui| {
-                ui.checkbox(&mut mesh.data.do_mirroring, "Mirror");
-                ui.checkbox(&mut mesh.data.do_solid, "Solid");
+                let size = egui::vec2(w2, 20.);
+                let layout = egui::Layout::left_to_right(egui::Align::Center);
+                ui.allocate_ui_with_layout(size, layout, |ui| { ui.set_min_width(w2); ui.checkbox(&mut mesh.data.do_mirroring, "Mirror") });
+                ui.allocate_ui_with_layout(size, layout, |ui| { ui.set_min_width(w2); ui.checkbox(&mut mesh.data.do_solid, "Solid") });
             });
             egui::ComboBox::from_id_salt("bloomfog_style")
                 .selected_text(mesh.data.bloomfog_style.label())
