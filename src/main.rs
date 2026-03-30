@@ -9,9 +9,9 @@
 //   W                      wireframe toggle
 //   G                      grid toggle
 //   V                      vertex dots toggle
-//   Space (part-edit)      spawn vertex at cursor
+//   C (part-edit)          spawn vertex at cursor
 //   E                      assembly <-> part-edit mode
-//   [ / ]                  cycle active part
+//   A / D                  cycle active part
 //   N                      create/remove triangle from selection
 //   X                      flip winding of selected triangles
 //   Ctrl+Z / Ctrl+Shift+Z  undo / redo
@@ -985,14 +985,18 @@ impl eframe::App for App {
 
         egui::TopBottomPanel::bottom("bottom_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let mode = match self.mode {
-                    editor::EditorMode::Assembly => "Assembly ",
-                    editor::EditorMode::Edit => "Part Edit",
-                    editor::EditorMode::View => "View     ",
+                let display = match self.mode {
+                    editor::EditorMode::View =>
+                        " View       | [Ctrl+S] Save session",
+                    editor::EditorMode::Assembly =>
+                        " Assembly   | [Ctrl+S] Save mesh | [E]dit parts | [I] View ",
+                    editor::EditorMode::Edit =>
+                        " Edit part  | [Ctrl+S] Save mesh | [E] Assembly | [I] View | [C]reate vertex | [N] Add/Remove tris | [R]ewind triangles",
                 };
-                ui.label(format!(
-                    "Mode: {mode} [E]  |  Reframe [F]  |  [W]ireframe / [G]rid / [V]ertices"
-                ));
+                ui.label(display);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label("[W]ireframe | [G]rid | [V]ertices \u{0}")
+                });
             });
         });
 
@@ -2258,6 +2262,25 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let s2 = unsafe { rd.detach_mut_ref(s) };
     let self3 = unsafe { rd.detach_mut_ref(s) };
     let self4 = unsafe { rd.detach_mut_ref(s) };
+
+    let w = ui.available_width();
+
+    ui.label("Cycle part [A / D]");
+
+    if let Some(current) = s2.get_current_part_name() {
+        let mut rename = None;
+        ui.add_sized([w, 20.], TextInput::new(current, &mut rename));
+        if let Some(rename) = rename {
+            let _ = s.rename(editor::Rename::Part {
+                view_idx: s.get_current_mesh_idx().unwrap(),
+                swap: editor::DataSwap {
+                    from: current.to_string(),
+                    to: rename,
+                }
+            });
+        }
+    }
+
     if let Selection::Vertices(verts) = &mut s2.selection
     && let Some(part) = s.get_current_part_mut() {
         let rd2 = RefDuper;
@@ -2265,7 +2288,6 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         //let tri_verts: Vec<&VertexId> = part.filter_triangle_vertices(verts).collect();
         let verts2: Vec<&VertexId> = verts.iter().collect();
         let mut values: Vec<&mut Vec3> = part.filter_non_compute_vertices(&verts2).collect();
-        let w = ui.available_width();
         let w2 = (w - ui.spacing().item_spacing.x) / 2.;
         let w3 = (w - ui.spacing().item_spacing.x * 2.) / 3.;
 

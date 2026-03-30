@@ -982,7 +982,7 @@ impl App {
                     self.last_mode = self.mode;
                     self.mode = EditorMode::Assembly;
                 }
-                if input.key_pressed(Key::OpenBracket)
+                if input.key_pressed(Key::A)
                     && let Some(sel) = self.editor.mesh
                     && let Some(mesh) = self.view.meshes.get(sel)
                 {
@@ -994,7 +994,7 @@ impl App {
                             Some(self.editor.part.map(|x| (x + l - 1) % l).unwrap_or(0));
                     }
                 }
-                if input.key_pressed(Key::CloseBracket)
+                if input.key_pressed(Key::D)
                     && let Some(sel) = self.editor.mesh
                     && let Some(mesh) = self.view.meshes.get(sel)
                 {
@@ -1360,6 +1360,9 @@ impl App {
             Rename::Part { view_idx, swap } => {
                 if let Some(vm) = self.view.meshes.get_mut(*view_idx) {
                     vm.data.rename_part(swap);
+                    if let Some(s) = vm.gpu_bufs.0.remove(&swap.from) {
+                        vm.gpu_bufs.0.insert(swap.to.clone(), s);
+                    }
                 }
             }
             Rename::Vertex { part, swap } => {

@@ -302,18 +302,18 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValueOpt<'a, T> {
     }
 }
 
-pub struct TextInput<'a> {
-    hint_text: &'static str,
-    value: &'a mut Option<String>,
+pub struct TextInput<'a, 'b> {
+    hint_text: &'a str,
+    value: &'b mut Option<String>,
 }
 
-impl<'a> TextInput<'a> {
-    pub fn new(hint_text: &'static str, value: &'a mut Option<String>) -> Self {
+impl<'a, 'b> TextInput<'a, 'b> {
+    pub fn new(hint_text: &'a str, value: &'b mut Option<String>) -> Self {
         Self { hint_text, value }
     }
 }
 
-impl<'a> egui::Widget for TextInput<'a> {
+impl<'a, 'b> egui::Widget for TextInput<'a, 'b> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         let id = ui.next_auto_id();
 

@@ -1338,9 +1338,16 @@ impl LightMesh {
                 *name = swap.to.clone();
             }
         }
+        let parts = std::mem::take(&mut self.parts);
+        self.parts = crate::renaming::light_mesh::rehash(parts);
         for placement in self.placements.iter_mut() {
             if placement.part == swap.from {
                 placement.part = swap.to.clone();
+            }
+        }
+        for name in self.part_names.iter_mut() {
+            if *name == swap.from {
+                *name = swap.to.clone();
             }
         }
     }

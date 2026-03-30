@@ -4,12 +4,12 @@ use crate::RefDuper;
 use crate::data::{NormalId, UvId, VertexId};
 use crate::editor::DataSwap;
 use crate::light_mesh::{LightMesh, Part};
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use glam::{Vec2, Vec3};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 
-fn rehash<T>(map: IndexMap<String, T>) -> IndexMap<String, T> {
+pub(crate) fn rehash<T>(map: IndexMap<String, T>) -> IndexMap<String, T> {
     map.into_iter().collect()
 }
 
