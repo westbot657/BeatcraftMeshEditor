@@ -16,6 +16,7 @@ use crate::data::{
 };
 use crate::easing::Easing;
 use crate::editor::DataSwap;
+use crate::renaming::light_mesh::rehash;
 
 #[derive(Debug, Clone)]
 pub struct ComputeVertex {
@@ -992,45 +993,62 @@ impl Part {
     }
 
     /// Deletes all listed vertices, and deletes all triangles that contain
-    /// a deleted vertex
+    /// a deleted vertex, iteratively deletes compute vertices that reference deleted vertices
     pub fn delete_vertices<L, V>(&mut self, ids: L)
     where
         L: AsRef<[V]>,
         V: AsRef<VertexId>
     {
-        if || -> Result<()> {
-            let sentinel_name = unsafe { String::from_utf8_unchecked(vec![0]) };
-            let sentinel = VertexId::Named(sentinel_name.clone());
-            let ids = ids.as_ref();
-            let mut ids: Vec<VertexId> = ids.iter().map(|i| i.as_ref().clone()).collect();
-            ids.sort_by(|a, b| {
-                match (a, b) {
-                    (VertexId::Index(a), VertexId::Index(b)) => b.cmp(a),
-                    (VertexId::Index(_), VertexId::Named(_)) => std::cmp::Ordering::Less,
-                    (VertexId::Named(_), VertexId::Index(_)) => std::cmp::Ordering::Greater,
-                    (VertexId::Named(a), VertexId::Named(b)) => b.cmp(a),
+        let ids = ids.as_ref();
+        let mut ids: Vec<VertexId> = ids.iter().map(|i| i.as_ref().clone()).collect();
+        let sentinel_name = unsafe { String::from_utf8_unchecked(vec![0]) };
+        let sentinel = VertexId::Named(sentinel_name.clone());
+        loop {
+            match || -> Result<Vec<VertexId>> {
+                let mut re_check = Vec::new();
+                ids.sort_by(|a, b| {
+                    match (a, b) {
+                        (VertexId::Index(a), VertexId::Index(b)) => b.cmp(a),
+                        (VertexId::Index(_), VertexId::Named(_)) => std::cmp::Ordering::Less,
+                        (VertexId::Named(_), VertexId::Index(_)) => std::cmp::Ordering::Greater,
+                        (VertexId::Named(a), VertexId::Named(b)) => b.cmp(a),
+                    }
+                });
+                for id in ids {
+                    self.rename_vertex(&DataSwap {
+                        from: id,
+                        to: sentinel.clone(),
+                    })?;
                 }
-            });
-            for id in ids {
-                self.rename_vertex(&DataSwap {
-                    from: id,
-                    to: sentinel.clone(),
-                })?;
+                let _ = self.vertices.named.shift_remove(&sentinel_name);
+                let _ = self.vertices.compute.shift_remove(&sentinel_name);
+                self.triangles.0.retain(|tri| {
+                    tri.vertices.iter().all(|v| v.vertex != sentinel)
+                });
+                for (name, vert) in self.vertices.compute.iter() {
+                    if vert.points.contains(&sentinel) {
+                        re_check.push(VertexId::Named(name.clone()));
+                    }
+                }
+                self.normals.compute.retain(|_, c| {
+                    c.points.iter().all(|v| *v != sentinel)
+                });
+                Ok(re_check)
+            }() {
+                Err(_) => {
+                    // cleanup
+                    todo!("Add delete vertices sentinel cleanup")
+                }
+                Ok(next) => {
+                    if next.is_empty() {
+                        break
+                    }
+                    if next.len() == 1 && let Some([a]) = next.as_array::<1>() && *a == sentinel {
+                        break
+                    }
+                    ids = next;
+                }
             }
-            let _ = self.vertices.named.shift_remove(&sentinel_name);
-            self.triangles.0.retain(|tri| {
-                tri.vertices.iter().all(|v| v.vertex != sentinel)
-            });
-            self.normals.compute.retain(|_, c| {
-                c.points.iter().all(|v| *v != sentinel)
-            });
-            self.vertices.compute.retain(|_, c| {
-                c.points.iter().all(|v| *v != sentinel)
-            });
-            Ok(())
-        }().is_err() {
-            // cleanup
-            todo!("Add delete vertices sentinel cleanup")
         }
     }
 
@@ -1052,10 +1070,7 @@ impl Part {
                 })?;
             }
             let _ = self.uvs.named.shift_remove(&sentinel_name);
-            self.rename_uv(&DataSwap {
-                from: sentinel,
-                to: UvId::Index(0)
-            })
+            Ok(())
         }().is_err() {
             todo!("Add delete uvs sentinel cleanup")
         }
@@ -1079,24 +1094,22 @@ impl Part {
                 })?;
             }
             let _ = self.normals.named.shift_remove(&sentinel_name);
-            self.rename_normal(&DataSwap {
-                from: sentinel,
-                to: NormalId::Index(0)
-            })
+            let _ = self.normals.compute.shift_remove(&sentinel_name);
+            Ok(())
         }().is_err() {
             // cleanup
             todo!("Add delete vertices sentinel cleanup")
         }
     }
 
-    pub fn delete_triangles_with_vertices<L, V>(&mut self, vertices: L)
+    pub fn delete_triangles_with_all_vertices<L, V>(&mut self, vertices: L)
     where
         L: AsRef<[V]>,
         V: AsRef<VertexId>
     {
         let verts: Vec<_> = vertices.as_ref().iter().map(AsRef::as_ref).collect();
         self.triangles.0.retain(|tri| {
-            !tri.vertices.iter().any(|v| verts.contains(&&v.vertex))
+            tri.vertices.iter().all(|v| !verts.contains(&&v.vertex))
         })
     }
 
@@ -1107,7 +1120,7 @@ impl Part {
             return
         }
         let tri_verts: Vec<_> = self.filter_triangle_vertices(vertices).collect();
-        if tri_verts.is_empty() {
+        if !vertices.iter().all(|v| tri_verts.contains(&v)) {
             for i in 0..vertices.len()-2 {
                 let [a, b, c] = &vertices[i..i+3] else { unreachable!() };
                 let va = self.resolve_vertex(a).unwrap();
@@ -1144,7 +1157,7 @@ impl Part {
                 self.triangles.0.push(tri);
             }
         } else {
-            self.delete_triangles_with_vertices(tri_verts);
+            self.delete_triangles_with_all_vertices(tri_verts);
         }
     }
 
@@ -1327,6 +1340,8 @@ impl LightMesh {
                 break;
             }
         }
+        let data = std::mem::take(&mut self.data);
+        self.data = rehash(data);
         for part in self.parts.values_mut() {
             part.rename_data(swap);
         }
@@ -1339,7 +1354,7 @@ impl LightMesh {
             }
         }
         let parts = std::mem::take(&mut self.parts);
-        self.parts = crate::renaming::light_mesh::rehash(parts);
+        self.parts = rehash(parts);
         for placement in self.placements.iter_mut() {
             if placement.part == swap.from {
                 placement.part = swap.to.clone();
@@ -1351,6 +1366,12 @@ impl LightMesh {
             }
         }
     }
+
+    pub fn rebuild(&mut self) {
+        let part_names = self.parts.keys().cloned().collect();
+        self.part_names = part_names;
+    }
+
 }
 
 impl From<crate::data::LightMeshData> for LightMesh {
@@ -1397,6 +1418,12 @@ impl From<LightMesh> for crate::data::LightMeshData {
             bloomfog_style: value.bloomfog_style.into(),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct LightMeshSnapshot {
+    pub idx: usize,
+    pub mesh: Box<LightMesh>,
 }
 
 #[derive(Clone, Debug)]

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::f32::consts::PI;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::TryRecvError;
 use std::sync::{Arc, mpsc};
 use std::{fs, mem};
 
@@ -11,7 +12,7 @@ use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use crate::RefDuper;
 use crate::data::{LightMeshData, NormalId, SessionData, SessionMeshData, SessionPlacementData, UvId, VertexId};
 use crate::light_mesh::{
-    LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot, Part,
+    LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot, LightMeshSnapshot, Part
 };
 use crate::render::{GpuMesh, InstanceData, Renderer};
 
@@ -161,6 +162,7 @@ impl ViewMesh {
     }
 
     pub fn rebuild(&mut self, gl: &Context) {
+        self.data.rebuild();
         let v = mem::take(&mut self.gpu_bufs.0);
         self.gpu_bufs.0 = GpuMesh::set_from_hashmap(gl, &self.data, v);
         let full = self
@@ -449,6 +451,8 @@ pub struct UiState {
     pub open_session_channel: Option<mpsc::Receiver<PathBuf>>,
     /// mpsc channel for saving a session
     pub save_session_channel: Option<mpsc::Receiver<PathBuf>>,
+    /// mpsc channel for creating a new mesh part
+    pub create_mesh_channel: Option<mpsc::Receiver<PathBuf>>,
     /// Map<viewmesh id, Vec<view placement collapse state>>
     pub collapsed: HashMap<usize, Vec<bool>>,
     /// Map<viewmesh id, Vec<rotation display modes>>
@@ -536,6 +540,7 @@ impl Rename {
 
 #[derive(Debug)]
 pub enum HistoryEntry {
+    Mesh(LightMeshSnapshot),
     MeshPart(LightMeshPartSnapshot),
     MeshMeta(LightMeshMetaSnapshot),
     MeshPlacement(LightMeshPlacementSnapshot),
@@ -573,6 +578,12 @@ impl History {
         entry: HistoryEntry,
     ) -> HistoryEntry {
         match entry {
+            HistoryEntry::Mesh(LightMeshSnapshot { idx, mut mesh }) => {
+                let m = editor.view.meshes.get_mut(idx).unwrap();
+                std::mem::swap(&mut m.data, &mut *mesh);
+                m.rebuild(gl);
+                HistoryEntry::Mesh(LightMeshSnapshot { idx, mesh })
+            }
             HistoryEntry::MeshPart(LightMeshPartSnapshot { idx, name, part }) => {
                 let m = editor.view.meshes.get_mut(idx).unwrap();
                 let current = m.data.parts.insert(name.clone(), *part).unwrap();
@@ -1119,7 +1130,7 @@ impl App {
             let rd = RefDuper;
             let self2 = unsafe { rd.detach_mut_ref(self) };
             if self.mode == EditorMode::Edit
-            && let Some(i) = input
+            && let Some(i) = &input
             && i.key_pressed(Key::C)
             && !i.modifiers.ctrl
             && let vp = self.cam().vp(w, h)
@@ -1154,6 +1165,11 @@ impl App {
         }
 
         let drag_delta = resp.drag_delta();
+
+        if input.is_none() {
+            return
+        }
+
         if drag_delta != egui::Vec2::ZERO {
             let ldx = drag_delta.x;
             let ldy = drag_delta.y;
@@ -1455,24 +1471,28 @@ impl App {
                 let rd = RefDuper;
                 let self2 = unsafe { rd.detach_ref(self) };
                 if let (Some(hit_id), Selection::Vertices(verts)) = (hit, &mut self.selection) {
+                    if shift {
+                        if ctrl && verts.contains(&hit_id) {
+                            let idx = verts.iter().position(|id| *id == hit_id).unwrap();
+                            verts.remove(idx);
+                        } else if !verts.contains(&hit_id) {
+                            verts.push(hit_id.clone());
+                        }
+                    } else if !verts.contains(&hit_id) {
+                        verts.clear();
+                        verts.push(hit_id.clone());
+                    }
+                    self.upload_selection_points(gl);
+                    if shift {
+                        self.drag.state = DragState::None;
+                        return;
+                    }
                     self.drag.drag_ref = self2
                         .get_current_part()
                         .unwrap()
                         .2
                         .resolve_vertex(&hit_id)
                         .unwrap();
-                    if shift {
-                        if ctrl && verts.contains(&hit_id) {
-                            let idx = verts.iter().position(|id| *id == hit_id).unwrap();
-                            verts.remove(idx);
-                        } else if !verts.contains(&hit_id) {
-                            verts.push(hit_id);
-                        }
-                    } else if !verts.contains(&hit_id) {
-                        verts.clear();
-                        verts.push(hit_id);
-                    }
-                    self.upload_selection_points(gl);
                     self.drag.state = DragState::Vertex;
                     self.drag.drag_last = Vec2::new(mx, my);
 
@@ -1672,6 +1692,21 @@ impl App {
                         self.state.status = "[Saved]".into();
                         self.state.title_content = Some("[Saved]".into());
                         self.state.status_timer = 2.;
+                    }
+                }
+            }
+        }
+        if let Some(recv) = self.state.ui.create_mesh_channel.as_ref() {
+            match recv.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => {},
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.state.ui.create_mesh_channel = None;
+                },
+                Ok(dest) => {
+                    if let Err(e) = fs::write(&dest, serde_json::to_string(&LightMeshData::default()).unwrap()) {
+                        eprintln!("Failed to write mesh file\n{e}");
+                    } else if let Err(e) = self.load_meshes(vec![dest], gl) {
+                        eprintln!("Failed to load mesh\n{e}");
                     }
                 }
             }

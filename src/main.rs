@@ -35,6 +35,7 @@ use self::data::{NormalId, UvId, VertexId};
 use self::easing::Easing;
 use self::editor::{App, RotationDisplayMode, Selection, ViewPlacement, WorkingRenameKey};
 use self::light_mesh::{BloomfogStyle, ComputeNormal, ComputeVertex, Part};
+use self::renaming::light_mesh::rehash;
 use self::render::{InstanceData, MeshDrawCall, PointDrawCall};
 use self::widgets::{MathDragValue, MathDragValueOpt, MultiMathValue, TextInput};
 
@@ -1060,7 +1061,7 @@ impl eframe::App for App {
                         draw_view_right(self, ui, gl);
                     }
                     editor::EditorMode::Assembly => {
-                        draw_assembly_right();
+                        draw_assembly_right(self, ui, gl);
                     }
                     editor::EditorMode::Edit => {
                         draw_edit_right(self, ui, gl);
@@ -1088,7 +1089,6 @@ impl eframe::App for App {
                                 let w = rect.width();
                                 let h = rect.height();
                                 let vp = s.ref_mut().cam().vp(w, h);
-                                let eye = s.ref_mut().cam().eye();
 
                                 gl.clear_color(0.07, 0.08, 0.11, 1.);
                                 gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
@@ -1128,13 +1128,13 @@ impl eframe::App for App {
 
                                 match s.mode {
                                     editor::EditorMode::View => {
-                                        draw_view_gl(&s, gl, &vp, eye);
+                                        draw_view_gl(&s, gl, &vp);
                                     }
                                     editor::EditorMode::Assembly => {
-                                        draw_assembly_gl(&s, gl, &vp, eye);
+                                        draw_assembly_gl(&s, gl, &vp);
                                     }
                                     editor::EditorMode::Edit => {
-                                        draw_edit_gl(&s, gl, &vp, eye);
+                                        draw_edit_gl(&s, gl, &vp);
                                     }
                                 }
                             }
@@ -1147,6 +1147,7 @@ impl eframe::App for App {
 
 fn draw_view_left(s: &mut App, ui: &mut Ui) {
     let mut to_remove = None;
+    let w = ui.available_width();
     for (i, mesh) in s.view.meshes.iter_mut().enumerate() {
         let name = mesh.path.with_extension("");
         let name = name
@@ -1201,6 +1202,21 @@ fn draw_view_left(s: &mut App, ui: &mut Ui) {
             }
         }
     }
+
+    if ui.add_sized([w, 20.], egui::Button::new("+ Mesh")).clicked() {
+        let (sx, rx) = mpsc::channel();
+        s.state.ui.create_mesh_channel = Some(rx);
+        std::thread::spawn(move || {
+            if let Some(file) = rfd::FileDialog::new()
+                .set_title("Create new mesh")
+                .set_file_name("new_mesh")
+                .add_filter("json", &["json"])
+                .save_file() {
+                let _ = sx.send(file);
+            }
+        });
+    }
+
 }
 
 fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
@@ -1221,6 +1237,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 .entry(sel)
                 .or_default()
                 .push(Default::default());
+            s2.rebuild_meshes(gl);
         }
 
         let mut to_remove = None;
@@ -1341,7 +1358,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4, eye: Vec3) {
+fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
     let mut calls = Vec::new();
     for vm in s.view.meshes.iter() {
         let mut draws = Vec::new();
@@ -1353,7 +1370,7 @@ fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4, eye: Vec3)
             })
         }
     }
-    s.render.renderer.draw_meshes(gl, vp, eye, &calls);
+    s.render.renderer.draw_meshes(gl, vp, &calls);
 }
 
 fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
@@ -1385,20 +1402,6 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         });
 
         if !toggles.placements {
-            if ui
-                .add_sized([w, 20.], egui::Button::new("+ Add Placement"))
-                .clicked()
-                && let Some(first) = part_names.first()
-            {
-                mesh.data.placements.push(light_mesh::Placement {
-                    part: first.clone(),
-                    position: Vec3::ZERO,
-                    rotation: Quat::IDENTITY,
-                    scale: Vec3::ONE,
-                    remap_data: IndexMap::new(),
-                });
-            }
-
             let mut to_remove = None;
             for (pi, placement) in mesh.data.placements.iter_mut().enumerate() {
                 let pt_collapsed = toggles
@@ -1521,6 +1524,8 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 }
                             });
                         }
+                        let remap = std::mem::take(&mut placement.remap_data);
+                        placement.remap_data = rehash(remap);
                         if let Some(ri) = remap_to_remove {
                             placement.remap_data.shift_remove_index(ri);
                         }
@@ -1537,6 +1542,28 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 mesh.data.placements.remove(i);
                 toggles.placement_parts.remove(&i);
             }
+            if ui
+                .add_sized([w, 20.], egui::Button::new("+ Add Placement"))
+                .clicked()
+                && let Some(first) = part_names.first()
+            {
+                self3.add_history(editor::HistoryEntry::Mesh(
+                    light_mesh::LightMeshSnapshot {
+                        idx: self3.get_current_mesh_idx().unwrap(),
+                        mesh: Box::new(mesh.data.clone())
+                    }
+                ));
+                mesh.data.placements.push(light_mesh::Placement {
+                    part: first.clone(),
+                    position: Vec3::ZERO,
+                    rotation: Quat::IDENTITY,
+                    scale: Vec3::ONE,
+                    remap_data: IndexMap::new(),
+                });
+                self3.rebuild_meshes(gl);
+            }
+
+
         }
 
         ui.horizontal(|ui| {
@@ -1745,9 +1772,53 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_assembly_right() {}
+fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
+    let rd = RefDuper;
+    let s2 = unsafe { rd.detach_mut_ref(s) };
+    let w = ui.available_width();
+    if let Some(mesh) = s.get_current_view_mesh_mut() {
+        ui.label("Parts");
+        let mesh2 = unsafe { rd.detach_mut_ref(mesh) };
+        for name in mesh.data.part_names.iter() {
+            if ui.horizontal(|ui| {
+                let mut new_name = None;
+                ui.add_sized([w-24., 20.], TextInput::new(name, &mut new_name));
+                if let Some(new_name) = new_name {
+                    let _ = s2.rename(editor::Rename::Part {
+                        view_idx: s2.get_current_mesh_idx().unwrap(),
+                        swap: editor::DataSwap {
+                            from: name.clone(),
+                            to: new_name
+                        }
+                    });
+                    return true
+                }
+                if ui.small_button(SMALL_X).clicked() {
+                    s2.add_history(editor::HistoryEntry::Mesh(light_mesh::LightMeshSnapshot {
+                        idx: s2.get_current_mesh_idx().unwrap(),
+                        mesh: Box::new(mesh2.data.clone())
+                    }));
+                    let _ = mesh2.data.parts.shift_remove(name);
+                    s2.rebuild_meshes(gl);
+                    return true
+                }
+                false
+            }).inner { return };
+        }
+        let mut new_part = None;
+        ui.add_sized([w, 20.], TextInput::new("+ Part", &mut new_part));
+        if let Some(name) = new_part {
+            s2.add_history(editor::HistoryEntry::Mesh(light_mesh::LightMeshSnapshot {
+                idx: s2.get_current_mesh_idx().unwrap(),
+                mesh: Box::new(mesh2.data.clone())
+            }));
+            mesh.data.parts.insert(name, Part::default());
+            s2.rebuild_meshes(gl);
+        }
+    }
+}
 
-fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4, eye: Vec3) {
+fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
     if let Some(sel) = s.editor.mesh
         && let Some(mesh) = s.view.meshes.get(sel)
     {
@@ -1756,7 +1827,6 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4, eye: V
             s.render.renderer.draw_meshes(
                 gl,
                 vp,
-                eye,
                 &[MeshDrawCall {
                     mesh,
                     instances,
@@ -1868,7 +1938,6 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     || self4.rebuild_meshes(gl)
                 );
 
-                // remove button
             }
         }
 
@@ -1973,6 +2042,17 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     || self4.rebuild_meshes(gl)
                 );
             }
+            ui.separator();
+            if ui.button("+ UV").clicked() {
+                self3.add_history(editor::HistoryEntry::MeshPart(
+                    light_mesh::LightMeshPartSnapshot {
+                        idx: self3.get_current_mesh_idx().unwrap(),
+                        name: self3.get_current_part_name().unwrap().to_string(),
+                        part: Box::new(part.clone())
+                    }
+                ));
+                part.uvs.indexed.push(Vec2::ZERO);
+            }
         }
 
         // Named uvs
@@ -2044,6 +2124,19 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     || self4.rebuild_meshes(gl)
                 );
             }
+            ui.separator();
+            let mut new_uv = None;
+            ui.add_sized([w, 20.], TextInput::new("+ Named UV", &mut new_uv));
+            if let Some(name) = new_uv {
+                self3.add_history(editor::HistoryEntry::MeshPart(
+                    light_mesh::LightMeshPartSnapshot {
+                        idx: self3.get_current_mesh_idx().unwrap(),
+                        name: self3.get_current_part_name().unwrap().to_string(),
+                        part: Box::new(part.clone())
+                    }
+                ));
+                part.uvs.named.insert(name, Vec2::ZERO);
+            }
         }
 
         // Indexed normals
@@ -2089,6 +2182,17 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     )),
                     || self4.rebuild_meshes(gl)
                 );
+            }
+            ui.separator();
+            if ui.button("+ Normal").clicked() {
+                self3.add_history(editor::HistoryEntry::MeshPart(
+                    light_mesh::LightMeshPartSnapshot {
+                        idx: self3.get_current_mesh_idx().unwrap(),
+                        name: self3.get_current_part_name().unwrap().to_string(),
+                        part: Box::new(part.clone())
+                    }
+                ));
+                part.normals.indexed.push(Vec3::Y);
             }
         }
 
@@ -2159,6 +2263,18 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     )),
                     || self4.rebuild_meshes(gl)
                 );
+            }
+            let mut new_norm = None;
+            ui.add_sized([w, 20.], TextInput::new("+ Named Normal", &mut new_norm));
+            if let Some(name) = new_norm {
+                self3.add_history(editor::HistoryEntry::MeshPart(
+                    light_mesh::LightMeshPartSnapshot {
+                        idx: self3.get_current_mesh_idx().unwrap(),
+                        name: self3.get_current_part_name().unwrap().to_string(),
+                        part: Box::new(part.clone())
+                    }
+                ));
+                part.normals.named.insert(name, Vec3::Y);
             }
         }
 
@@ -2269,7 +2385,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
     if let Some(current) = s2.get_current_part_name() {
         let mut rename = None;
-        ui.add_sized([w, 20.], TextInput::new(current, &mut rename));
+        ui.add_sized([w, 20.], TextInput::new(&format!("rename {}", current), &mut rename));
         if let Some(rename) = rename {
             let _ = s.rename(editor::Rename::Part {
                 view_idx: s.get_current_mesh_idx().unwrap(),
@@ -2368,6 +2484,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     z: None,
                 };
                 let _ = part2.vertices.compute.insert(name, vert);
+                self3.rebuild_meshes(gl);
             }
         }
 
@@ -2416,6 +2533,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     points: [(*v1).clone(), (*v2).clone(), (*v3).clone()],
                 };
                 let _ = part2.normals.compute.insert(name, norm);
+                self3.rebuild_meshes(gl);
             }
         }
 
@@ -2490,7 +2608,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4, eye: Vec3) {
+fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
     if let Some((_, name, _part)) = s.get_current_part()
         && let Some(sel) = s.editor.mesh
         && let Some(mesh) = s.view.meshes.get(sel)
@@ -2502,7 +2620,7 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4, eye: Vec3)
             wireframe: s.state.wireframe,
         }];
 
-        s.render.renderer.draw_meshes(gl, vp, eye, &calls);
+        s.render.renderer.draw_meshes(gl, vp, &calls);
 
         let mut calls = Vec::new();
         if s.state.show_verts {

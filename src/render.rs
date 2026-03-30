@@ -48,6 +48,7 @@ pub struct GpuMesh {
     pub point_instance_vbo: glow::NativeBuffer,
 
     pub vertex_count: usize,
+    pub point_count: usize,
 }
 
 impl GpuMesh {
@@ -93,6 +94,7 @@ impl GpuMesh {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn rebuild(
         &mut self,
         gl: &glow::Context,
@@ -104,6 +106,7 @@ impl GpuMesh {
         point_channels: &[i32],
     ) {
         self.vertex_count = positions.len();
+        self.point_count = point_positions.len();
 
         let pos: &[u8] = bytemuck::cast_slice(positions);
         let norm: &[u8] = bytemuck::cast_slice(normals);
@@ -206,6 +209,7 @@ impl GpuMesh {
                 point_vbos,
                 point_instance_vbo,
                 vertex_count: 0,
+                point_count: 0,
             };
             mesh.rebuild(gl, positions, normals, channels, point_positions, point_normals, point_channels);
             mesh
@@ -249,7 +253,7 @@ impl GpuMesh {
             gl.draw_arrays_instanced(
                 glow::POINTS,
                 0,
-                self.vertex_count as i32,
+                self.point_count as i32,
                 instances.len() as i32,
             );
             gl.bind_vertex_array(None);
@@ -605,7 +609,6 @@ impl Renderer {
         &self,
         gl: &glow::Context,
         vp: &Mat4,
-        eye: Vec3,
         calls: &[MeshDrawCall<'_>],
     ) {
         unsafe {
