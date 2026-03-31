@@ -1194,10 +1194,6 @@ impl App {
                     cam.target -= r - u;
                 }
                 DragState::Vertex => {
-                    // Project mouse delta onto a plane at drag_ref facing the camera.
-                    // We unproject both last and current mouse positions to rays, then
-                    // intersect each with the drag plane to get world-space positions,
-                    // and move all selected verts by the delta between them.
                     let cam = *self.cam();
                     let drag_ref = self.drag.drag_ref;
                     let plane_normal = cam.forward();
@@ -1242,7 +1238,52 @@ impl App {
 
                     self.drag.drag_last = Vec2::new(mx, my);
                 }
-                DragState::Instance => {}
+                DragState::Instance => {
+                    let cam = *self.cam();
+                    let drag_ref = self.drag.drag_ref;
+                    let plane_normal = cam.forward();
+
+                    let last = self.drag.drag_last;
+
+                    let ray_to_plane = |ray_pos: Vec3, ray_dir: Vec3| -> Option<Vec3> {
+                        let denom = plane_normal.dot(ray_dir);
+                        if denom.abs() < 1e-6 {
+                            return None;
+                        }
+                        let t = plane_normal.dot(drag_ref - ray_pos) / denom;
+                        Some(ray_pos + ray_dir * t)
+                    };
+
+                    let (rp0, rd0) = Self::unproject(last, Vec2::new(w, h), &cam.vp(w, h));
+                    let (rp1, rd1) =
+                        Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &cam.vp(w, h));
+
+                    if let (Some(p0), Some(p1)) = (ray_to_plane(rp0, rd0), ray_to_plane(rp1, rd1)) {
+                        let delta = p1 - p0;
+
+                        let rd = RefDuper;
+                        let self2 = unsafe { rd.detach_mut_ref(self) };
+                        if let Selection::Instances(ref verts) = self.selection
+                            && let Some(mesh) = self2.get_current_view_mesh_mut()
+                        {
+                            for (id, pos) in mesh.data.placements.iter_mut().enumerate().map(|(i, p)| (i, &mut p.position)) {
+                                if verts.contains(&id) {
+                                    *pos += delta;
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some(sel) = self.editor.mesh
+                        && let Some(mesh) = self.view.meshes.get_mut(sel)
+                    {
+                        mesh.rebuild(gl);
+                        self.upload_selection_points(gl);
+                    }
+
+                    self.drag.drag_last = Vec2::new(mx, my);
+
+                }
                 DragState::InstanceRotation => {}
                 DragState::Marquee(v4) => {
                     self.drag.state = DragState::Marquee(Vec4::new(v4.x, v4.y, mx, my))
@@ -1482,6 +1523,7 @@ impl App {
         let rd = RefDuper;
         let self2 = unsafe { rd.detach_ref(self) };
         if let Some(mesh) = self2.get_current_view_mesh() {
+            let mesh = &mesh.data;
             let (mx, my) = m;
             let (w, h) = size;
             let r = self.cam().pick_radius(10., h);
