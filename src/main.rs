@@ -1148,6 +1148,8 @@ impl eframe::App for App {
 fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let mut to_remove = None;
     let w = ui.available_width();
+    let rd = RefDuper;
+    let s2 = unsafe { rd.detach_mut_ref(s) };
     for (i, mesh) in s.view.meshes.iter_mut().enumerate() {
         let name = mesh.path.with_extension("");
         let name = name
@@ -1169,7 +1171,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         };
         ui.add_space(2.0);
 
-        ui.horizontal(|ui| {
+        if ui.horizontal(|ui| {
             ui.checkbox(&mut mesh.visible, "");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("Close").clicked() {
@@ -1179,9 +1181,12 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     s.editor.mesh = Some(i);
                     s.last_mode = s.mode;
                     s.mode = editor::EditorMode::Assembly;
+                    s2.rebuild_meshes(gl);
+                    return true
                 }
-            });
-        });
+                false
+            }).inner
+        }).inner { return };
 
         ui.separator();
     }

@@ -102,6 +102,9 @@ pub enum InstanceHandleType {
     XRot,
     YRot,
     ZRot,
+    XScale,
+    YScale,
+    ZScale,
 }
 
 pub struct ViewMesh {
