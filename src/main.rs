@@ -36,7 +36,7 @@ use self::easing::Easing;
 use self::editor::{App, RotationDisplayMode, Selection, ViewPlacement, WorkingRenameKey};
 use self::light_mesh::{BloomfogStyle, ComputeNormal, ComputeVertex, Part};
 use self::renaming::light_mesh::rehash;
-use self::render::{InstanceData, MeshDrawCall, PointDrawCall};
+use self::render::{HandleDrawCall, InstanceData, MeshDrawCall, PointDrawCall};
 use self::widgets::{MathDragValue, MathDragValueOpt, MultiMathValue, TextInput};
 
 pub mod data;
@@ -1010,7 +1010,7 @@ impl eframe::App for App {
                     ui.allocate_ui((ui.available_width(), ui.available_height()-45.).into(), |ui| {
                         egui::ScrollArea::vertical().id_salt("left_p_scroll").show(ui, |ui| match self.mode {
                             editor::EditorMode::View => {
-                                draw_view_left(self, ui);
+                                draw_view_left(self, ui, gl);
                             }
                             editor::EditorMode::Assembly => {
                                 draw_assembly_left(self, ui, gl);
@@ -1145,7 +1145,7 @@ impl eframe::App for App {
     }
 }
 
-fn draw_view_left(s: &mut App, ui: &mut Ui) {
+fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let mut to_remove = None;
     let w = ui.available_width();
     for (i, mesh) in s.view.meshes.iter_mut().enumerate() {
@@ -1215,6 +1215,17 @@ fn draw_view_left(s: &mut App, ui: &mut Ui) {
                 let _ = sx.send(file);
             }
         });
+    }
+
+    if s.view.meshes.len() > 1
+    && ui
+        .add_sized([w, 20.], egui::Button::new("Close All"))
+        .clicked() {
+            let meshes = std::mem::take(&mut s.view.meshes);
+            for vm in meshes {
+                vm.destroy(gl);
+            }
+            s.view.session = None;
     }
 
 }
@@ -1834,10 +1845,33 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
                 vp,
                 &[MeshDrawCall {
                     mesh,
-                    instances,
+                    instances: instances.clone(),
                     wireframe: s.state.wireframe,
                 }],
             );
+        }
+        if s.state.show_verts && let Some(handles) = mesh.gpu_bufs.2.as_ref() {
+            s.render.renderer.draw_handles(
+                gl, vp,
+                &[HandleDrawCall {
+                    mesh: handles,
+                    instances: vec![InstanceData::new(Mat4::IDENTITY, 0.5, Some([1., 1., 1.]))],
+                }]
+            );
+        }
+
+        let mut calls = Vec::new();
+
+        if let Some(selected) = s.render.inst_points.as_ref() {
+            calls.push(PointDrawCall {
+                mesh: selected,
+                instances: vec![InstanceData::new(Mat4::IDENTITY, 1., Some([1., 1., 1.]))],
+                size: 6.
+            });
+        }
+
+        if !calls.is_empty() {
+            s.render.renderer.draw_points_batch(gl, vp, &calls);
         }
     }
 }

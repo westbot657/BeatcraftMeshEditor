@@ -1,7 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::f32::consts::PI;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::TryRecvError;
 use std::sync::{Arc, mpsc};
 use std::{fs, mem};
 
@@ -108,7 +107,7 @@ pub enum InstanceHandleType {
 pub struct ViewMesh {
     pub path: PathBuf,
     pub data: LightMesh,
-    pub gpu_bufs: (HashMap<String, GpuMesh>, Option<GpuMesh>),
+    pub gpu_bufs: (HashMap<String, GpuMesh>, Option<GpuMesh>, Option<GpuMesh>),
     pub visible: bool,
     pub placements: Vec<ViewPlacement>,
 }
@@ -155,7 +154,7 @@ impl ViewMesh {
         Self {
             path,
             data: light_mesh,
-            gpu_bufs: (HashMap::new(), None),
+            gpu_bufs: (HashMap::new(), None, None),
             visible: true,
             placements: Vec::new(),
         }
@@ -170,6 +169,11 @@ impl ViewMesh {
             .1
             .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[]));
         full.set_from_full_light_mesh(gl, &self.data);
+        let handles = self
+            .gpu_bufs
+            .2
+            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[]));
+        handles.points_from_light_mesh(gl, &self.data);
     }
 
     pub fn render_view_placements(&self, calls: &mut Vec<InstanceData>) -> Option<&GpuMesh> {
@@ -218,6 +222,7 @@ pub struct Render {
     pub parts: HashMap<String, GpuMesh>,
     pub orphans: HashMap<String, GpuMesh>,
     pub sel_points: Option<GpuMesh>,
+    pub inst_points: Option<GpuMesh>,
 }
 
 pub struct Editor {
@@ -249,15 +254,15 @@ pub struct Drag {
     pub rot_axis: Vec3,
 }
 
-pub struct InnerCycle {
+pub struct InnerCycle<K> {
     pub last_pos: Vec2,
-    pub candidates: Vec<VertexId>,
+    pub candidates: Vec<K>,
     pub current: usize,
 }
 
 pub struct ClickCycle {
-    pub vertices: InnerCycle,
-    pub instances: InnerCycle,
+    pub vertices: InnerCycle<VertexId>,
+    pub instances: InnerCycle<usize>,
 }
 
 pub struct View {
@@ -741,6 +746,7 @@ impl App {
                 parts: HashMap::new(),
                 orphans: HashMap::new(),
                 sel_points: None,
+                inst_points: None,
             },
             editor: Editor {
                 mesh: None,
@@ -1316,7 +1322,28 @@ impl App {
                     self.upload_selection_points(gl);
                 }
             }
-            EditorMode::Assembly => {}
+            EditorMode::Assembly => {
+                if let Some(mesh) = self.get_current_view_mesh() {
+                    let mesh = &mesh.data;
+                    let insts: Vec<_> = mesh.placements
+                        .iter().enumerate()
+                        .map(|(i, place)| (i, place.position))
+                        .collect();
+                    if !matches!(self.selection, Selection::Instances(_)) {
+                        self.selection = Selection::Instances(Vec::new())
+                    }
+                    let Selection::Instances(ref mut selection) = self.selection else {
+                        unreachable!()
+                    };
+
+                    for (i, p) in insts.iter() {
+                        if in_box(*p) && !selection.contains(i) {
+                            selection.push(*i);
+                        }
+                    }
+                    self.upload_selection_points(gl);
+                }
+            }
             _ => {}
         }
     }
@@ -1403,17 +1430,18 @@ impl App {
 
     fn check_vertex_collision(
         &mut self,
-        mx: f32,
-        my: f32,
-        w: f32,
-        h: f32,
+        m: (f32, f32),
+        size: (f32, f32),
         vp: &Mat4,
         include_compute: bool,
     ) -> Option<VertexId> {
+        let (mx, my) = m;
+        let (w, h) = size;
         let r = self.cam().pick_radius(10., h);
         let pick_cycle = &mut self.click_cycle.vertices;
         let same_spot =
-            (mx - pick_cycle.last_pos.x).abs() <= 2. && (my - pick_cycle.last_pos.y).abs() <= 2.;
+            (mx - pick_cycle.last_pos.x).abs() <= 2.
+            && (my - pick_cycle.last_pos.y).abs() <= 2.;
 
         let rd = RefDuper;
 
@@ -1445,6 +1473,56 @@ impl App {
         }
     }
 
+    fn check_placement_collision(
+        &mut self,
+        m: (f32, f32),
+        size: (f32, f32),
+        vp: &Mat4,
+    ) -> Option<usize> {
+        let rd = RefDuper;
+        let self2 = unsafe { rd.detach_ref(self) };
+        if let Some(mesh) = self2.get_current_view_mesh() {
+            let (mx, my) = m;
+            let (w, h) = size;
+            let r = self.cam().pick_radius(10., h);
+            let pick_cycle = &mut self.click_cycle.instances;
+            let same_spot =
+                (mx - pick_cycle.last_pos.x).abs() <= 2.
+                && (my - pick_cycle.last_pos.y).abs() <= 2.;
+
+
+            let positions: Vec<_> = mesh.placements
+                .iter()
+                .enumerate()
+                .map(|(i, place)| {
+                    (i, place.position)
+                })
+                .collect();
+
+            let hits: Vec<&usize> = self
+                .raycast_vertices(positions.as_slice(), Vec2::new(mx, my), Vec2::new(w, h), vp, r)
+                .to_vec();
+
+            let pick_cycle = &mut self.click_cycle.instances;
+            if same_spot && !pick_cycle.candidates.is_empty() {
+                pick_cycle.current = (pick_cycle.current + 1) % pick_cycle.candidates.len();
+                pick_cycle.candidates.get(pick_cycle.current).copied()
+            } else if !hits.is_empty() {
+                if !same_spot {
+                    pick_cycle.last_pos = Vec2::new(mx, my);
+                    pick_cycle.candidates = hits.iter().map(|i| **i).collect();
+                    pick_cycle.current = 0;
+                }
+                hits.first().map(|i| **i)
+            } else {
+                pick_cycle.last_pos = Vec2::new(-9999., -9999.);
+                pick_cycle.candidates.clear();
+                None
+            }
+
+        } else { None }
+    }
+
     fn on_3d_press(
         &mut self,
         mouse: (f32, f32),
@@ -1465,9 +1543,45 @@ impl App {
         self.drag.state = DragState::Orbit;
         match self.mode {
             EditorMode::View => {}
-            EditorMode::Assembly => {}
+            EditorMode::Assembly => {
+                let hit = self.check_placement_collision((mx, my), (w, h), &vp);
+                if let (Some(hit_id), Selection::Instances(insts)) = (hit, &mut self.selection) {
+                    if shift {
+                        if ctrl && insts.contains(&hit_id) {
+                            let idx = insts.iter().position(|id| *id == hit_id).unwrap();
+                            insts.remove(idx);
+                        } else if !insts.contains(&hit_id) {
+                            insts.push(hit_id);
+                        }
+                    } else if !insts.contains(&hit_id) {
+                        insts.clear();
+                        insts.push(hit_id);
+                    }
+                    self.upload_selection_points(gl);
+                    if shift {
+                        self.drag.state = DragState::None;
+                        return;
+                    }
+                    self.drag.drag_ref = self
+                        .get_current_view_mesh()
+                        .unwrap().data
+                        .placements[hit_id]
+                        .position;
+                    self.drag.state = DragState::Instance;
+                    self.drag.drag_last = Vec2::new(mx, my);
+                    self.add_history(HistoryEntry::MeshPlacement(
+                        LightMeshPlacementSnapshot {
+                            view_idx: self.get_current_mesh_idx().unwrap(),
+                            placements: self.get_current_view_mesh().unwrap()
+                                .data.placements.clone()
+                        }
+                    ));
+                } else if shift {
+                    self.drag.state = DragState::Marquee(Vec4::new(mx, my, mx, my));
+                }
+            }
             EditorMode::Edit => {
-                let hit = self.check_vertex_collision(mx, my, w, h, &vp, false);
+                let hit = self.check_vertex_collision((mx, my), (w, h), &vp, false);
                 let rd = RefDuper;
                 let self2 = unsafe { rd.detach_ref(self) };
                 if let (Some(hit_id), Selection::Vertices(verts)) = (hit, &mut self.selection) {
@@ -1528,9 +1642,30 @@ impl App {
         let vp = self.cam().vp(w, h);
         match self.mode {
             EditorMode::View => {}
-            EditorMode::Assembly => {}
+            EditorMode::Assembly => {
+                let hit = self.check_placement_collision((mx, my), (w, h), &vp);
+
+                if hit.is_some() && matches!(self.selection, Selection::None) {
+                    self.selection = Selection::Instances(Vec::new());
+                }
+
+                if let (Some(hit_id), Selection::Instances(insts)) = (hit, &mut self.selection) {
+                    if shift {
+                        if ctrl && insts.contains(&hit_id) {
+                            let idx = insts.iter().position(|id| *id == hit_id).unwrap();
+                            insts.remove(idx);
+                        } else if !insts.contains(&hit_id) {
+                            insts.push(hit_id);
+                        }
+                    } else if !insts.contains(&hit_id) {
+                        insts.clear();
+                        insts.push(hit_id);
+                    }
+                    self.upload_selection_points(gl);
+                }
+            }
             EditorMode::Edit => {
-                let hit = self.check_vertex_collision(mx, my, w, h, &vp, true);
+                let hit = self.check_vertex_collision((mx, my), (w, h), &vp, true);
 
                 if hit.is_some() && matches!(self.selection, Selection::None) {
                     self.selection = Selection::Vertices(Vec::new());
@@ -1619,33 +1754,66 @@ impl App {
     }
 
     fn upload_selection_points(&mut self, gl: &Context) {
-        if let Selection::Vertices(ref verts) = self.selection {
-            if verts.is_empty() {
-                self.selection = Selection::None;
+        let rd = RefDuper;
+        let self2 = unsafe { rd.detach_mut_ref(self) };
+        match &mut self2.selection {
+            Selection::Vertices(verts) => {
+                if verts.is_empty() {
+                    self.selection = Selection::None;
+                    if let Some(buf) = self.render.sel_points.take() {
+                        buf.destroy(gl);
+                    }
+                    return;
+                }
+                if let Some((_, _, part)) = self.get_current_part() {
+                    let mut selected = Vec::new();
+                    for id in verts.iter() {
+                        if let Ok(vert) = part.resolve_vertex(id) {
+                            selected.push(vert);
+                        }
+                    }
+                    if selected.is_empty() {
+                        if let Some(buf) = self.render.sel_points.take() {
+                            buf.destroy(gl);
+                        };
+                        return;
+                    }
+                    self.render.sel_points = Some(GpuMesh::new(gl, &selected, &[], &[], &selected, &[], &[]));
+                }
+            }
+            Selection::Instances(insts) => {
+                if insts.is_empty() {
+                    self.selection = Selection::None;
+                    if let Some(buf) = self.render.inst_points.take() {
+                        buf.destroy(gl);
+                    }
+                    return;
+                }
+                if let Some(vm) = self.get_current_view_mesh() {
+                    let mesh = &vm.data;
+                    let mut selected = Vec::new();
+                    for id in insts.iter() {
+                        if let Some(place) = mesh.placements.get(*id) {
+                            selected.push(place.position);
+                        }
+                    }
+                    if selected.is_empty() {
+                        if let Some(buf) = self.render.inst_points.take() {
+                            buf.destroy(gl);
+                        }
+                        return;
+                    }
+                    self.render.inst_points = Some(GpuMesh::new(gl, &selected, &[], &[], &selected, &[], &[]));
+                }
+            }
+            Selection::None => {
                 if let Some(buf) = self.render.sel_points.take() {
                     buf.destroy(gl);
                 }
-                return;
-            }
-            if let Some((_, _, part)) = self.get_current_part() {
-                let mut selected = Vec::new();
-                for id in verts.iter() {
-                    if let Ok(vert) = part.resolve_vertex(id) {
-                        selected.push(vert);
-                    }
+                if let Some(buf) = self.render.inst_points.take() {
+                    buf.destroy(gl);
                 }
-                if selected.is_empty() {
-                    if let Some(buf) = self.render.sel_points.take() {
-                        buf.destroy(gl);
-                    };
-                    return;
-                }
-                self.render.sel_points = Some(GpuMesh::new(gl, &selected, &[], &[], &selected, &[], &[]));
             }
-        } else if matches!(self.selection, Selection::None)
-            && let Some(buf) = self.render.sel_points.take()
-        {
-            buf.destroy(gl);
         }
     }
 

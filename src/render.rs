@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use eframe::glow::{self, HasContext};
-use glam::{Mat3, Mat4, Vec3, Vec4};
+use glam::{Mat3, Mat4, Vec3};
 use indexmap::IndexMap;
 
 use crate::data::MaterialData;
@@ -38,6 +38,11 @@ pub struct PointDrawCall<'a> {
     pub size: f32,
 }
 
+pub struct HandleDrawCall<'a> {
+    pub mesh: &'a GpuMesh,
+    pub instances: Vec<InstanceData>,
+}
+
 pub struct GpuMesh {
     pub vao: glow::NativeVertexArray,
     pub vbos: [glow::NativeBuffer; 3],
@@ -72,13 +77,7 @@ impl GpuMesh {
             gl.enable_vertex_attrib_array(7);
             gl.vertex_attrib_pointer_f32(7, 4, glow::FLOAT, false, stride, offset);
             gl.vertex_attrib_divisor(7, 1);
-            offset += 16;
-
-            // use_part_color: float at location 8
-            gl.enable_vertex_attrib_array(8);
-            gl.vertex_attrib_pointer_f32(8, 1, glow::FLOAT, false, stride, offset);
-            gl.vertex_attrib_divisor(8, 1);
-
+ 
             vbo
         }
     }
@@ -416,6 +415,55 @@ impl GpuMesh {
         self.rebuild(gl, &vertices, &normals, &channels, &[], &[], &[]);
     }
 
+    pub fn points_from_light_mesh(&mut self, gl: &glow::Context, light_mesh: &LightMesh) {
+        let mut vertices = Vec::new();
+        let mut points = Vec::new();
+
+        let mut channels = Vec::new();
+        let mut p_channels = Vec::new();
+        let mut normals = Vec::new();
+
+        let mut circle_plane = |pos: Vec3, axis: Vec3, a: Vec3, b: Vec3, c: i32| {
+            let a = a * 0.5;
+            let b = b * 0.5;
+            let p0 = pos + axis + a + b;
+            let p1 = pos + axis + a - b;
+            let p2 = pos + axis - a - b;
+            let p3 = pos + axis - a + b;
+            let n0 = Vec3::new(-1., -1., 0.);
+            let n1 = Vec3::new(-1., 1., 0.);
+            let n2 = Vec3::new(1., 1., 0.);
+            let n3 = Vec3::new(1., -1., 0.);
+            vertices.extend_from_slice(&[p0, p3, p1, p1, p3, p2]);
+            channels.extend_from_slice(&[c; 6]);
+            normals.extend_from_slice(&[n0, n3, n1, n1, n3, n2]);
+        };
+
+        for placement in light_mesh.placements.iter() {
+            let pos = placement.position;
+            let transform = Mat4::from_quat(placement.rotation);
+            let up = transform.transform_vector3(Vec3::Y);
+            let left = transform.transform_vector3(Vec3::X);
+            let forward = transform.transform_vector3(Vec3::Z);
+
+            let sx = pos + transform.transform_vector3(Vec3::X * placement.scale.x);
+            let sy = pos + transform.transform_vector3(Vec3::Y * placement.scale.y);
+            let sz = pos + transform.transform_vector3(Vec3::Z * placement.scale.z);
+
+            circle_plane(pos, up, left, forward, 1);
+            circle_plane(pos, left, forward, up, 2);
+            circle_plane(pos, forward, up, left, 3);
+
+            points.extend_from_slice(&[pos, sx, sy, sz]);
+            p_channels.extend_from_slice(&[0,0,0, 1,1,1, 2,2,2, 3,3,3]);
+
+        }
+
+        let p_normals = vec![Vec3::Y; points.len()];
+        self.rebuild(gl, &vertices, &normals, &channels, &points, &p_normals, &p_channels);
+
+    }
+
     pub fn set_from_light_mesh_part(
         &mut self,
         gl: &glow::Context,
@@ -453,6 +501,8 @@ pub struct Renderer {
     pub mesh: glow::NativeProgram,
     pub point: glow::NativeProgram,
     pub flat: glow::NativeProgram,
+    pub handles: glow::NativeProgram,
+    pub handle_points: glow::NativeProgram,
     pub grid_vao: glow::NativeVertexArray,
     pub grid_n: i32,
     pub axis_vao: glow::NativeVertexArray,
@@ -511,6 +561,18 @@ impl Renderer {
                 gl,
                 include_str!("./assets/shaders/flat.vert"),
                 include_str!("./assets/shaders/flat.frag"),
+            )?;
+
+            let handles = Self::compile_shader(
+                gl,
+                include_str!("./assets/shaders/handles.vert"),
+                include_str!("./assets/shaders/handles.frag")
+            )?;
+
+            let handle_points = Self::compile_shader(
+                gl,
+                include_str!("./assets/shaders/handle_points.vert"),
+                include_str!("./assets/shaders/handle_points.frag")
             )?;
 
             let mut grid_pts: Vec<f32> = vec![];
@@ -601,6 +663,8 @@ impl Renderer {
                 grid_n,
                 axis_vao,
                 blue_noise,
+                handles,
+                handle_points,
             })
         }
     }
@@ -634,6 +698,22 @@ impl Renderer {
         }
     }
 
+    pub fn draw_handles(&self, gl: &glow::Context, vp: &Mat4, calls: &[HandleDrawCall<'_>]) {
+        unsafe {
+            gl.use_program(Some(self.handles));
+            self.set_mat4(gl, self.handles, "uVP", vp);
+            for call in calls {
+                call.mesh.draw_tris(gl, &call.instances, false, self);
+            }
+            gl.use_program(Some(self.handle_points));
+            self.set_mat4(gl, self.handle_points, "uVP", vp);
+            self.set_float(gl, self.handle_points, "uPointSize", 3.);
+            for call in calls {
+                call.mesh.draw_points(gl, &call.instances);
+            }
+        }
+    }
+
     fn set_sampler(
         &self,
         gl: &glow::Context,
@@ -656,21 +736,21 @@ impl Renderer {
             }
         }
     }
-    fn set_vec4(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec4) {
-        unsafe {
-            if let Some(l) = gl.get_uniform_location(prog, name) {
-                gl.uniform_4_f32(Some(&l), v.x, v.y, v.z, v.w);
-            }
-        }
-    }
-
-    fn set_vec3(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec3) {
-        unsafe {
-            if let Some(l) = gl.get_uniform_location(prog, name) {
-                gl.uniform_3_f32(Some(&l), v.x, v.y, v.z);
-            }
-        }
-    }
+    // fn set_vec4(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec4) {
+    //     unsafe {
+    //         if let Some(l) = gl.get_uniform_location(prog, name) {
+    //             gl.uniform_4_f32(Some(&l), v.x, v.y, v.z, v.w);
+    //         }
+    //     }
+    // }
+    //
+    // fn set_vec3(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec3) {
+    //     unsafe {
+    //         if let Some(l) = gl.get_uniform_location(prog, name) {
+    //             gl.uniform_3_f32(Some(&l), v.x, v.y, v.z);
+    //         }
+    //     }
+    // }
     fn set_float(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: f32) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {

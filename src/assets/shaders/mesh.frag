@@ -1,4 +1,3 @@
-// mesh.frag
 #version 330 core
 
 flat in int vCh;
