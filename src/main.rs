@@ -1240,7 +1240,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         let rd2 = RefDuper;
         let mesh2 = unsafe { rd2.detach_mut_ref(mesh) };
         if ui.button("+ Add Placement").clicked() {
-            mesh.placements.push(ViewPlacement::default());
+            mesh.view_placements.push(ViewPlacement::default());
             s.state.ui.collapsed.entry(sel).or_default().push(false);
             s.state
                 .ui
@@ -1252,7 +1252,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
 
         let mut to_remove = None;
-        for (i, placement) in mesh.placements.iter_mut().enumerate() {
+        for (i, placement) in mesh.view_placements.iter_mut().enumerate() {
             let collapsed = s.state.ui.collapsed.entry(sel).or_default();
             if collapsed.len() <= i {
                 collapsed.push(false);
@@ -1281,7 +1281,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 ui.label("Position");
                 vec3_row(
                     ui, &mut placement.position, w3,
-                    || mesh2.placements.clone(),
+                    || mesh2.view_placements.clone(),
                     |t| s2.add_history(editor::HistoryEntry::ViewPlacement(
                         editor::ViewPlacementsSnapshot {
                             idx: sel,
@@ -1294,7 +1294,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 ui.label("Rotation");
                 quat_row(
                     ui, &mut placement.rotation, rot_mode, (w2, w3),
-                    || mesh2.placements.clone(),
+                    || mesh2.view_placements.clone(),
                     |t| s2.add_history(editor::HistoryEntry::ViewPlacement(
                         editor::ViewPlacementsSnapshot {
                             idx: sel,
@@ -1323,7 +1323,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 ui.label("Offset Position");
                 vec3_row(
                     ui, &mut placement.offset_pos, w3,
-                    || mesh2.placements.clone(),
+                    || mesh2.view_placements.clone(),
                     |t| s2.add_history(editor::HistoryEntry::ViewPlacement(
                         editor::ViewPlacementsSnapshot {
                             idx: sel,
@@ -1336,7 +1336,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 ui.label("Offset Rotation");
                 quat_row(
                     ui, &mut placement.offset_rot, off_mode, (w2, w3),
-                    || mesh2.placements.clone(),
+                    || mesh2.view_placements.clone(),
                     |t| s2.add_history(editor::HistoryEntry::ViewPlacement(
                         editor::ViewPlacementsSnapshot {
                             idx: sel,
@@ -1358,7 +1358,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
 
         if let Some(rem) = to_remove {
-            mesh.placements.remove(rem);
+            mesh.view_placements.remove(rem);
             if let Some(collapsed) = s.state.ui.collapsed.get_mut(&sel) {
                 collapsed.remove(rem);
             }

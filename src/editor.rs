@@ -109,7 +109,7 @@ pub struct ViewMesh {
     pub data: LightMesh,
     pub gpu_bufs: (HashMap<String, GpuMesh>, Option<GpuMesh>, Option<GpuMesh>),
     pub visible: bool,
-    pub placements: Vec<ViewPlacement>,
+    pub view_placements: Vec<ViewPlacement>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -156,7 +156,7 @@ impl ViewMesh {
             data: light_mesh,
             gpu_bufs: (HashMap::new(), None, None),
             visible: true,
-            placements: Vec::new(),
+            view_placements: Vec::new(),
         }
     }
 
@@ -178,10 +178,10 @@ impl ViewMesh {
 
     pub fn render_view_placements(&self, calls: &mut Vec<InstanceData>) -> Option<&GpuMesh> {
         if self.visible {
-            if self.placements.is_empty() {
+            if self.view_placements.is_empty() {
                 calls.push(InstanceData::new(Mat4::IDENTITY, 1., Some([0.2, 0.2, 0.2])));
             } else {
-                for placement in self.placements.iter() {
+                for placement in self.view_placements.iter() {
                     let mut pos = placement.position;
                     let mut rot = placement.rotation;
                     for _ in 0..placement.count {
@@ -640,7 +640,7 @@ impl History {
                 mut placements,
             }) => {
                 let m = editor.view.meshes.get_mut(idx).unwrap();
-                mem::swap(&mut placements, &mut m.placements);
+                mem::swap(&mut placements, &mut m.view_placements);
                 m.rebuild(gl);
                 editor.upload_selection_points(gl);
                 HistoryEntry::ViewPlacement(ViewPlacementsSnapshot { idx, placements })
@@ -861,7 +861,7 @@ impl App {
         for view in self.view.meshes.iter() {
             let mut placements = Vec::new();
 
-            for place in view.placements.iter() {
+            for place in view.view_placements.iter() {
                 placements.push((*place).into());
             }
 
@@ -1943,7 +1943,7 @@ impl App {
                 offset_rot,
             } in placements
             {
-                vm.placements.push(ViewPlacement {
+                vm.view_placements.push(ViewPlacement {
                     position,
                     rotation,
                     count,
