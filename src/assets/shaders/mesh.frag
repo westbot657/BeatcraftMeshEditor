@@ -51,9 +51,10 @@ void main() {
     vec3 N = normalize(vN);
     if (!gl_FrontFacing) N = -N;
     float diff = max(dot(N, LIGHT), 0.0) * 0.6 + 0.4;
-    vec3 base = (vCh > 7) ? vColor.rgb : COLORS[vCh & 7];
+    vec3 base3 = (vCh > 7) ? vColor.rgb : COLORS[vCh & 7];
+    vec4 base = vec4(base3 * diff, vColor.a);
     if (gl_FrontFacing) {
         base = base * texture(uTexture, vUV);
     }
-    fragColor = vec4(base * diff, vColor.a);
+    fragColor = base;
 }

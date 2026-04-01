@@ -164,6 +164,15 @@ impl ViewMesh {
     }
 
     pub fn rebuild(&mut self, gl: &Context) {
+        self.rebuild_with_maps(gl, &HashMap::new(), &HashMap::new());
+    }
+
+    pub fn rebuild_with_maps(
+        &mut self,
+        gl: &Context,
+        texture_paths: &HashMap<String, PathBuf>,
+        atlas_map: &HashMap<PathBuf, Vec4>,
+    ) {
         self.data.rebuild();
         let v = mem::take(&mut self.gpu_bufs.0);
         self.gpu_bufs.0 = GpuMesh::set_from_hashmap(gl, &self.data, v);
@@ -171,7 +180,7 @@ impl ViewMesh {
             .gpu_bufs
             .1
             .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[], &[]));
-        full.set_from_full_light_mesh(gl, &self.data);
+        full.set_from_full_light_mesh(gl, &self.data, texture_paths, atlas_map);
         let handles = self
             .gpu_bufs
             .2
@@ -591,13 +600,22 @@ impl History {
             HistoryEntry::Mesh(LightMeshSnapshot { idx, mut mesh }) => {
                 let m = editor.view.meshes.get_mut(idx).unwrap();
                 std::mem::swap(&mut m.data, &mut *mesh);
-                m.rebuild(gl);
+                // Rebuild atlas and pass maps for UV remapping.
+                editor.render.renderer.rebuild_atlases(gl);
+                let texture_paths = editor.render.renderer.texture_paths.clone();
+                let atlas_map = editor.render.renderer.atlas_map.clone();
+                editor.view.meshes.get_mut(idx).unwrap()
+                    .rebuild_with_maps(gl, &texture_paths, &atlas_map);
                 HistoryEntry::Mesh(LightMeshSnapshot { idx, mesh })
             }
             HistoryEntry::MeshPart(LightMeshPartSnapshot { idx, name, part }) => {
                 let m = editor.view.meshes.get_mut(idx).unwrap();
                 let current = m.data.parts.insert(name.clone(), *part).unwrap();
-                m.rebuild(gl);
+                editor.render.renderer.rebuild_atlases(gl);
+                let texture_paths = editor.render.renderer.texture_paths.clone();
+                let atlas_map = editor.render.renderer.atlas_map.clone();
+                editor.view.meshes.get_mut(idx).unwrap()
+                    .rebuild_with_maps(gl, &texture_paths, &atlas_map);
                 editor.upload_selection_points(gl);
                 HistoryEntry::MeshPart(LightMeshPartSnapshot {
                     idx,
@@ -617,7 +635,12 @@ impl History {
                 mem::swap(&mut textures, &mut m.data.textures);
                 mem::swap(&mut data, &mut m.data.data);
                 mem::swap(&mut cull, &mut m.data.cull);
-                m.rebuild(gl);
+                // MeshMeta can change textures, so atlas must be rebuilt after swap.
+                editor.render.renderer.rebuild_atlases(gl);
+                let texture_paths = editor.render.renderer.texture_paths.clone();
+                let atlas_map = editor.render.renderer.atlas_map.clone();
+                editor.view.meshes.get_mut(idx).unwrap()
+                    .rebuild_with_maps(gl, &texture_paths, &atlas_map);
                 editor.upload_selection_points(gl);
                 HistoryEntry::MeshMeta(LightMeshMetaSnapshot {
                     idx,
@@ -633,7 +656,11 @@ impl History {
             }) => {
                 let m = editor.view.meshes.get_mut(view_idx).unwrap();
                 mem::swap(&mut placements, &mut m.data.placements);
-                m.rebuild(gl);
+                editor.render.renderer.rebuild_atlases(gl);
+                let texture_paths = editor.render.renderer.texture_paths.clone();
+                let atlas_map = editor.render.renderer.atlas_map.clone();
+                editor.view.meshes.get_mut(view_idx).unwrap()
+                    .rebuild_with_maps(gl, &texture_paths, &atlas_map);
                 editor.upload_selection_points(gl);
                 HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
                     view_idx,
@@ -646,7 +673,11 @@ impl History {
             }) => {
                 let m = editor.view.meshes.get_mut(idx).unwrap();
                 mem::swap(&mut placements, &mut m.view_placements);
-                m.rebuild(gl);
+                editor.render.renderer.rebuild_atlases(gl);
+                let texture_paths = editor.render.renderer.texture_paths.clone();
+                let atlas_map = editor.render.renderer.atlas_map.clone();
+                editor.view.meshes.get_mut(idx).unwrap()
+                    .rebuild_with_maps(gl, &texture_paths, &atlas_map);
                 editor.upload_selection_points(gl);
                 HistoryEntry::ViewPlacement(ViewPlacementsSnapshot { idx, placements })
             }
@@ -850,8 +881,12 @@ impl App {
     }
 
     pub fn rebuild_meshes(&mut self, gl: &Context) {
+        // Rebuild the atlas first so UV remapping uses fresh rects.
+        self.render.renderer.rebuild_atlases(gl);
+        let texture_paths = self.render.renderer.texture_paths.clone();
+        let atlas_map = self.render.renderer.atlas_map.clone();
         for view_mesh in self.view.meshes.iter_mut() {
-            view_mesh.rebuild(gl);
+            view_mesh.rebuild_with_maps(gl, &texture_paths, &atlas_map);
         }
         self.upload_selection_points(gl);
     }

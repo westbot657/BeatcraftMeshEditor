@@ -319,6 +319,9 @@ impl GpuMesh {
         data: &IndexMap<String, MaterialData>,
         transform: &Mat4,
         remap_data: &IndexMap<String, String>,
+        mesh_textures: &IndexMap<String, String>,
+        texture_paths: &HashMap<String, PathBuf>,
+        atlas_map: &HashMap<PathBuf, Vec4>,
     ) {
         let mat3 = Mat3::from_mat4(*transform);
         let normal_transform = mat3.inverse().transpose();
@@ -356,10 +359,42 @@ impl GpuMesh {
                 normal_transform * part.resolve_normal(n1).unwrap(),
                 normal_transform * part.resolve_normal(n2).unwrap(),
             ];
+
+            let material_key = match material {
+                Some(mat) => Some(if let Some(remap) = remap_data.get(mat) {
+                    remap.as_str()
+                } else {
+                    mat.as_str()
+                }),
+                None => None,
+            };
+
+            // Resolve which atlas region to remap UVs into, based on the
+            // material's texture index into mesh_textures.
+            let tex_path: Option<&PathBuf> = data
+                .get(material_key.unwrap_or("default"))
+                .and_then(|mat_data| {
+                    mesh_textures
+                        .get_index(mat_data.texture as usize)
+                        .map(|(_, asset_key)| asset_key)
+                })
+                .and_then(|asset_key| texture_paths.get(asset_key));
+
+            let remap = |uv: Vec2| -> Vec2 {
+                if let Some(path) = tex_path
+                && let Some(rect) = atlas_map.get(path) {
+                    return Vec2::new(
+                        rect.x.lerp(rect.z, uv.x),
+                        rect.y.lerp(rect.w, uv.y),
+                    );
+                }
+                uv
+            };
+
             let mut uvs2 = [
-                part.resolve_uv(u0),
-                part.resolve_uv(u1),
-                part.resolve_uv(u2),
+                remap(part.resolve_uv(u0)),
+                remap(part.resolve_uv(u1)),
+                remap(part.resolve_uv(u2)),
             ];
 
             if flip {
@@ -413,7 +448,13 @@ impl GpuMesh {
         }
     }
 
-    pub fn set_from_full_light_mesh(&mut self, gl: &glow::Context, light_mesh: &LightMesh) {
+    pub fn set_from_full_light_mesh(
+        &mut self,
+        gl: &glow::Context,
+        light_mesh: &LightMesh,
+        texture_paths: &HashMap<String, PathBuf>,
+        atlas_map: &HashMap<PathBuf, Vec4>,
+    ) {
         let mut vertices = Vec::new();
         let mut uvs = Vec::new();
         let mut normals = Vec::new();
@@ -431,6 +472,9 @@ impl GpuMesh {
                 &light_mesh.data,
                 &mat,
                 &placement.remap_data,
+                &light_mesh.textures,
+                texture_paths,
+                atlas_map,
             );
         }
 
@@ -481,8 +525,9 @@ impl GpuMesh {
 
         }
 
+        let uvs = vec![Vec2::ZERO; vertices.len()];
         let p_normals = vec![Vec3::Y; points.len()];
-        self.rebuild(gl, &vertices, &[], &normals, &channels, &points, &p_normals, &p_channels);
+        self.rebuild(gl, &vertices, &uvs, &normals, &channels, &points, &p_normals, &p_channels);
 
     }
 
@@ -507,6 +552,9 @@ impl GpuMesh {
             data,
             &Mat4::IDENTITY,
             &IndexMap::default(),
+            &IndexMap::default(),
+            &HashMap::new(),
+            &HashMap::new(),
         );
         Self::add_point_data(
             &mut points,
@@ -822,7 +870,8 @@ impl Renderer {
         unsafe {
             gl.use_program(Some(self.mesh));
             self.set_mat4(gl, self.mesh, "uVP", vp);
-            self.set_sampler(gl, self.mesh, "uTexture", self.atlas, 0);
+            let tex = self.atlas.or(Some(self.missing_texture));
+            self.set_sampler(gl, self.mesh, "uTexture", tex, 0);
             self.set_sampler(gl, self.mesh, "uNoise", Some(self.blue_noise), 1);
             for call in calls {
                 self.set_int(gl, self.mesh, "uWire", 0);
