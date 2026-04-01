@@ -1709,9 +1709,21 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 ui.horizontal(|ui| {
                     ui.label(format!("{ti}"));
                     ui.add_sized(
-                        [w - ui.spacing().item_spacing.x * 2. - 24. - 16., 20.],
+                        [w - 60., 20.],
                         egui::TextEdit::singleline(val),
                     );
+                    if ui.small_button(if self2.render.renderer.texture_paths.contains_key(val) { "R" } else { "?" }).clicked() {
+                        let (sx, rx) = mpsc::channel();
+                        self2.state.ui.select_image_channel = Some((val.clone(), rx));
+                        std::thread::spawn(move || {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .set_title("Choose Image")
+                                .add_filter("png", &["png"])
+                                .pick_file() {
+                                let _ = sx.send(path);
+                            }
+                        });
+                    }
                     if ui.small_button(SMALL_X).clicked() {
                         tex_to_remove = Some(key.clone());
                     }

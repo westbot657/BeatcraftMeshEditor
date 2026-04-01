@@ -2,9 +2,11 @@
 
 flat in int vCh;
 in vec3 vN;
+in vec2 vUV;
 in vec4 vColorAlpha;
 
 uniform int uWire;
+uniform sampler2D uTexture;
 uniform sampler2D uNoise;
 
 out vec4 fragColor;
@@ -50,5 +52,8 @@ void main() {
     if (!gl_FrontFacing) N = -N;
     float diff = max(dot(N, LIGHT), 0.0) * 0.6 + 0.4;
     vec3 base = (vCh > 7) ? vColor.rgb : COLORS[vCh & 7];
+    if (gl_FrontFacing) {
+        base = base * texture(uTexture, vUV);
+    }
     fragColor = vec4(base * diff, vColor.a);
 }

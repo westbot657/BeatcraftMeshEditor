@@ -170,12 +170,12 @@ impl ViewMesh {
         let full = self
             .gpu_bufs
             .1
-            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[]));
+            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[], &[]));
         full.set_from_full_light_mesh(gl, &self.data);
         let handles = self
             .gpu_bufs
             .2
-            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[]));
+            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[], &[]));
         handles.points_from_light_mesh(gl, &self.data);
     }
 
@@ -461,6 +461,8 @@ pub struct UiState {
     pub save_session_channel: Option<mpsc::Receiver<PathBuf>>,
     /// mpsc channel for creating a new mesh part
     pub create_mesh_channel: Option<mpsc::Receiver<PathBuf>>,
+    /// mpsc channel for linking image paths
+    pub select_image_channel: Option<(String, mpsc::Receiver<PathBuf>)>,
     /// Map<viewmesh id, Vec<view placement collapse state>>
     pub collapsed: HashMap<usize, Vec<bool>>,
     /// Map<viewmesh id, Vec<rotation display modes>>
@@ -877,6 +879,7 @@ impl App {
         let data = SessionData {
             meshes,
             camera: self.view.camera.into(),
+            texture_paths: self.render.renderer.texture_paths.clone(),
         };
 
         let json = serde_json::to_string(&data)?;
@@ -901,11 +904,14 @@ impl App {
         Ok(())
     }
 
-    fn save_current_mesh(&self) -> anyhow::Result<()> {
+    fn save_current_mesh(&mut self) -> anyhow::Result<()> {
         if let Some(sel) = self.editor.mesh && let Some(mesh) = self.view.meshes.get(sel) {
             let json: LightMeshData = mesh.data.clone().into();
             let json = serde_json::to_string(&json)?;
             fs::write(&mesh.path, &json)?;
+        }
+        if self.view.session.is_some() {
+            let _ = self.save_session();
         }
         Ok(())
     }
@@ -1823,7 +1829,7 @@ impl App {
                         };
                         return;
                     }
-                    self.render.sel_points = Some(GpuMesh::new(gl, &selected, &[], &[], &selected, &[], &[]));
+                    self.render.sel_points = Some(GpuMesh::new(gl, &selected, &[], &[], &[], &selected, &[], &[]));
                 }
             }
             Selection::Instances(insts) => {
@@ -1848,7 +1854,7 @@ impl App {
                         }
                         return;
                     }
-                    self.render.inst_points = Some(GpuMesh::new(gl, &selected, &[], &[], &selected, &[], &[]));
+                    self.render.inst_points = Some(GpuMesh::new(gl, &selected, &[], &[], &[], &selected, &[], &[]));
                 }
             }
             Selection::None => {
@@ -1924,6 +1930,17 @@ impl App {
                 }
             }
         }
+        if let Some((id, recv)) = self.state.ui.select_image_channel.as_ref() {
+            match recv.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => {},
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.state.ui.select_image_channel = None;
+                }
+                Ok(src) => {
+                    self.render.renderer.texture_paths.insert(id.clone(), src);
+                }
+            }
+        }
     }
 
     pub fn load_session(&mut self, path: &Path, gl: &Context) -> anyhow::Result<()> {
@@ -1963,6 +1980,8 @@ impl App {
         for vm in vms {
             vm.destroy(gl);
         }
+
+        self.render.renderer.texture_paths = session.texture_paths;
 
         self.view.session = Some(path.to_path_buf());
 

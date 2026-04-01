@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::Not;
 use std::path::PathBuf;
 
@@ -258,6 +259,8 @@ impl From<Camera> for CameraData {
 pub struct SessionData {
     pub meshes: Vec<SessionMeshData>,
     pub camera: CameraData,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub texture_paths: HashMap<String, PathBuf>,
 }
 
 mod triangle_data_serde {

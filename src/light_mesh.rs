@@ -623,6 +623,13 @@ impl Part {
         }
     }
 
+    pub fn resolve_uv(&self, id: &UvId) -> Vec2 {
+        match id {
+            UvId::Index(i) => self.uvs.indexed.get(*i).copied().unwrap_or(Vec2::ZERO),
+            UvId::Named(n) => self.uvs.named.get(n).copied().unwrap_or(Vec2::ZERO),
+        }
+    }
+
     pub fn resolve_normal(&self, id: &NormalId) -> anyhow::Result<Vec3> {
         match id {
             NormalId::Index(i) => Ok(self.normals.indexed.get(*i).copied().unwrap_or(Vec3::Y)),
@@ -1070,6 +1077,9 @@ impl Part {
                 })?;
             }
             let _ = self.uvs.named.shift_remove(&sentinel_name);
+            self.triangles.0.retain(|tri| {
+                tri.vertices.iter().all(|v| v.uv != sentinel)
+            });
             Ok(())
         }().is_err() {
             todo!("Add delete uvs sentinel cleanup")
@@ -1095,6 +1105,9 @@ impl Part {
             }
             let _ = self.normals.named.shift_remove(&sentinel_name);
             let _ = self.normals.compute.shift_remove(&sentinel_name);
+            self.triangles.0.retain(|tri| {
+                tri.vertices.iter().all(|v| v.normal != sentinel)
+            });
             Ok(())
         }().is_err() {
             // cleanup

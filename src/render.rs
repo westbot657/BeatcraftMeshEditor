@@ -1,18 +1,19 @@
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use eframe::glow::{self, HasContext};
-use glam::{Mat3, Mat4, Vec3};
+use glam::{FloatExt, Mat3, Mat4, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 
 use crate::data::MaterialData;
 use crate::light_mesh::{LightMesh, Part, Triangle, Vertex};
 
-/// Per-instance data passed to the GPU.
+static MISSING_TEXTURE_BYTES: &[u8] = include_bytes!("./assets/textures/missing.png");
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceData {
     pub model: Mat4,
-    /// rgb + alpha packed into one vec4
     pub color_alpha: [f32; 4],
 }
 
@@ -45,7 +46,7 @@ pub struct HandleDrawCall<'a> {
 
 pub struct GpuMesh {
     pub vao: glow::NativeVertexArray,
-    pub vbos: [glow::NativeBuffer; 3],
+    pub vbos: [glow::NativeBuffer; 4],
     pub instance_vbo: glow::NativeBuffer,
 
     pub point_vao: glow::NativeVertexArray,
@@ -65,18 +66,16 @@ impl GpuMesh {
             let stride = std::mem::size_of::<InstanceData>() as i32;
             let mut offset = 0i32;
 
-            // mat4 columns at locations 3-6 (4 × vec4)
             for col in 0..4u32 {
-                gl.enable_vertex_attrib_array(3 + col);
-                gl.vertex_attrib_pointer_f32(3 + col, 4, glow::FLOAT, false, stride, offset);
-                gl.vertex_attrib_divisor(3 + col, 1);
-                offset += 16; // sizeof(vec4)
+                gl.enable_vertex_attrib_array(4 + col);
+                gl.vertex_attrib_pointer_f32(4 + col, 4, glow::FLOAT, false, stride, offset);
+                gl.vertex_attrib_divisor(4 + col, 1);
+                offset += 16;
             }
 
-            // color_alpha: vec4 at location 7
-            gl.enable_vertex_attrib_array(7);
-            gl.vertex_attrib_pointer_f32(7, 4, glow::FLOAT, false, stride, offset);
-            gl.vertex_attrib_divisor(7, 1);
+            gl.enable_vertex_attrib_array(8);
+            gl.vertex_attrib_pointer_f32(8, 4, glow::FLOAT, false, stride, offset);
+            gl.vertex_attrib_divisor(8, 1);
  
             vbo
         }
@@ -98,6 +97,7 @@ impl GpuMesh {
         &mut self,
         gl: &glow::Context,
         positions: &[Vec3],
+        uvs: &[Vec2],
         normals: &[Vec3],
         channels: &[i32],
         point_positions: &[Vec3],
@@ -108,6 +108,7 @@ impl GpuMesh {
         self.point_count = point_positions.len();
 
         let pos: &[u8] = bytemuck::cast_slice(positions);
+        let uvs: &[u8] = bytemuck::cast_slice(uvs);
         let norm: &[u8] = bytemuck::cast_slice(normals);
         let chan: &[u8] = bytemuck::cast_slice(channels);
 
@@ -120,9 +121,12 @@ impl GpuMesh {
             gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, pos, glow::DYNAMIC_DRAW);
 
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbos[1]));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, norm, glow::DYNAMIC_DRAW);
+            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, uvs, glow::DYNAMIC_DRAW);
 
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbos[2]));
+            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, norm, glow::DYNAMIC_DRAW);
+
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbos[3]));
             gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, chan, glow::DYNAMIC_DRAW);
 
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.point_vbos[0]));
@@ -138,9 +142,10 @@ impl GpuMesh {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         gl: &glow::Context,
-        positions: &[Vec3], normals: &[Vec3], channels: &[i32],
+        positions: &[Vec3], uvs: &[Vec2], normals: &[Vec3], channels: &[i32],
         point_positions: &[Vec3], point_normals: &[Vec3], point_channels: &[i32],
     ) -> Self {
         unsafe {
@@ -158,14 +163,21 @@ impl GpuMesh {
                     let vbo = gl.create_buffer().unwrap();
                     gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
                     gl.enable_vertex_attrib_array(1);
-                    gl.vertex_attrib_pointer_f32(1, 3, glow::FLOAT, false, 0, 0);
+                    gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, 0, 0);
                     vbo
                 },
                 {
                     let vbo = gl.create_buffer().unwrap();
                     gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
                     gl.enable_vertex_attrib_array(2);
-                    gl.vertex_attrib_pointer_i32(2, 1, glow::INT, 0, 0);
+                    gl.vertex_attrib_pointer_f32(2, 3, glow::FLOAT, false, 0, 0);
+                    vbo
+                },
+                {
+                    let vbo = gl.create_buffer().unwrap();
+                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+                    gl.enable_vertex_attrib_array(3);
+                    gl.vertex_attrib_pointer_i32(3, 1, glow::INT, 0, 0);
                     vbo
                 },
             ];
@@ -210,7 +222,7 @@ impl GpuMesh {
                 vertex_count: 0,
                 point_count: 0,
             };
-            mesh.rebuild(gl, positions, normals, channels, point_positions, point_normals, point_channels);
+            mesh.rebuild(gl, positions, uvs, normals, channels, point_positions, point_normals, point_channels);
             mesh
         }
     }
@@ -283,7 +295,7 @@ impl GpuMesh {
         for (name, part) in mesh.parts.iter() {
             let mut gpu_mesh = gpu_meshes
                 .remove(name)
-                .unwrap_or_else(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[]));
+                .unwrap_or_else(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[], &[]));
             gpu_mesh.set_from_light_mesh_part(gl, part, &mesh.data);
             out.insert(name.clone(), gpu_mesh);
         }
@@ -297,8 +309,10 @@ impl GpuMesh {
         Self::set_from_hashmap(gl, mesh, HashMap::new())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_triangle_data(
         vertices: &mut Vec<Vec3>,
+        uvs: &mut Vec<Vec2>,
         normals: &mut Vec<Vec3>,
         channels: &mut Vec<i32>,
         part: &Part,
@@ -315,17 +329,17 @@ impl GpuMesh {
                 [
                     Vertex {
                         vertex: v0,
-                        uv: _,
+                        uv: u0,
                         normal: n0,
                     },
                     Vertex {
                         vertex: v1,
-                        uv: _,
+                        uv: u1,
                         normal: n1,
                     },
                     Vertex {
                         vertex: v2,
-                        uv: _,
+                        uv: u2,
                         normal: n2,
                     },
                 ],
@@ -342,14 +356,20 @@ impl GpuMesh {
                 normal_transform * part.resolve_normal(n1).unwrap(),
                 normal_transform * part.resolve_normal(n2).unwrap(),
             ];
+            let mut uvs2 = [
+                part.resolve_uv(u0),
+                part.resolve_uv(u1),
+                part.resolve_uv(u2),
+            ];
 
             if flip {
                 verts.swap(0, 2);
                 norms.swap(0, 2);
+                uvs2.swap(0, 2);
             }
 
             vertices.extend_from_slice(&verts);
-
+            uvs.extend_from_slice(&uvs2);
             normals.extend_from_slice(&norms);
 
             let material = match material {
@@ -395,6 +415,7 @@ impl GpuMesh {
 
     pub fn set_from_full_light_mesh(&mut self, gl: &glow::Context, light_mesh: &LightMesh) {
         let mut vertices = Vec::new();
+        let mut uvs = Vec::new();
         let mut normals = Vec::new();
         let mut channels = Vec::new();
 
@@ -403,6 +424,7 @@ impl GpuMesh {
             let part = light_mesh.parts.get(&placement.part).unwrap();
             Self::add_triangle_data(
                 &mut vertices,
+                &mut uvs,
                 &mut normals,
                 &mut channels,
                 part,
@@ -412,7 +434,7 @@ impl GpuMesh {
             );
         }
 
-        self.rebuild(gl, &vertices, &normals, &channels, &[], &[], &[]);
+        self.rebuild(gl, &vertices, &uvs, &normals, &channels, &[], &[], &[]);
     }
 
     pub fn points_from_light_mesh(&mut self, gl: &glow::Context, light_mesh: &LightMesh) {
@@ -460,7 +482,7 @@ impl GpuMesh {
         }
 
         let p_normals = vec![Vec3::Y; points.len()];
-        self.rebuild(gl, &vertices, &normals, &channels, &points, &p_normals, &p_channels);
+        self.rebuild(gl, &vertices, &[], &normals, &channels, &points, &p_normals, &p_channels);
 
     }
 
@@ -471,12 +493,14 @@ impl GpuMesh {
         data: &IndexMap<String, MaterialData>,
     ) {
         let mut vertices = Vec::new();
+        let mut uvs = Vec::new();
         let mut normals = Vec::new();
         let mut channels = Vec::new();
         let mut points = Vec::new();
 
         Self::add_triangle_data(
             &mut vertices,
+            &mut uvs,
             &mut normals,
             &mut channels,
             part,
@@ -493,7 +517,7 @@ impl GpuMesh {
         let p_normals = vec![Vec3::ZERO; points.len()];
         let p_channels = vec![0; 3 * points.len()];
 
-        self.rebuild(gl, &vertices, &normals, &channels, &points, &p_normals, &p_channels);
+        self.rebuild(gl, &vertices, &uvs, &normals, &channels, &points, &p_normals, &p_channels);
     }
 }
 
@@ -507,6 +531,13 @@ pub struct Renderer {
     pub grid_n: i32,
     pub axis_vao: glow::NativeVertexArray,
     pub blue_noise: glow::NativeTexture,
+    pub missing_texture: glow::NativeTexture,
+    /// maps a texture id ('beatcraft:textures/...') to a real path.
+    pub texture_paths: HashMap<String, PathBuf>,
+    /// the single atlas texture
+    pub atlas: Option<glow::NativeTexture>,
+    /// maps a path to its UV rect (x0, y0, x1, y1) within the atlas
+    pub atlas_map: HashMap<PathBuf, Vec4>,
 }
 
 impl Renderer {
@@ -655,34 +686,147 @@ impl Renderer {
                 tex
             };
 
+            let missing_texture = {
+                let img = image::load_from_memory(MISSING_TEXTURE_BYTES)
+                    .unwrap()
+                    .to_rgba8();
+                let (w, h) = img.dimensions();
+                let tex = gl.create_texture().unwrap();
+                gl.bind_texture(glow::TEXTURE_2D, Some(tex));
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::REPEAT as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::REPEAT as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+                gl.tex_image_2d(
+                    glow::TEXTURE_2D,
+                    0,
+                    glow::RGBA as i32,
+                    w as i32,
+                    h as i32,
+                    0,
+                    glow::RGBA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelUnpackData::Slice(Some(img.as_raw().as_slice())),
+                );
+                tex
+            };
+
             Ok(Self {
-                mesh,
-                point,
-                flat,
-                grid_vao,
-                grid_n,
-                axis_vao,
+                mesh, point, flat, handles, handle_points,
+                grid_vao, grid_n, axis_vao,
                 blue_noise,
-                handles,
-                handle_points,
+                missing_texture,
+                texture_paths: HashMap::new(),
+                atlas: None,
+                atlas_map: HashMap::new(),
             })
         }
     }
 
-    pub fn draw_meshes(
-        &self,
-        gl: &glow::Context,
-        vp: &Mat4,
-        calls: &[MeshDrawCall<'_>],
-    ) {
+    pub fn rebuild_atlases(&mut self, gl: &glow::Context) {
+        const ATLAS_SIZE: u32 = 1024;
+
+        // Destroy old atlas if present
+        unsafe {
+            if let Some(tex) = self.atlas.take() {
+                gl.delete_texture(tex);
+            }
+        }
+        self.atlas_map.clear();
+
+        let mut atlas_image = image::RgbaImage::new(ATLAS_SIZE, ATLAS_SIZE);
+        let mut shelf_x: u32 = 0;
+        let mut shelf_y: u32 = 0;
+        let mut shelf_h: u32 = 0;
+
+        // Collect unique paths (multiple texture IDs may share the same path)
+        let mut unique_paths: Vec<PathBuf> = self.texture_paths.values().cloned().collect();
+        unique_paths.sort();
+        unique_paths.dedup();
+
+        for path in &unique_paths {
+            let img = image::open(path)
+                .unwrap_or_else(|_| panic!("failed to open texture {:?}", path))
+                .to_rgba8();
+
+            let (w, h) = img.dimensions();
+            assert!(
+                w <= ATLAS_SIZE && h <= ATLAS_SIZE,
+                "texture {:?} ({}x{}) exceeds atlas size {}x{}",
+                path, w, h, ATLAS_SIZE, ATLAS_SIZE
+            );
+
+            // Advance to next shelf if needed
+            if shelf_x + w > ATLAS_SIZE {
+                shelf_y += shelf_h;
+                shelf_x = 0;
+                shelf_h = 0;
+            }
+
+            assert!(
+                shelf_y + h <= ATLAS_SIZE,
+                "atlas is full, could not fit texture {:?}",
+                path
+            );
+
+            image::imageops::replace(&mut atlas_image, &img, shelf_x as i64, shelf_y as i64);
+
+            // Half-texel inset so bilinear sampling never bleeds into a neighbour
+            let px = 0.5 / ATLAS_SIZE as f32;
+            let u0 = shelf_x as f32 / ATLAS_SIZE as f32 + px;
+            let v0 = shelf_y as f32 / ATLAS_SIZE as f32 + px;
+            let u1 = (shelf_x + w) as f32 / ATLAS_SIZE as f32 - px;
+            let v1 = (shelf_y + h) as f32 / ATLAS_SIZE as f32 - px;
+            self.atlas_map.insert(path.clone(), Vec4::new(u0, v0, u1, v1));
+
+            shelf_x += w;
+            shelf_h = shelf_h.max(h);
+        }
+
+        // Upload to GPU
+        unsafe {
+            let tex = gl.create_texture().unwrap();
+            gl.bind_texture(glow::TEXTURE_2D, Some(tex));
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+            gl.tex_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                glow::RGBA as i32,
+                ATLAS_SIZE as i32,
+                ATLAS_SIZE as i32,
+                0,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelUnpackData::Slice(Some(atlas_image.as_raw().as_slice())),
+            );
+            gl.bind_texture(glow::TEXTURE_2D, None);
+            self.atlas = Some(tex);
+        }
+    }
+
+    pub fn remap_uv(&self, texture: &Path, uv: Vec2) -> Vec2 {
+        if let Some(rect) = self.atlas_map.get(texture) {
+            Vec2::new(
+                rect.x.lerp(rect.z, uv.x),
+                rect.y.lerp(rect.w, uv.y),
+            )
+        } else {
+            uv
+        }
+    }
+
+    pub fn draw_meshes(&self, gl: &glow::Context, vp: &Mat4, calls: &[MeshDrawCall<'_>]) {
         unsafe {
             gl.use_program(Some(self.mesh));
             self.set_mat4(gl, self.mesh, "uVP", vp);
-            self.set_sampler(gl, self.mesh, "uNoise", Some(self.blue_noise), 0);
+            self.set_sampler(gl, self.mesh, "uTexture", self.atlas, 0);
+            self.set_sampler(gl, self.mesh, "uNoise", Some(self.blue_noise), 1);
             for call in calls {
                 self.set_int(gl, self.mesh, "uWire", 0);
-                call.mesh
-                    .draw_tris(gl, &call.instances, call.wireframe, self);
+                call.mesh.draw_tris(gl, &call.instances, call.wireframe, self);
             }
         }
     }
