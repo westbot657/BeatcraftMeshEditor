@@ -76,7 +76,7 @@ impl GpuMesh {
             gl.enable_vertex_attrib_array(8);
             gl.vertex_attrib_pointer_f32(8, 4, glow::FLOAT, false, stride, offset);
             gl.vertex_attrib_divisor(8, 1);
- 
+
             vbo
         }
     }
@@ -145,8 +145,13 @@ impl GpuMesh {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         gl: &glow::Context,
-        positions: &[Vec3], uvs: &[Vec2], normals: &[Vec3], channels: &[i32],
-        point_positions: &[Vec3], point_normals: &[Vec3], point_channels: &[i32],
+        positions: &[Vec3],
+        uvs: &[Vec2],
+        normals: &[Vec3],
+        channels: &[i32],
+        point_positions: &[Vec3],
+        point_normals: &[Vec3],
+        point_channels: &[i32],
     ) -> Self {
         unsafe {
             let vao = gl.create_vertex_array().unwrap();
@@ -222,7 +227,16 @@ impl GpuMesh {
                 vertex_count: 0,
                 point_count: 0,
             };
-            mesh.rebuild(gl, positions, uvs, normals, channels, point_positions, point_normals, point_channels);
+            mesh.rebuild(
+                gl,
+                positions,
+                uvs,
+                normals,
+                channels,
+                point_positions,
+                point_normals,
+                point_channels,
+            );
             mesh
         }
     }
@@ -292,14 +306,21 @@ impl GpuMesh {
         mut gpu_meshes: HashMap<String, Self>,
         mesh_textures: &IndexMap<String, String>,
         texture_paths: &HashMap<String, PathBuf>,
-        atlas_map: &HashMap<PathBuf, Vec4>
+        atlas_map: &HashMap<PathBuf, Vec4>,
     ) -> HashMap<String, Self> {
         let mut out = HashMap::new();
         for (name, part) in mesh.parts.iter() {
             let mut gpu_mesh = gpu_meshes
                 .remove(name)
                 .unwrap_or_else(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[], &[]));
-            gpu_mesh.set_from_light_mesh_part(gl, part, &mesh.data, mesh_textures, texture_paths, atlas_map);
+            gpu_mesh.set_from_light_mesh_part(
+                gl,
+                part,
+                &mesh.data,
+                mesh_textures,
+                texture_paths,
+                atlas_map,
+            );
             out.insert(name.clone(), gpu_mesh);
         }
         for unused in gpu_meshes.into_values() {
@@ -312,9 +333,16 @@ impl GpuMesh {
         gl: &glow::Context,
         mesh: &LightMesh,
         texture_paths: &HashMap<String, PathBuf>,
-        atlas_map: &HashMap<PathBuf, Vec4>
+        atlas_map: &HashMap<PathBuf, Vec4>,
     ) -> HashMap<String, Self> {
-        Self::set_from_hashmap(gl, mesh, HashMap::new(), &mesh.textures, texture_paths, atlas_map)
+        Self::set_from_hashmap(
+            gl,
+            mesh,
+            HashMap::new(),
+            &mesh.textures,
+            texture_paths,
+            atlas_map,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -390,11 +418,9 @@ impl GpuMesh {
 
             let remap = |uv: Vec2| -> Vec2 {
                 if let Some(path) = tex_path
-                && let Some(rect) = atlas_map.get(path) {
-                    return Vec2::new(
-                        rect.x.lerp(rect.z, uv.x),
-                        rect.y.lerp(rect.w, uv.y),
-                    );
+                    && let Some(rect) = atlas_map.get(path)
+                {
+                    return Vec2::new(rect.x.lerp(rect.z, uv.x), rect.y.lerp(rect.w, uv.y));
                 }
                 uv
             };
@@ -438,11 +464,7 @@ impl GpuMesh {
         }
     }
 
-    pub fn add_point_data(
-        points: &mut Vec<Vec3>,
-        part: &Part,
-        tranform: &Mat4,
-    ) {
+    pub fn add_point_data(points: &mut Vec<Vec3>, part: &Part, tranform: &Mat4) {
         for p in part.vertices.indexed.iter() {
             points.push(tranform.transform_point3(*p));
         }
@@ -529,14 +551,21 @@ impl GpuMesh {
             circle_plane(pos, forward, up, left, 3);
 
             points.extend_from_slice(&[pos, sx, sy, sz]);
-            p_channels.extend_from_slice(&[0,0,0, 1,1,1, 2,2,2, 3,3,3]);
-
+            p_channels.extend_from_slice(&[0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3]);
         }
 
         let uvs = vec![Vec2::ZERO; vertices.len()];
         let p_normals = vec![Vec3::Y; points.len()];
-        self.rebuild(gl, &vertices, &uvs, &normals, &channels, &points, &p_normals, &p_channels);
-
+        self.rebuild(
+            gl,
+            &vertices,
+            &uvs,
+            &normals,
+            &channels,
+            &points,
+            &p_normals,
+            &p_channels,
+        );
     }
 
     pub fn set_from_light_mesh_part(
@@ -546,7 +575,7 @@ impl GpuMesh {
         data: &IndexMap<String, MaterialData>,
         mesh_textures: &IndexMap<String, String>,
         texture_paths: &HashMap<String, PathBuf>,
-        atlas_map: &HashMap<PathBuf, Vec4>
+        atlas_map: &HashMap<PathBuf, Vec4>,
     ) {
         let mut vertices = Vec::new();
         let mut uvs = Vec::new();
@@ -567,16 +596,21 @@ impl GpuMesh {
             texture_paths,
             atlas_map,
         );
-        Self::add_point_data(
-            &mut points,
-            part,
-            &Mat4::IDENTITY
-        );
+        Self::add_point_data(&mut points, part, &Mat4::IDENTITY);
 
         let p_normals = vec![Vec3::ZERO; points.len()];
         let p_channels = vec![0; 3 * points.len()];
 
-        self.rebuild(gl, &vertices, &uvs, &normals, &channels, &points, &p_normals, &p_channels);
+        self.rebuild(
+            gl,
+            &vertices,
+            &uvs,
+            &normals,
+            &channels,
+            &points,
+            &p_normals,
+            &p_channels,
+        );
     }
 }
 
@@ -656,13 +690,13 @@ impl Renderer {
             let handles = Self::compile_shader(
                 gl,
                 include_str!("./assets/shaders/handles.vert"),
-                include_str!("./assets/shaders/handles.frag")
+                include_str!("./assets/shaders/handles.frag"),
             )?;
 
             let handle_points = Self::compile_shader(
                 gl,
                 include_str!("./assets/shaders/handle_points.vert"),
-                include_str!("./assets/shaders/handle_points.frag")
+                include_str!("./assets/shaders/handle_points.frag"),
             )?;
 
             let mut grid_pts: Vec<f32> = vec![];
@@ -754,8 +788,16 @@ impl Renderer {
                 gl.bind_texture(glow::TEXTURE_2D, Some(tex));
                 gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::REPEAT as i32);
                 gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::REPEAT as i32);
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32);
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_MIN_FILTER,
+                    glow::LINEAR as i32,
+                );
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_MAG_FILTER,
+                    glow::LINEAR as i32,
+                );
                 gl.tex_image_2d(
                     glow::TEXTURE_2D,
                     0,
@@ -771,8 +813,14 @@ impl Renderer {
             };
 
             Ok(Self {
-                mesh, point, flat, handles, handle_points,
-                grid_vao, grid_n, axis_vao,
+                mesh,
+                point,
+                flat,
+                handles,
+                handle_points,
+                grid_vao,
+                grid_n,
+                axis_vao,
                 blue_noise,
                 missing_texture,
                 texture_paths: HashMap::new(),
@@ -812,7 +860,11 @@ impl Renderer {
             assert!(
                 w <= ATLAS_SIZE && h <= ATLAS_SIZE,
                 "texture {:?} ({}x{}) exceeds atlas size {}x{}",
-                path, w, h, ATLAS_SIZE, ATLAS_SIZE
+                path,
+                w,
+                h,
+                ATLAS_SIZE,
+                ATLAS_SIZE
             );
 
             // Advance to next shelf if needed
@@ -835,7 +887,8 @@ impl Renderer {
             let v0 = shelf_y as f32 / ATLAS_SIZE as f32;
             let u1 = (shelf_x + w) as f32 / ATLAS_SIZE as f32;
             let v1 = (shelf_y + h) as f32 / ATLAS_SIZE as f32;
-            self.atlas_map.insert(path.clone(), Vec4::new(u0, v0, u1, v1));
+            self.atlas_map
+                .insert(path.clone(), Vec4::new(u0, v0, u1, v1));
 
             shelf_x += w;
             shelf_h = shelf_h.max(h);
@@ -845,10 +898,26 @@ impl Renderer {
         unsafe {
             let tex = gl.create_texture().unwrap();
             gl.bind_texture(glow::TEXTURE_2D, Some(tex));
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_S,
+                glow::CLAMP_TO_EDGE as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_T,
+                glow::CLAMP_TO_EDGE as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MIN_FILTER,
+                glow::NEAREST as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MAG_FILTER,
+                glow::NEAREST as i32,
+            );
             gl.tex_image_2d(
                 glow::TEXTURE_2D,
                 0,
@@ -867,10 +936,7 @@ impl Renderer {
 
     pub fn remap_uv(&self, texture: &Path, uv: Vec2) -> Vec2 {
         if let Some(rect) = self.atlas_map.get(texture) {
-            Vec2::new(
-                rect.x.lerp(rect.z, uv.x),
-                rect.y.lerp(rect.w, uv.y),
-            )
+            Vec2::new(rect.x.lerp(rect.z, uv.x), rect.y.lerp(rect.w, uv.y))
         } else {
             uv
         }
@@ -885,7 +951,8 @@ impl Renderer {
             self.set_sampler(gl, self.mesh, "uNoise", Some(self.blue_noise), 1);
             for call in calls {
                 self.set_int(gl, self.mesh, "uWire", 0);
-                call.mesh.draw_tris(gl, &call.instances, call.wireframe, self);
+                call.mesh
+                    .draw_tris(gl, &call.instances, call.wireframe, self);
             }
         }
     }

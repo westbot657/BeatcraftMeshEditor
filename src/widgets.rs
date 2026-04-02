@@ -117,7 +117,11 @@ pub struct MultiMathValue<'a, 'b, 'c, 'd, T: MapIndexable> {
 }
 
 impl<'a, 'b, 'c, 'd, T: MapIndexable> MultiMathValue<'a, 'b, 'c, 'd, T> {
-    pub fn new(hint_text: &'static str, values: &'b mut Option<Vec<f32>>, vars: &'c mut [&'d mut T]) -> Self {
+    pub fn new(
+        hint_text: &'static str,
+        values: &'b mut Option<Vec<f32>>,
+        vars: &'c mut [&'d mut T],
+    ) -> Self {
         Self {
             hint_text,
             values,
@@ -228,12 +232,13 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValueOpt<'a, T> {
 
         let (mut editing, mut text) = ui.memory_mut(|m| {
             let editing = m.data.get_temp::<bool>(id).unwrap_or(false);
-            let text = m.data.get_temp::<String>(id).unwrap_or_else(|| {
-                match self.value {
+            let text = m
+                .data
+                .get_temp::<String>(id)
+                .unwrap_or_else(|| match self.value {
                     Some(v) => format!("{:.prec$}", v, prec = self.max_decimals),
                     None => String::new(),
-                }
-            });
+                });
             (editing, text)
         });
 
@@ -341,4 +346,3 @@ impl<'a, 'b> egui::Widget for TextInput<'a, 'b> {
         edit_response
     }
 }
-

@@ -274,5 +274,4 @@ impl Part {
         self.normals.compute = rehash(compute);
         Ok(())
     }
-
 }

@@ -672,19 +672,29 @@ impl Part {
 
         for tri in self.triangles.0.iter_mut() {
             for vert in tri.vertices.iter_mut() {
-                if let VertexId::Index(i) = &mut vert.vertex { shift(i, deltas.0) }
-                if let UvId::Index(i) = &mut vert.uv { shift(i, deltas.1) }
-                if let NormalId::Index(i) = &mut vert.normal { shift(i, deltas.2) }
+                if let VertexId::Index(i) = &mut vert.vertex {
+                    shift(i, deltas.0)
+                }
+                if let UvId::Index(i) = &mut vert.uv {
+                    shift(i, deltas.1)
+                }
+                if let NormalId::Index(i) = &mut vert.normal {
+                    shift(i, deltas.2)
+                }
             }
         }
         for comp in self.vertices.compute.values_mut() {
             for id in comp.points.iter_mut() {
-                if let VertexId::Index(i) = id { shift(i, deltas.0) }
+                if let VertexId::Index(i) = id {
+                    shift(i, deltas.0)
+                }
             }
         }
         for comp in self.normals.compute.values_mut() {
             for id in comp.points.iter_mut() {
-                if let VertexId::Index(i) = id { shift(i, deltas.0) }
+                if let VertexId::Index(i) = id {
+                    shift(i, deltas.0)
+                }
             }
         }
     }
@@ -919,31 +929,51 @@ impl Part {
     }
 
     /// Iterates over triangles where all 3 vertices of the triangle are in `ids`
-    pub fn filter_triangles(&mut self, ids: &[impl AsRef<VertexId>]) -> impl Iterator<Item = &mut Triangle> {
-        self.triangles.0.iter_mut()
-            .filter(|t| t.vertices.iter().all(|v| {
+    pub fn filter_triangles(
+        &mut self,
+        ids: &[impl AsRef<VertexId>],
+    ) -> impl Iterator<Item = &mut Triangle> {
+        self.triangles.0.iter_mut().filter(|t| {
+            t.vertices.iter().all(|v| {
                 let ids: Vec<_> = ids.iter().map(AsRef::as_ref).collect();
                 ids.contains(&&v.vertex)
-            }))
+            })
+        })
     }
 
     /// Filters the input `ids` to only contain ids that are part of triangles.
-    pub fn filter_triangle_vertices<'a>(&mut self, ids: &'a [VertexId]) -> impl Iterator<Item = &'a VertexId> {
-        let set: HashSet<&VertexId> = self.triangles.0.iter()
+    pub fn filter_triangle_vertices<'a>(
+        &mut self,
+        ids: &'a [VertexId],
+    ) -> impl Iterator<Item = &'a VertexId> {
+        let set: HashSet<&VertexId> = self
+            .triangles
+            .0
+            .iter()
             .filter_map(|t| {
                 if t.vertices.iter().all(|v| ids.contains(&v.vertex)) {
-                    Some(ids.iter().filter(|id| **id == t.vertices[0].vertex || **id == t.vertices[1].vertex || **id == t.vertices[2].vertex))
+                    Some(ids.iter().filter(|id| {
+                        **id == t.vertices[0].vertex
+                            || **id == t.vertices[1].vertex
+                            || **id == t.vertices[2].vertex
+                    }))
                 } else {
                     None
                 }
             })
-            .flatten().collect();
+            .flatten()
+            .collect();
         set.into_iter()
     }
 
     /// Iterates over Vec3 positions for indexed/named vertices in `ids`
-    pub fn filter_non_compute_vertices(&mut self, ids: &[&VertexId]) -> impl Iterator<Item = &mut Vec3> {
-        self.vertices.indexed.iter_mut()
+    pub fn filter_non_compute_vertices(
+        &mut self,
+        ids: &[&VertexId],
+    ) -> impl Iterator<Item = &mut Vec3> {
+        self.vertices
+            .indexed
+            .iter_mut()
             .enumerate()
             .filter_map(|(n, v)| {
                 if ids.contains(&&VertexId::Index(n)) {
@@ -952,50 +982,52 @@ impl Part {
                     None
                 }
             })
-            .chain(
-                self.vertices.named.iter_mut()
-                    .filter_map(|(n, v)| {
-                        if ids.contains(&&VertexId::Named(n.clone())) {
-                            Some(v)
-                        } else {
-                            None
-                        }
-                    })
-            )
+            .chain(self.vertices.named.iter_mut().filter_map(|(n, v)| {
+                if ids.contains(&&VertexId::Named(n.clone())) {
+                    Some(v)
+                } else {
+                    None
+                }
+            }))
     }
 
     pub fn get_valid_vertex_ids(&self) -> impl Iterator<Item = VertexId> {
         (0..self.vertices.indexed.len())
             .map(VertexId::Index)
             .chain(
-                self.vertices.named.keys()
-                    .map(|n| VertexId::Named(n.clone()))
+                self.vertices
+                    .named
+                    .keys()
+                    .map(|n| VertexId::Named(n.clone())),
             )
             .chain(
-                self.vertices.compute.keys()
-                    .map(|c| VertexId::Named(c.clone()))
+                self.vertices
+                    .compute
+                    .keys()
+                    .map(|c| VertexId::Named(c.clone())),
             )
     }
 
     pub fn get_valid_uv_ids(&self) -> impl Iterator<Item = UvId> {
         (0..self.uvs.indexed.len())
             .map(UvId::Index)
-            .chain(
-                self.uvs.named.keys()
-                    .map(|n| UvId::Named(n.clone()))
-            )
+            .chain(self.uvs.named.keys().map(|n| UvId::Named(n.clone())))
     }
 
     pub fn get_valid_normal_ids(&self) -> impl Iterator<Item = NormalId> {
         (0..self.normals.indexed.len())
             .map(NormalId::Index)
             .chain(
-                self.normals.named.keys()
-                    .map(|n| NormalId::Named(n.clone()))
+                self.normals
+                    .named
+                    .keys()
+                    .map(|n| NormalId::Named(n.clone())),
             )
             .chain(
-                self.normals.compute.keys()
-                    .map(|c| NormalId::Named(c.clone()))
+                self.normals
+                    .compute
+                    .keys()
+                    .map(|c| NormalId::Named(c.clone())),
             )
     }
 
@@ -1004,7 +1036,7 @@ impl Part {
     pub fn delete_vertices<L, V>(&mut self, ids: L)
     where
         L: AsRef<[V]>,
-        V: AsRef<VertexId>
+        V: AsRef<VertexId>,
     {
         let ids = ids.as_ref();
         let mut ids: Vec<VertexId> = ids.iter().map(|i| i.as_ref().clone()).collect();
@@ -1013,13 +1045,11 @@ impl Part {
         loop {
             match || -> Result<Vec<VertexId>> {
                 let mut re_check = Vec::new();
-                ids.sort_by(|a, b| {
-                    match (a, b) {
-                        (VertexId::Index(a), VertexId::Index(b)) => b.cmp(a),
-                        (VertexId::Index(_), VertexId::Named(_)) => std::cmp::Ordering::Less,
-                        (VertexId::Named(_), VertexId::Index(_)) => std::cmp::Ordering::Greater,
-                        (VertexId::Named(a), VertexId::Named(b)) => b.cmp(a),
-                    }
+                ids.sort_by(|a, b| match (a, b) {
+                    (VertexId::Index(a), VertexId::Index(b)) => b.cmp(a),
+                    (VertexId::Index(_), VertexId::Named(_)) => std::cmp::Ordering::Less,
+                    (VertexId::Named(_), VertexId::Index(_)) => std::cmp::Ordering::Greater,
+                    (VertexId::Named(a), VertexId::Named(b)) => b.cmp(a),
                 });
                 for id in ids {
                     self.rename_vertex(&DataSwap {
@@ -1029,17 +1059,17 @@ impl Part {
                 }
                 let _ = self.vertices.named.shift_remove(&sentinel_name);
                 let _ = self.vertices.compute.shift_remove(&sentinel_name);
-                self.triangles.0.retain(|tri| {
-                    tri.vertices.iter().all(|v| v.vertex != sentinel)
-                });
+                self.triangles
+                    .0
+                    .retain(|tri| tri.vertices.iter().all(|v| v.vertex != sentinel));
                 for (name, vert) in self.vertices.compute.iter() {
                     if vert.points.contains(&sentinel) {
                         re_check.push(VertexId::Named(name.clone()));
                     }
                 }
-                self.normals.compute.retain(|_, c| {
-                    c.points.iter().all(|v| *v != sentinel)
-                });
+                self.normals
+                    .compute
+                    .retain(|_, c| c.points.iter().all(|v| *v != sentinel));
                 Ok(re_check)
             }() {
                 Err(_) => {
@@ -1048,10 +1078,13 @@ impl Part {
                 }
                 Ok(next) => {
                     if next.is_empty() {
-                        break
+                        break;
                     }
-                    if next.len() == 1 && let Some([a]) = next.as_array::<1>() && *a == sentinel {
-                        break
+                    if next.len() == 1
+                        && let Some([a]) = next.as_array::<1>()
+                        && *a == sentinel
+                    {
+                        break;
                     }
                     ids = next;
                 }
@@ -1077,11 +1110,13 @@ impl Part {
                 })?;
             }
             let _ = self.uvs.named.shift_remove(&sentinel_name);
-            self.triangles.0.retain(|tri| {
-                tri.vertices.iter().all(|v| v.uv != sentinel)
-            });
+            self.triangles
+                .0
+                .retain(|tri| tri.vertices.iter().all(|v| v.uv != sentinel));
             Ok(())
-        }().is_err() {
+        }()
+        .is_err()
+        {
             todo!("Add delete uvs sentinel cleanup")
         }
     }
@@ -1105,11 +1140,13 @@ impl Part {
             }
             let _ = self.normals.named.shift_remove(&sentinel_name);
             let _ = self.normals.compute.shift_remove(&sentinel_name);
-            self.triangles.0.retain(|tri| {
-                tri.vertices.iter().all(|v| v.normal != sentinel)
-            });
+            self.triangles
+                .0
+                .retain(|tri| tri.vertices.iter().all(|v| v.normal != sentinel));
             Ok(())
-        }().is_err() {
+        }()
+        .is_err()
+        {
             // cleanup
             todo!("Add delete vertices sentinel cleanup")
         }
@@ -1118,24 +1155,26 @@ impl Part {
     pub fn delete_triangles_with_all_vertices<L, V>(&mut self, vertices: L)
     where
         L: AsRef<[V]>,
-        V: AsRef<VertexId>
+        V: AsRef<VertexId>,
     {
         let verts: Vec<_> = vertices.as_ref().iter().map(AsRef::as_ref).collect();
-        self.triangles.0.retain(|tri| {
-            tri.vertices.iter().all(|v| !verts.contains(&&v.vertex))
-        })
+        self.triangles
+            .0
+            .retain(|tri| tri.vertices.iter().all(|v| !verts.contains(&&v.vertex)))
     }
 
     /// If the given vertices make up any triangles, the triangles are deleted,
     /// otherwise a triangle strip is created
     pub fn toggle_triangles(&mut self, vertices: &[VertexId], eye: Vec3) {
         if vertices.len() < 3 {
-            return
+            return;
         }
         let tri_verts: Vec<_> = self.filter_triangle_vertices(vertices).collect();
         if !vertices.iter().all(|v| tri_verts.contains(&v)) {
-            for i in 0..vertices.len()-2 {
-                let [a, b, c] = &vertices[i..i+3] else { unreachable!() };
+            for i in 0..vertices.len() - 2 {
+                let [a, b, c] = &vertices[i..i + 3] else {
+                    unreachable!()
+                };
                 let va = self.resolve_vertex(a).unwrap();
                 let vb = self.resolve_vertex(b).unwrap();
                 let vc = self.resolve_vertex(c).unwrap();
@@ -1180,7 +1219,6 @@ impl Part {
             std::mem::swap(a, c);
         }
     }
-
 }
 
 impl Triangle {
@@ -1384,7 +1422,6 @@ impl LightMesh {
         let part_names = self.parts.keys().cloned().collect();
         self.part_names = part_names;
     }
-
 }
 
 impl From<crate::data::LightMeshData> for LightMesh {
