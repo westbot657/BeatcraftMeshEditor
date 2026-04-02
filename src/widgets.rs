@@ -70,7 +70,6 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
                 }
                 text = format!("{:.prec$}", self.value, prec = self.max_decimals);
                 editing = false;
-                // Mark changed so callers (mesh rebuilds etc.) are notified.
                 let mut r = edit_response;
                 r.mark_changed();
                 r
@@ -97,13 +96,11 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
 
             let mut drag_response = ui.add(drag);
 
-            // Single click → enter edit mode.
             if drag_response.clicked() {
                 editing = true;
                 text = format!("{:.prec$}", self.value, prec = self.max_decimals);
             }
 
-            // Ensure drag changes are also visible via .changed().
             if (*self.value - prev).abs() > f32::EPSILON {
                 drag_response.mark_changed();
             }
@@ -111,9 +108,6 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
             drag_response
         };
 
-        // If we just switched into edit mode, request focus for the text field.
-        // We do this by storing a flag and picking it up next frame via memory,
-        // because the TextEdit doesn't exist yet this frame.
         let wants_focus = editing
             && !ui
                 .memory(|m| m.data.get_temp::<bool>(id.with("had_focus")).unwrap_or(false));
@@ -125,7 +119,6 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
                 .insert_temp(id.with("had_focus"), editing);
         });
 
-        // Request keyboard focus for the text edit on the frame we enter edit mode.
         if wants_focus {
             response.request_focus();
         }
