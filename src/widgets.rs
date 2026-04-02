@@ -60,27 +60,34 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
 
             let commit =
                 edit_response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter));
-
             let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
             if commit {
-                if let Some(result) = crate::math_interp::eval_inner(&text, self.vars, self.degrees)
+                if let Some(result) =
+                    crate::math_interp::eval_inner(&text, self.vars, self.degrees)
                 {
                     *self.value = result;
                 }
                 text = format!("{:.prec$}", self.value, prec = self.max_decimals);
                 editing = false;
+                // Mark changed so callers (mesh rebuilds etc.) are notified.
+                let mut r = edit_response;
+                r.mark_changed();
+                r
             } else if cancel {
                 text = format!("{:.prec$}", self.value, prec = self.max_decimals);
                 editing = false;
+                edit_response
+            } else {
+                edit_response
             }
-
-            edit_response
         } else {
             let display = match self.suffix {
                 Some(s) => format!("{:.prec$}{s}", self.value, prec = self.max_decimals),
                 None => format!("{:.prec$}", self.value, prec = self.max_decimals),
             };
+
+            let prev = *self.value;
 
             let drag = egui::DragValue::new(self.value)
                 .speed(self.speed)
@@ -88,20 +95,40 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
                 .custom_formatter(move |_, _| display.clone())
                 .custom_parser(|s| s.parse::<f64>().ok());
 
-            let drag_response = ui.add(drag);
+            let mut drag_response = ui.add(drag);
 
-            if drag_response.double_clicked() {
+            // Single click → enter edit mode.
+            if drag_response.clicked() {
                 editing = true;
                 text = format!("{:.prec$}", self.value, prec = self.max_decimals);
+            }
+
+            // Ensure drag changes are also visible via .changed().
+            if (*self.value - prev).abs() > f32::EPSILON {
+                drag_response.mark_changed();
             }
 
             drag_response
         };
 
+        // If we just switched into edit mode, request focus for the text field.
+        // We do this by storing a flag and picking it up next frame via memory,
+        // because the TextEdit doesn't exist yet this frame.
+        let wants_focus = editing
+            && !ui
+                .memory(|m| m.data.get_temp::<bool>(id.with("had_focus")).unwrap_or(false));
+
         ui.memory_mut(|m| {
             m.data.insert_temp(id, editing);
             m.data.insert_temp(id, text);
+            m.data
+                .insert_temp(id.with("had_focus"), editing);
         });
+
+        // Request keyboard focus for the text edit on the frame we enter edit mode.
+        if wants_focus {
+            response.request_focus();
+        }
 
         response
     }
@@ -263,19 +290,22 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValueOpt<'a, T> {
                     text = format!("{:.prec$}", result, prec = self.max_decimals);
                 }
                 editing = false;
+                let mut r = edit_response;
+                r.mark_changed();
+                r
             } else if cancel {
-                // revert text to whatever the current value is
                 text = match self.value {
                     Some(v) => format!("{:.prec$}", v, prec = self.max_decimals),
                     None => String::new(),
                 };
                 editing = false;
+                edit_response
+            } else {
+                edit_response
             }
-
-            edit_response
         } else {
-            // Some(v) and not editing — show drag
             let v = self.value.as_mut().unwrap();
+            let prev = *v;
 
             let display = match self.suffix {
                 Some(s) => format!("{:.prec$}{s}", v, prec = self.max_decimals),
@@ -288,20 +318,33 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValueOpt<'a, T> {
                 .custom_formatter(move |_, _| display.clone())
                 .custom_parser(|s| s.parse::<f64>().ok());
 
-            let drag_response = ui.add(drag);
+            let mut drag_response = ui.add(drag);
 
-            if drag_response.double_clicked() {
+            if drag_response.clicked() {
                 editing = true;
                 text = format!("{:.prec$}", v, prec = self.max_decimals);
+            }
+
+            if (*v - prev).abs() > f32::EPSILON {
+                drag_response.mark_changed();
             }
 
             drag_response
         };
 
+        let wants_focus = editing
+            && !ui
+                .memory(|m| m.data.get_temp::<bool>(id.with("had_focus")).unwrap_or(false));
+
         ui.memory_mut(|m| {
             m.data.insert_temp(id, editing);
             m.data.insert_temp(id, text);
+            m.data.insert_temp(id.with("had_focus"), editing);
         });
+
+        if wants_focus {
+            response.request_focus();
+        }
 
         response
     }
