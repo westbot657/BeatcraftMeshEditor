@@ -50,7 +50,7 @@ void main() {
 
     vec3 N = normalize(vN);
     if (!gl_FrontFacing) N = -N;
-    float diff = max(dot(N, LIGHT), 0.0) * 0.6 + 0.4;
+    float diff = max(dot(N, LIGHT), 0.0) * 0.2 + 0.8;
     vec3 base3 = (vCh > 7) ? vColor.rgb : COLORS[vCh & 7];
     vec4 base = vec4(base3 * diff, vColor.a);
     if (gl_FrontFacing) {

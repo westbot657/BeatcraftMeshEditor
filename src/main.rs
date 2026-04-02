@@ -126,7 +126,7 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
                     let resp = ui.add_sized(
                         [w3, 20.],
                         MathDragValue::new(val, &mut vars)
-                            .speed(0.1)
+                            .speed(0.01)
                             .max_decimals(3),
                     );
 
@@ -166,6 +166,7 @@ fn vec2_row<T: 'static + Clone + Send + Sync>(
     let mut vars = HashMap::new();
     vars.insert("x".to_string(), v.x);
     vars.insert("y".to_string(), v.y);
+    let mut changed = false;
     ui.horizontal(|ui| {
         let mut current = *v;
         for val in current.as_mut() {
@@ -178,18 +179,17 @@ fn vec2_row<T: 'static + Clone + Send + Sync>(
                     let resp = ui.add_sized(
                         [w2, 20.],
                         MathDragValue::new(val, &mut vars)
-                            .speed(0.1)
+                            .speed(0.01)
                             .max_decimals(3),
                     );
 
-                    if resp.changed() {
-                        on_change();
-                    }
+                    changed |= resp.changed();
                     if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
                         ui.memory_mut(|m| {
                             m.data.insert_temp(id, *v);
                             m.data.insert_temp(id, snapshot_provider());
                         });
+                        changed = true;
                     }
                     if (resp.drag_stopped() || (resp.lost_focus() && !resp.dragged()))
                     && let Some((old, t)) = ui.memory_mut(|m| {
@@ -205,6 +205,9 @@ fn vec2_row<T: 'static + Clone + Send + Sync>(
         }
         *v = current;
     });
+    if changed {
+        on_change();
+    }
 }
 
 fn multi_vec3_row<T: 'static + Clone + Send + Sync>(
@@ -326,7 +329,7 @@ fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
                     let resp = ui.add_sized(
                         [w3, 20.],
                         MathDragValueOpt::new(val, vars)
-                            .speed(0.1)
+                            .speed(0.01)
                             .max_decimals(3),
                     );
 
@@ -338,6 +341,7 @@ fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
                             m.data.insert_temp(id, c2);
                             m.data.insert_temp(id, snapshot_provider());
                         });
+                        changed = true;
                     }
                     if (resp.drag_stopped() || (resp.lost_focus() && !resp.dragged()))
                     && let Some((old, t)) = ui.memory_mut(|m| {
@@ -385,7 +389,7 @@ fn delta_function_row<T: 'static + Clone + Send + Sync>(
                 let resp = ui.add_sized(
                     [w2, 20.],
                     MathDragValueOpt::new(delta, vars)
-                        .speed(0.1)
+                        .speed(0.01)
                         .max_decimals(3),
                 );
 
@@ -396,6 +400,7 @@ fn delta_function_row<T: 'static + Clone + Send + Sync>(
                         m.data.insert_temp(id, *delta);
                         m.data.insert_temp(id, snapshot_provider());
                     });
+                    changed = true;
                 }
                 if (resp.drag_stopped() || (resp.lost_focus() && !resp.dragged()))
                 && let Some((old, t)) = ui.memory_mut(|m| {
@@ -1035,15 +1040,15 @@ impl eframe::App for App {
                                 vars.insert("z".to_string(), target.z);
                                 ui.add_sized(
                                     [width, 20.],
-                                    MathDragValue::new(&mut target.x, &mut vars).speed(0.1),
+                                    MathDragValue::new(&mut target.x, &mut vars).speed(0.01),
                                 );
                                 ui.add_sized(
                                     [width, 20.],
-                                    MathDragValue::new(&mut target.y, &mut vars).speed(0.1),
+                                    MathDragValue::new(&mut target.y, &mut vars).speed(0.01),
                                 );
                                 ui.add_sized(
                                     [width, 20.],
-                                    MathDragValue::new(&mut target.z, &mut vars).speed(0.1),
+                                    MathDragValue::new(&mut target.z, &mut vars).speed(0.01),
                                 );
                             });
                             ui.label("Camera Pivot");
@@ -2599,7 +2604,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
             ui.label("Normals");
             ui.horizontal(|ui| {
-                for (idx, v) in [(0, "x"), (1, "y"), (2, "z")] {
+                for (idx, v) in [(0, "a"), (1, "b"), (2, "c")] {
                     let mut normal = NormalId::Named(String::new());
                     egui::ComboBox::from_id_salt(format!("multi-normal-{v}"))
                         .selected_text(v)
@@ -2631,7 +2636,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
             ui.label("UVs");
             ui.horizontal(|ui| {
-                for (idx, v) in [(0, "x"), (1, "y"), (2, "z")] {
+                for (idx, v) in [(0, "a"), (1, "b"), (2, "c")] {
                     let mut uv = UvId::Named(String::new());
                     egui::ComboBox::from_id_salt(format!("multi-uv-{v}"))
                         .selected_text(v)

@@ -167,8 +167,7 @@ pub struct MaterialData {
     pub color: u8,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(default)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LightMeshData {
     pub mesh_format: u32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -191,6 +190,24 @@ pub struct LightMeshData {
     pub solid_pass: bool,
     #[serde(skip_serializing_if = "is_zero")]
     pub bloomfog_style: u8,
+}
+
+impl Default for LightMeshData {
+    fn default() -> Self {
+        Self {
+            mesh_format: 1,
+            credits: Vec::new(),
+            parts: IndexMap::new(),
+            mesh: Vec::new(),
+            textures: IndexMap::new(),
+            data: IndexMap::new(),
+            cull: true,
+            bloom_pass: true,
+            mirror_pass: true,
+            solid_pass: true,
+            bloomfog_style: 0,
+        }
+    }
 }
 
 fn is_zero(v: &u8) -> bool {

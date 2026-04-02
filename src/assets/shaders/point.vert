@@ -1,10 +1,10 @@
 #version 330 core
 layout(location=0) in vec3 aPos;
-layout(location=3) in vec4 aModel0;
-layout(location=4) in vec4 aModel1;
-layout(location=5) in vec4 aModel2;
-layout(location=6) in vec4 aModel3;
-layout(location=7) in vec4 aColorAlpha;
+layout(location=4) in vec4 aModel0;
+layout(location=5) in vec4 aModel1;
+layout(location=6) in vec4 aModel2;
+layout(location=7) in vec4 aModel3;
+layout(location=8) in vec4 aColorAlpha;
 
 uniform mat4  uVP;
 uniform float uPointSize;

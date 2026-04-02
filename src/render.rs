@@ -290,13 +290,16 @@ impl GpuMesh {
         gl: &glow::Context,
         mesh: &LightMesh,
         mut gpu_meshes: HashMap<String, Self>,
+        mesh_textures: &IndexMap<String, String>,
+        texture_paths: &HashMap<String, PathBuf>,
+        atlas_map: &HashMap<PathBuf, Vec4>
     ) -> HashMap<String, Self> {
         let mut out = HashMap::new();
         for (name, part) in mesh.parts.iter() {
             let mut gpu_mesh = gpu_meshes
                 .remove(name)
                 .unwrap_or_else(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[], &[]));
-            gpu_mesh.set_from_light_mesh_part(gl, part, &mesh.data);
+            gpu_mesh.set_from_light_mesh_part(gl, part, &mesh.data, mesh_textures, texture_paths, atlas_map);
             out.insert(name.clone(), gpu_mesh);
         }
         for unused in gpu_meshes.into_values() {
@@ -305,8 +308,13 @@ impl GpuMesh {
         out
     }
 
-    pub fn from_light_mesh(gl: &glow::Context, mesh: &LightMesh) -> HashMap<String, Self> {
-        Self::set_from_hashmap(gl, mesh, HashMap::new())
+    pub fn from_light_mesh(
+        gl: &glow::Context,
+        mesh: &LightMesh,
+        texture_paths: &HashMap<String, PathBuf>,
+        atlas_map: &HashMap<PathBuf, Vec4>
+    ) -> HashMap<String, Self> {
+        Self::set_from_hashmap(gl, mesh, HashMap::new(), &mesh.textures, texture_paths, atlas_map)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -536,6 +544,9 @@ impl GpuMesh {
         gl: &glow::Context,
         part: &Part,
         data: &IndexMap<String, MaterialData>,
+        mesh_textures: &IndexMap<String, String>,
+        texture_paths: &HashMap<String, PathBuf>,
+        atlas_map: &HashMap<PathBuf, Vec4>
     ) {
         let mut vertices = Vec::new();
         let mut uvs = Vec::new();
@@ -552,9 +563,9 @@ impl GpuMesh {
             data,
             &Mat4::IDENTITY,
             &IndexMap::default(),
-            &IndexMap::default(),
-            &HashMap::new(),
-            &HashMap::new(),
+            mesh_textures,
+            texture_paths,
+            atlas_map,
         );
         Self::add_point_data(
             &mut points,
@@ -820,11 +831,10 @@ impl Renderer {
             image::imageops::replace(&mut atlas_image, &img, shelf_x as i64, shelf_y as i64);
 
             // Half-texel inset so bilinear sampling never bleeds into a neighbour
-            let px = 0.5 / ATLAS_SIZE as f32;
-            let u0 = shelf_x as f32 / ATLAS_SIZE as f32 + px;
-            let v0 = shelf_y as f32 / ATLAS_SIZE as f32 + px;
-            let u1 = (shelf_x + w) as f32 / ATLAS_SIZE as f32 - px;
-            let v1 = (shelf_y + h) as f32 / ATLAS_SIZE as f32 - px;
+            let u0 = shelf_x as f32 / ATLAS_SIZE as f32;
+            let v0 = shelf_y as f32 / ATLAS_SIZE as f32;
+            let u1 = (shelf_x + w) as f32 / ATLAS_SIZE as f32;
+            let v1 = (shelf_y + h) as f32 / ATLAS_SIZE as f32;
             self.atlas_map.insert(path.clone(), Vec4::new(u0, v0, u1, v1));
 
             shelf_x += w;
@@ -837,8 +847,8 @@ impl Renderer {
             gl.bind_texture(glow::TEXTURE_2D, Some(tex));
             gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
             gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32);
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
             gl.tex_image_2d(
                 glow::TEXTURE_2D,
                 0,

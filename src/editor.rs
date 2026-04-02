@@ -145,9 +145,9 @@ impl Default for ViewPlacement {
 }
 
 impl LightMesh {
-    pub fn into_view_mesh(self, path: PathBuf, gl: &Context) -> ViewMesh {
+    pub fn into_view_mesh(self, path: PathBuf, gl: &Context, renderer: &Renderer) -> ViewMesh {
         let mut v = ViewMesh::new(path, self);
-        v.rebuild(gl);
+        v.rebuild(gl, renderer);
         v
     }
 }
@@ -163,8 +163,8 @@ impl ViewMesh {
         }
     }
 
-    pub fn rebuild(&mut self, gl: &Context) {
-        self.rebuild_with_maps(gl, &HashMap::new(), &HashMap::new());
+    pub fn rebuild(&mut self, gl: &Context, renderer: &Renderer) {
+        self.rebuild_with_maps(gl, &renderer.texture_paths, &renderer.atlas_map);
     }
 
     pub fn rebuild_with_maps(
@@ -175,7 +175,7 @@ impl ViewMesh {
     ) {
         self.data.rebuild();
         let v = mem::take(&mut self.gpu_bufs.0);
-        self.gpu_bufs.0 = GpuMesh::set_from_hashmap(gl, &self.data, v);
+        self.gpu_bufs.0 = GpuMesh::set_from_hashmap(gl, &self.data, v, &self.data.textures, texture_paths, atlas_map);
         let full = self
             .gpu_bufs
             .1
@@ -852,16 +852,16 @@ impl App {
         s
     }
 
-    pub fn load_meshes_to_vec(paths: Vec<PathBuf>, gl: &Context) -> anyhow::Result<Vec<ViewMesh>> {
+    pub fn load_meshes_to_vec(paths: Vec<PathBuf>, gl: &Context, renderer: &Renderer) -> anyhow::Result<Vec<ViewMesh>> {
         let mut out = Vec::new();
         for path in paths {
-            out.push(LightMesh::load(&path)?.into_view_mesh(path, gl))
+            out.push(LightMesh::load(&path)?.into_view_mesh(path, gl, renderer))
         }
         Ok(out)
     }
 
     pub fn load_meshes(&mut self, paths: Vec<PathBuf>, gl: &Context) -> anyhow::Result<()> {
-        let mut meshes = Self::load_meshes_to_vec(paths, gl)?;
+        let mut meshes = Self::load_meshes_to_vec(paths, gl, &self.render.renderer)?;
         // Clear out old meshes with same paths as new meshes
         self.view.meshes.retain(|view_mesh| {
             !meshes
@@ -1276,7 +1276,7 @@ impl App {
                     if let Some(sel) = self.editor.mesh
                         && let Some(mesh) = self.view.meshes.get_mut(sel)
                     {
-                        mesh.rebuild(gl);
+                        mesh.rebuild(gl, &self.render.renderer);
                         self.upload_selection_points(gl);
                     }
 
@@ -1321,7 +1321,7 @@ impl App {
                     if let Some(sel) = self.editor.mesh
                         && let Some(mesh) = self.view.meshes.get_mut(sel)
                     {
-                        mesh.rebuild(gl);
+                        mesh.rebuild(gl, &self.render.renderer);
                         self.upload_selection_points(gl);
                     }
 
@@ -1988,7 +1988,7 @@ impl App {
         let mut vms = Vec::new();
 
         for SessionMeshData { path, placements } in session.meshes {
-            let mut vm = LightMesh::load(&path)?.into_view_mesh(path, gl);
+            let mut vm = LightMesh::load(&path)?.into_view_mesh(path, gl, &self.render.renderer);
 
             for SessionPlacementData {
                 position,
