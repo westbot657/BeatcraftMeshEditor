@@ -1668,6 +1668,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if let Some(i) = to_remove {
                 mesh.data.placements.remove(i);
                 toggles.placement_parts.remove(&i);
+                self3.rebuild_meshes(gl);
             }
             if ui
                 .add_sized([w, 20.], egui::Button::new("+ Add Placement"))
@@ -1788,6 +1789,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
             if let Some(key) = data_to_remove {
                 mesh.data.data.shift_remove(&key);
+                self3.rebuild_meshes(gl);
             }
         }
 
@@ -1844,6 +1846,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
             if let Some(key) = tex_to_remove {
                 mesh.data.textures.shift_remove(&key);
+                self3.rebuild_meshes(gl);
             }
         }
 
@@ -1917,6 +1920,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
             if let Some(i) = to_remove {
                 mesh.data.credits.remove(i);
+                self3.rebuild_meshes(gl);
             }
             if ui
                 .add_sized([w, 20.], egui::Button::new("+ Add Credit"))
@@ -2207,6 +2211,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                     },
                                 ));
                                 part2.delete_uvs([UvId::Index(i)]);
+                                self3.rebuild_meshes(gl);
                                 return true;
                             }
                             false
@@ -2297,6 +2302,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 },
                             ));
                             part2.delete_uvs([UvId::Named(key.clone())]);
+                            self3.rebuild_meshes(gl);
                             return true;
                         }
                         false
@@ -2368,6 +2374,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                     },
                                 ));
                                 part2.delete_normals([NormalId::Index(i)]);
+                                self3.rebuild_meshes(gl);
                                 return true;
                             }
                             false
@@ -2458,6 +2465,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 },
                             ));
                             part2.delete_normals([NormalId::Named(key.clone())]);
+                            self3.rebuild_meshes(gl);
                         }
                         false
                     })
@@ -2552,6 +2560,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 },
                             ));
                             part2.delete_normals([NormalId::Named(key.clone())]);
+                            self3.rebuild_meshes(gl);
                         }
                         false
                     })
@@ -3361,6 +3370,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
 
                                 let valid_ids: Vec<UvId> = part.get_valid_uv_ids().collect();
                                 let current = &mut tri.vertices[vi].uv;
+                                let old = current.clone();
                                 let resp = egui::ComboBox::new(("uv_id_combo", vi), "")
                                     .selected_text(format!("{:?}", current))
                                     .width(inner_w)
@@ -3375,7 +3385,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                                         }
                                     })
                                     .response;
-                                if resp.changed() {
+                                if *current != old {
                                     s.add_history(editor::HistoryEntry::MeshPart(
                                         light_mesh::LightMeshPartSnapshot {
                                             idx: sel,
