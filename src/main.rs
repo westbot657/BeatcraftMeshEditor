@@ -1036,7 +1036,11 @@ impl eframe::App for App {
             .resizable(false)
             .show(ctx, |ui| {
                 ui.allocate_ui(ui.available_size(), |ui| {
-                    let h = if self.mode == editor::EditorMode::Edit { 75. } else { 45. };
+                    let h = if self.mode == editor::EditorMode::Edit {
+                        75.
+                    } else {
+                        45.
+                    };
                     ui.allocate_exact_size((230., 1.).into(), Sense::empty());
                     ui.allocate_ui(
                         (ui.available_width(), ui.available_height() - h).into(),
@@ -1089,18 +1093,21 @@ impl eframe::App for App {
                                     [ui.available_width(), 20.].into(),
                                     egui::Layout::bottom_up(egui::Align::Center),
                                     |ui| {
-                                        if ui.add_sized(
-                                            ui.available_size(),
-                                            egui::Button::new("Show UV Editor")
-                                                .selected(self.state.ui.show_uv_window)
-                                        ).clicked() {
-                                            self.state.ui.show_uv_window = !self.state.ui.show_uv_window;
+                                        if ui
+                                            .add_sized(
+                                                ui.available_size(),
+                                                egui::Button::new("Show UV Editor")
+                                                    .selected(self.state.ui.show_uv_window),
+                                            )
+                                            .clicked()
+                                        {
+                                            self.state.ui.show_uv_window =
+                                                !self.state.ui.show_uv_window;
                                         }
-                                    }
+                                    },
                                 );
                             }
                         });
-
                     });
                 });
             });
@@ -1196,8 +1203,7 @@ impl eframe::App for App {
                 });
             });
 
-        if self.mode == editor::EditorMode::Edit
-            && self.state.ui.show_uv_window {
+        if self.mode == editor::EditorMode::Edit && self.state.ui.show_uv_window {
             egui::Window::new("UV Editor")
                 .id(egui::Id::new("uv_editor"))
                 .min_size([200., 200.])
@@ -2891,9 +2897,9 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
 }
 
 const UV_VERT_COLORS: [egui::Color32; 3] = [
-    egui::Color32::from_rgb(220, 80,  80),
-    egui::Color32::from_rgb(80,  150, 220),
-    egui::Color32::from_rgb(80,  200, 120),
+    egui::Color32::from_rgb(220, 80, 80),
+    egui::Color32::from_rgb(80, 150, 220),
+    egui::Color32::from_rgb(80, 200, 120),
 ];
 
 const UV_HIT_RADIUS: f32 = 6.0;
@@ -2912,9 +2918,9 @@ fn screen_to_uv(pos: egui::Pos2, rect: egui::Rect, pan: glam::Vec2, zoom: f32) -
 
 fn snap_uv(uv: glam::Vec2, tex_w: u32, tex_h: u32, modifiers: &egui::Modifiers) -> glam::Vec2 {
     let divisor = match (modifiers.ctrl, modifiers.shift) {
-        (true,  true)  => 8.0,
-        (true,  false) => 2.0,
-        (false, true)  => 4.0,
+        (true, true) => 8.0,
+        (true, false) => 2.0,
+        (false, true) => 4.0,
         (false, false) => 1.0,
     };
     let step_x = 1.0 / (tex_w as f32 * divisor);
@@ -2936,7 +2942,8 @@ fn get_or_load_texture<'a>(
         let image = image.to_rgba8();
         let (w, h) = image.dimensions();
         let pixels = image.into_raw();
-        let color_image = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &pixels);
+        let color_image =
+            egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &pixels);
         let handle = ctx.load_texture(display_id, color_image, egui::TextureOptions::NEAREST);
         cache.insert(display_id.to_string(), handle);
     }
@@ -2949,31 +2956,50 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
     let s3 = unsafe { rd.detach_mut_ref(s) };
 
     if let Selection::Vertices(verts) = &mut s2.selection
-    && let Some(sel) = s.get_current_mesh_idx()
-    && let Some(v_mesh) = s2.view.meshes.get_mut(sel)
-    && let Some(part) = s3.get_current_part_mut()
-    && let part2 = unsafe { rd.detach_mut_ref(part) }
-    && let tris = part2.filter_triangles(verts).collect::<Vec<_>>()
-    && !tris.is_empty()
+        && let Some(sel) = s.get_current_mesh_idx()
+        && let Some(v_mesh) = s2.view.meshes.get_mut(sel)
+        && let Some(part) = s3.get_current_part_mut()
+        && let part2 = unsafe { rd.detach_mut_ref(part) }
+        && let tris = part2.filter_triangles(verts).collect::<Vec<_>>()
+        && !tris.is_empty()
     {
         let mesh = unsafe { rd.detach_mut_ref(&mut v_mesh.data) };
 
-        let mut unique_texture_ids = tris.iter()
-            .filter_map(|tri| mesh.resolve_data(tri.material.as_ref()).map(|mat| mat.texture))
+        let mut unique_texture_ids = tris
+            .iter()
+            .filter_map(|tri| {
+                mesh.resolve_data(tri.material.as_ref())
+                    .map(|mat| mat.texture)
+            })
             .collect::<HashSet<_>>()
             .iter()
             .filter_map(|id| mesh.textures.get(&id.to_string()).map(|v| (id, v)))
-            .filter_map(|(n, id)| s.render.renderer.texture_paths.get(id).map(|p| (*n, id.as_str(), p.as_path())))
+            .filter_map(|(n, id)| {
+                s.render
+                    .renderer
+                    .texture_paths
+                    .get(id)
+                    .map(|p| (*n, id.as_str(), p.as_path()))
+            })
             .collect::<Vec<(u8, &str, &Path)>>();
 
         unique_texture_ids.sort();
 
         let mut groups: IndexMap<u8, Vec<&mut Triangle>> = IndexMap::new();
         for tri in tris.into_iter() {
-            let Some(mat_id) = mesh.resolve_data(tri.material.as_ref()).map(|mat| mat.texture) else { continue };
+            let Some(mat_id) = mesh
+                .resolve_data(tri.material.as_ref())
+                .map(|mat| mat.texture)
+            else {
+                continue;
+            };
             match groups.entry(mat_id) {
-                indexmap::map::Entry::Occupied(mut o) => { o.get_mut().push(tri); }
-                indexmap::map::Entry::Vacant(v) => { v.insert(vec![tri]); }
+                indexmap::map::Entry::Occupied(mut o) => {
+                    o.get_mut().push(tri);
+                }
+                indexmap::map::Entry::Vacant(v) => {
+                    v.insert(vec![tri]);
+                }
             }
         }
 
@@ -2985,7 +3011,9 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
         let sel_group = s.state.ui.selected_group;
         let tri_count = groups.get(&sel_group).map(|v| v.len()).unwrap_or(0);
         let sel_tri_entry = s.state.ui.selected_tris.entry(sel_group).or_insert(0);
-        if *sel_tri_entry >= tri_count { *sel_tri_entry = 0; }
+        if *sel_tri_entry >= tri_count {
+            *sel_tri_entry = 0;
+        }
 
         let prev_group = sel_group;
 
@@ -2993,10 +3021,14 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
             ui.horizontal(|ui| {
                 for (ref_id, display_id, _path) in &unique_texture_ids {
                     let selected = *ref_id == s.state.ui.selected_group;
-                    if ui.selectable_label(selected, format!("Tex {display_id}")).clicked() && !selected {
+                    if ui
+                        .selectable_label(selected, format!("Tex {display_id}"))
+                        .clicked()
+                        && !selected
+                    {
                         s.state.ui.selected_group = *ref_id;
                         s.state.ui.selected_tris.insert(*ref_id, 0);
-                        s.state.ui.hovered_uv  = None;
+                        s.state.ui.hovered_uv = None;
                         s.state.ui.dragging_uv = None;
                     }
                 }
@@ -3005,7 +3037,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
 
         let group_changed = prev_group != s.state.ui.selected_group;
         let sel_group = s.state.ui.selected_group;
-        let sel_tri   = *s.state.ui.selected_tris.get(&sel_group).unwrap_or(&0);
+        let sel_tri = *s.state.ui.selected_tris.get(&sel_group).unwrap_or(&0);
 
         let tris_in_group = groups.get(&sel_group).map(|v| v.len()).unwrap_or(0);
 
@@ -3033,12 +3065,8 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
         }
 
         let spacing = ui.spacing().item_spacing.y;
-        let row_h   = ui.text_style_height(&egui::TextStyle::Body) + 5.0;
-        let input_height = row_h * 2.0
-            + spacing * 3.0
-            + 10.0
-            + 10.0
-            + 1.0;
+        let row_h = ui.text_style_height(&egui::TextStyle::Body) + 5.0;
+        let input_height = row_h * 2.0 + spacing * 3.0 + 10.0 + 10.0 + 1.0;
 
         let canvas_rect = {
             let size = ui.available_rect_before_wrap();
@@ -3055,10 +3083,8 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
             .iter()
             .find(|(id, _, _)| *id == sel_group)
             .and_then(|(_ref_id, display_id, path)| {
-                let handle = get_or_load_texture(
-                    display_id, path, ctx,
-                    &mut s.state.ui.texture_cache,
-                )?;
+                let handle =
+                    get_or_load_texture(display_id, path, ctx, &mut s.state.ui.texture_cache)?;
                 let size = handle.size();
                 Some((size[0] as u32, size[1] as u32, handle.id()))
             })
@@ -3071,11 +3097,13 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
 
         {
             let zoom = &mut s.state.ui.uv_zoom;
-            let pan  = &mut s.state.ui.uv_pan;
+            let pan = &mut s.state.ui.uv_pan;
 
             if resp.hovered() {
                 let scroll_delta = ctx.input(|i| i.smooth_scroll_delta.y);
-                if scroll_delta != 0.0 && let Some(mouse_pos) = ctx.input(|i| i.pointer.hover_pos()) {
+                if scroll_delta != 0.0
+                    && let Some(mouse_pos) = ctx.input(|i| i.pointer.hover_pos())
+                {
                     let uv_before = screen_to_uv(mouse_pos, canvas_rect, *pan, *zoom);
                     let factor = (scroll_delta * 0.002).exp();
                     *zoom = (*zoom * factor).clamp(20.0, 4000.0);
@@ -3096,12 +3124,12 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
         }
 
         let zoom_snap = s.state.ui.uv_zoom;
-        let pan_snap  = s.state.ui.uv_pan;
+        let pan_snap = s.state.ui.uv_pan;
 
         struct VertScreenPos {
-            tri_idx:  usize,
+            tri_idx: usize,
             vert_idx: usize,
-            screen:   egui::Pos2,
+            screen: egui::Pos2,
         }
 
         let mut vert_positions: Vec<VertScreenPos> = Vec::new();
@@ -3110,7 +3138,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                 for (vi, vert) in tri.vertices.iter().enumerate() {
                     let uv = part.resolve_uv(&vert.uv);
                     vert_positions.push(VertScreenPos {
-                        tri_idx:  ti,
+                        tri_idx: ti,
                         vert_idx: vi,
                         screen: uv_to_screen(uv, canvas_rect, pan_snap, zoom_snap),
                     });
@@ -3122,7 +3150,9 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
 
         if s.state.ui.dragging_uv.is_none() {
             s.state.ui.hovered_uv = None;
-            if let Some(hp) = ctx.input(|i| i.pointer.hover_pos()) && canvas_rect.contains(hp) {
+            if let Some(hp) = ctx.input(|i| i.pointer.hover_pos())
+                && canvas_rect.contains(hp)
+            {
                 let mut best_dist = UV_HIT_RADIUS;
                 let mut best = None;
                 for vsp in &vert_positions {
@@ -3143,7 +3173,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                     idx: sel,
                     name: s.get_current_part_name().unwrap().to_string(),
                     part: Box::new(part.clone()),
-                }
+                },
             ));
         }
 
@@ -3151,22 +3181,22 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
             if resp.drag_stopped() {
                 let modifiers = ctx.input(|i| i.modifiers);
                 if let Some(tris_vec) = groups.get_mut(&sel_group)
-                && let Some(tri) = tris_vec.get(dt)
-                && let Some(uv_ref) = part.resolve_uv_mut(&tri.vertices[dv].uv) {
+                    && let Some(tri) = tris_vec.get(dt)
+                    && let Some(uv_ref) = part.resolve_uv_mut(&tri.vertices[dv].uv)
+                {
                     *uv_ref = snap_uv(*uv_ref, tex_w, tex_h, &modifiers);
                 }
                 s.rebuild_meshes(gl);
                 s.state.ui.dragging_uv = None;
-                s.state.ui.hovered_uv  = None;
+                s.state.ui.hovered_uv = None;
             } else if resp.dragged_by(egui::PointerButton::Primary) {
                 let delta_screen = resp.drag_delta();
-                let delta_uv = glam::Vec2::new(
-                    delta_screen.x / zoom_snap,
-                    delta_screen.y / zoom_snap,
-                );
+                let delta_uv =
+                    glam::Vec2::new(delta_screen.x / zoom_snap, delta_screen.y / zoom_snap);
                 if let Some(tris_vec) = groups.get_mut(&sel_group)
-                && let Some(tri) = tris_vec.get(dt)
-                && let Some(uv_ref) = part.resolve_uv_mut(&tri.vertices[dv].uv) {
+                    && let Some(tri) = tris_vec.get(dt)
+                    && let Some(uv_ref) = part.resolve_uv_mut(&tri.vertices[dv].uv)
+                {
                     *uv_ref += delta_uv;
                     s.rebuild_meshes(gl);
                 }
@@ -3221,15 +3251,26 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                 if is_sel {
                     for vi in 0..3 {
                         let col = UV_VERT_COLORS[vi];
-                        let is_hov = s.state.ui.hovered_uv  == Some((ti, vi));
+                        let is_hov = s.state.ui.hovered_uv == Some((ti, vi));
                         let is_drag = s.state.ui.dragging_uv == Some((ti, vi));
-                        let radius = if is_drag { 6.0 } else if is_hov { 5.5 } else { 4.0 };
+                        let radius = if is_drag {
+                            6.0
+                        } else if is_hov {
+                            5.5
+                        } else {
+                            4.0
+                        };
                         let inner = if is_hov || is_drag {
                             col
                         } else {
                             egui::Color32::from_rgba_premultiplied(col.r(), col.g(), col.b(), 180)
                         };
-                        painter.circle(screen_verts[vi], radius, inner, egui::Stroke::new(1.5, col));
+                        painter.circle(
+                            screen_verts[vi],
+                            radius,
+                            inner,
+                            egui::Stroke::new(1.5, col),
+                        );
                     }
                 }
             }
@@ -3238,9 +3279,8 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
         let sel_tri_final = *s.state.ui.selected_tris.get(&sel_group).unwrap_or(&0);
 
         if let Some(tris_vec) = groups.get_mut(&sel_group)
-        && let Some(tri) = tris_vec.get_mut(sel_tri_final)
+            && let Some(tri) = tris_vec.get_mut(sel_tri_final)
         {
-
             ui.separator();
 
             ui.horizontal(|ui| {
@@ -3255,10 +3295,11 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
 
                             ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
                                 let inner_w = col_w - 10.0;
-                                let half_w  = (inner_w - ui.spacing().item_spacing.x) / 2.0;
+                                let half_w = (inner_w - ui.spacing().item_spacing.x) / 2.0;
 
                                 ui.horizontal(|ui| {
-                                    if let Some(uv_ref) = part.resolve_uv_mut(&tri.vertices[vi].uv) {
+                                    if let Some(uv_ref) = part.resolve_uv_mut(&tri.vertices[vi].uv)
+                                    {
                                         let mut vars = std::collections::HashMap::new();
                                         vars.insert("x".to_string(), uv_ref.x);
                                         vars.insert("y".to_string(), uv_ref.y);
@@ -3269,18 +3310,25 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                                                 .speed(0.001)
                                                 .max_decimals(4),
                                         );
-                                        if rx.drag_started() || (rx.gained_focus() && !rx.dragged()) {
+                                        if rx.drag_started() || (rx.gained_focus() && !rx.dragged())
+                                        {
                                             s.add_history(editor::HistoryEntry::MeshPart(
                                                 light_mesh::LightMeshPartSnapshot {
                                                     idx: sel,
-                                                    name: s.get_current_part_name().unwrap().to_string(),
+                                                    name: s
+                                                        .get_current_part_name()
+                                                        .unwrap()
+                                                        .to_string(),
                                                     part: Box::new(part.clone()),
-                                                }
+                                                },
                                             ));
                                         }
-                                        if rx.changed() { s.rebuild_meshes(gl); }
+                                        if rx.changed() {
+                                            s.rebuild_meshes(gl);
+                                        }
 
-                                        let uv_ref = part.resolve_uv_mut(&tri.vertices[vi].uv).unwrap();
+                                        let uv_ref =
+                                            part.resolve_uv_mut(&tri.vertices[vi].uv).unwrap();
                                         vars.insert("x".to_string(), uv_ref.x);
                                         vars.insert("y".to_string(), uv_ref.y);
 
@@ -3290,16 +3338,22 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                                                 .speed(0.001)
                                                 .max_decimals(4),
                                         );
-                                        if ry.drag_started() || (ry.gained_focus() && !ry.dragged()) {
+                                        if ry.drag_started() || (ry.gained_focus() && !ry.dragged())
+                                        {
                                             s.add_history(editor::HistoryEntry::MeshPart(
                                                 light_mesh::LightMeshPartSnapshot {
                                                     idx: sel,
-                                                    name: s.get_current_part_name().unwrap().to_string(),
+                                                    name: s
+                                                        .get_current_part_name()
+                                                        .unwrap()
+                                                        .to_string(),
                                                     part: Box::new(part.clone()),
-                                                }
+                                                },
                                             ));
                                         }
-                                        if ry.changed() { s.rebuild_meshes(gl); }
+                                        if ry.changed() {
+                                            s.rebuild_meshes(gl);
+                                        }
                                     } else {
                                         ui.add_sized([half_w, 18.0], egui::Label::new("0.0000"));
                                         ui.add_sized([half_w, 18.0], egui::Label::new("0.0000"));
@@ -3314,7 +3368,11 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                                     .show_ui(ui, |ui| {
                                         ui.set_min_width(inner_w);
                                         for id in &valid_ids {
-                                            ui.selectable_value(current, id.clone(), format!("{:?}", id));
+                                            ui.selectable_value(
+                                                current,
+                                                id.clone(),
+                                                format!("{:?}", id),
+                                            );
                                         }
                                     })
                                     .response;
@@ -3324,7 +3382,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                                             idx: sel,
                                             name: s.get_current_part_name().unwrap().to_string(),
                                             part: Box::new(part.clone()),
-                                        }
+                                        },
                                     ));
                                     s.rebuild_meshes(gl);
                                 }
@@ -3333,10 +3391,12 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                 }
             });
         }
-
     } else {
         let rect = ui.available_rect_before_wrap();
-        ui.add_sized(rect.size(), egui::Label::new("Select triangles to edit UVs"));
+        ui.add_sized(
+            rect.size(),
+            egui::Label::new("Select triangles to edit UVs"),
+        );
     }
 }
 

@@ -1397,9 +1397,7 @@ impl App {
         }
     }
 
-    pub fn handle_uv_input(&mut self, resp: &Response, ctx: &egui::Context, gl: &Context) {
-
-    }
+    pub fn handle_uv_input(&mut self, resp: &Response, ctx: &egui::Context, gl: &Context) {}
 
     pub fn undo(&mut self, gl: &Context) {
         let rd = RefDuper;

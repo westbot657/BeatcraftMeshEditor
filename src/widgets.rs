@@ -63,8 +63,7 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
             let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
             if commit {
-                if let Some(result) =
-                    crate::math_interp::eval_inner(&text, self.vars, self.degrees)
+                if let Some(result) = crate::math_interp::eval_inner(&text, self.vars, self.degrees)
                 {
                     *self.value = result;
                 }
@@ -109,14 +108,16 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
         };
 
         let wants_focus = editing
-            && !ui
-                .memory(|m| m.data.get_temp::<bool>(id.with("had_focus")).unwrap_or(false));
+            && !ui.memory(|m| {
+                m.data
+                    .get_temp::<bool>(id.with("had_focus"))
+                    .unwrap_or(false)
+            });
 
         ui.memory_mut(|m| {
             m.data.insert_temp(id, editing);
             m.data.insert_temp(id, text);
-            m.data
-                .insert_temp(id.with("had_focus"), editing);
+            m.data.insert_temp(id.with("had_focus"), editing);
         });
 
         if wants_focus {
@@ -326,8 +327,11 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValueOpt<'a, T> {
         };
 
         let wants_focus = editing
-            && !ui
-                .memory(|m| m.data.get_temp::<bool>(id.with("had_focus")).unwrap_or(false));
+            && !ui.memory(|m| {
+                m.data
+                    .get_temp::<bool>(id.with("had_focus"))
+                    .unwrap_or(false)
+            });
 
         ui.memory_mut(|m| {
             m.data.insert_temp(id, editing);
