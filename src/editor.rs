@@ -493,6 +493,14 @@ pub struct UiState {
     /// Currently-modifying item name, paired with working_key
     pub working_name: Option<String>,
     pub working_key: WorkingRenameKey,
+    pub show_uv_window: bool,
+    pub selected_group: u8,
+    pub selected_tris: HashMap<u8, usize>,
+    pub uv_pan: Vec2,
+    pub uv_zoom: f32,
+    pub hovered_uv: Option<(usize, usize)>,
+    pub dragging_uv: Option<(usize, usize)>,
+    pub texture_cache: HashMap<String, egui::TextureHandle>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -1387,6 +1395,10 @@ impl App {
                 egui::StrokeKind::Middle,
             );
         }
+    }
+
+    pub fn handle_uv_input(&mut self, resp: &Response, ctx: &egui::Context, gl: &Context) {
+
     }
 
     pub fn undo(&mut self, gl: &Context) {

@@ -630,6 +630,13 @@ impl Part {
         }
     }
 
+    pub fn resolve_uv_mut(&mut self, id: &UvId) -> Option<&mut Vec2> {
+        match id {
+            UvId::Index(i) => self.uvs.indexed.get_mut(*i),
+            UvId::Named(n) => self.uvs.named.get_mut(n),
+        }
+    }
+
     pub fn resolve_normal(&self, id: &NormalId) -> anyhow::Result<Vec3> {
         match id {
             NormalId::Index(i) => Ok(self.normals.indexed.get(*i).copied().unwrap_or(Vec3::Y)),
@@ -1396,6 +1403,10 @@ impl LightMesh {
         for part in self.parts.values_mut() {
             part.rename_data(swap);
         }
+    }
+
+    pub fn resolve_data(&self, id: Option<&String>) -> Option<&MaterialData> {
+        self.data.get(id.unwrap_or(&"default".to_string()))
     }
 
     pub fn rename_part(&mut self, swap: &DataSwap<String>) {
