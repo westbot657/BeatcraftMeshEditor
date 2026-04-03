@@ -168,6 +168,7 @@ pub struct MaterialData {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct LightMeshData {
     pub mesh_format: u32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
