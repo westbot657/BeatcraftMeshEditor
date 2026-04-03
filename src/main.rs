@@ -3141,16 +3141,16 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
         }
 
         let mut vert_positions: Vec<VertScreenPos> = Vec::new();
-        if let Some(tris_vec) = groups.get(&sel_group) {
-            for (ti, tri) in tris_vec.iter().enumerate() {
-                for (vi, vert) in tri.vertices.iter().enumerate() {
-                    let uv = part.resolve_uv(&vert.uv);
-                    vert_positions.push(VertScreenPos {
-                        tri_idx: ti,
-                        vert_idx: vi,
-                        screen: uv_to_screen(uv, canvas_rect, pan_snap, zoom_snap),
-                    });
-                }
+        if let Some(tris_vec) = groups.get(&sel_group)
+            && let Some((ti, tri)) = tris_vec.iter().enumerate().nth(sel_tri)
+        {
+            for (vi, vert) in tri.vertices.iter().enumerate() {
+                let uv = part.resolve_uv(&vert.uv);
+                vert_positions.push(VertScreenPos {
+                    tri_idx: ti,
+                    vert_idx: vi,
+                    screen: uv_to_screen(uv, canvas_rect, pan_snap, zoom_snap),
+                });
             }
         }
 
@@ -3371,7 +3371,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                                 let valid_ids: Vec<UvId> = part.get_valid_uv_ids().collect();
                                 let current = &mut tri.vertices[vi].uv;
                                 let old = current.clone();
-                                let resp = egui::ComboBox::new(("uv_id_combo", vi), "")
+                                egui::ComboBox::new(("uv_id_combo", vi), "")
                                     .selected_text(format!("{:?}", current))
                                     .width(inner_w)
                                     .show_ui(ui, |ui| {
@@ -3383,8 +3383,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                                                 format!("{:?}", id),
                                             );
                                         }
-                                    })
-                                    .response;
+                                    });
                                 if *current != old {
                                     s.add_history(editor::HistoryEntry::MeshPart(
                                         light_mesh::LightMeshPartSnapshot {
