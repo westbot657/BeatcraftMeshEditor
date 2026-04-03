@@ -1806,17 +1806,19 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 .add_sized([w, 20.], egui::Button::new("+ Add Texture"))
                 .clicked()
             {
-                mesh.data
-                    .textures
-                    .insert(format!("{}", mesh.data.textures.len()), String::new());
+                let next_key = (0..)
+                    .map(|i| format!("{}", i))
+                    .find(|k| !mesh.data.textures.contains_key(k))
+                    .unwrap();
+                mesh.data.textures.insert(next_key, String::new());
             }
 
             let mut tex_to_remove = None;
             let tex_keys: Vec<String> = mesh.data.textures.keys().cloned().collect();
-            for (ti, key) in tex_keys.iter().enumerate() {
+            for key in tex_keys.iter() {
                 let val = mesh.data.textures.get_mut(key).unwrap();
                 ui.horizontal(|ui| {
-                    ui.label(format!("{ti}"));
+                    ui.label(key);
                     ui.add_sized([w - 60., 20.], egui::TextEdit::singleline(val));
                     if ui
                         .small_button(if self2.render.renderer.texture_paths.contains_key(val) {
