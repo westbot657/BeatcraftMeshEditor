@@ -3149,18 +3149,16 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
 
         if let Some((dt, dv)) = s.state.ui.dragging_uv {
             if resp.drag_stopped() {
-                // Snap on release, then clear.
                 let modifiers = ctx.input(|i| i.modifiers);
                 if let Some(tris_vec) = groups.get_mut(&sel_group)
                 && let Some(tri) = tris_vec.get(dt)
                 && let Some(uv_ref) = part.resolve_uv_mut(&tri.vertices[dv].uv) {
                     *uv_ref = snap_uv(*uv_ref, tex_w, tex_h, &modifiers);
-                    s.rebuild_meshes(gl);
                 }
+                s.rebuild_meshes(gl);
                 s.state.ui.dragging_uv = None;
                 s.state.ui.hovered_uv  = None;
             } else if resp.dragged_by(egui::PointerButton::Primary) {
-                // Raw delta during drag, no snap yet.
                 let delta_screen = resp.drag_delta();
                 let delta_uv = glam::Vec2::new(
                     delta_screen.x / zoom_snap,
@@ -3200,9 +3198,9 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                 });
 
                 let fill = if is_sel {
-                    egui::Color32::from_rgba_premultiplied(80, 130, 220, 15)
+                    egui::Color32::from_rgba_unmultiplied(80, 130, 220, 35)
                 } else {
-                    egui::Color32::from_rgba_premultiplied(80, 130, 220, 4)
+                    egui::Color32::from_rgba_unmultiplied(80, 130, 220, 10)
                 };
                 painter.add(egui::Shape::convex_polygon(
                     screen_verts.to_vec(),
@@ -3211,9 +3209,9 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                 ));
 
                 let stroke_color = if is_sel {
-                    egui::Color32::from_rgba_premultiplied(120, 170, 255, 180)
+                    egui::Color32::from_rgba_unmultiplied(120, 170, 255, 180)
                 } else {
-                    egui::Color32::from_rgba_premultiplied(80, 110, 180, 80)
+                    egui::Color32::from_rgba_unmultiplied(80, 110, 180, 80)
                 };
                 let stroke = egui::Stroke::new(1.0, stroke_color);
                 for i in 0..3 {
