@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 
 use eframe::glow::{self, HasContext};
-use egui::{Align2, Frame, Id, Sense, Ui};
+use egui::{Align2, Frame, Sense, Ui};
 use glam::{Mat4, Quat, Vec2, Vec3};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
@@ -615,7 +615,7 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
     }
 }
 
-fn multi_quat_row<T: 'static + Clone + Send + Sync>(
+/*fn multi_quat_row<T: 'static + Clone + Send + Sync>(
     ui: &mut egui::Ui,
     quats: &mut [&mut Quat],
     mode: &mut RotationDisplayMode,
@@ -794,7 +794,7 @@ fn multi_quat_row<T: 'static + Clone + Send + Sync>(
         history_pusher(snapshot_provider());
         on_change();
     }
-}
+}*/
 
 fn compute_vertex_row(
     ui: &mut Ui,
