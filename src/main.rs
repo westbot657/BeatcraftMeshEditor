@@ -1,5 +1,5 @@
 // Control Scheme
-//   Left-click             select vertex (shift = multi-select)
+//   Left-click             select vertex (shift = multi-select) (ctrl = toggle select)
 //   Left-drag (empty)      orbit
 //   Shift+Left-click       add/remove select
 //   Shift+Left-drag        marquee select
@@ -13,10 +13,9 @@
 //   E                      assembly <-> part-edit mode
 //   A / D                  cycle active part
 //   N                      create/remove triangle from selection
-//   X                      flip winding of selected triangles
+//   R                      flip winding of selected triangles
 //   Ctrl+Z / Ctrl+Shift+Z  undo / redo
 //   Ctrl+S                 save JSON
-//   Ctrl+Shift+S           optimized save
 //   Escape                 deselect all
 
 use std::collections::{HashMap, HashSet};
