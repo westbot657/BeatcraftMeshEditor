@@ -2039,6 +2039,7 @@ impl App {
                 }
                 Ok(src) => {
                     self.render.renderer.texture_paths.insert(id.clone(), src);
+                    self.rebuild_meshes(gl);
                 }
             }
         }

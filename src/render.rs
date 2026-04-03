@@ -405,14 +405,11 @@ impl GpuMesh {
                 None => None,
             };
 
-            // Resolve which atlas region to remap UVs into, based on the
-            // material's texture index into mesh_textures.
             let tex_path: Option<&PathBuf> = data
                 .get(material_key.unwrap_or("default"))
                 .and_then(|mat_data| {
                     mesh_textures
-                        .get_index(mat_data.texture as usize)
-                        .map(|(_, asset_key)| asset_key)
+                        .get(&mat_data.texture.to_string())
                 })
                 .and_then(|asset_key| texture_paths.get(asset_key));
 
@@ -833,7 +830,6 @@ impl Renderer {
     pub fn rebuild_atlases(&mut self, gl: &glow::Context) {
         const ATLAS_SIZE: u32 = 1024;
 
-        // Destroy old atlas if present
         unsafe {
             if let Some(tex) = self.atlas.take() {
                 gl.delete_texture(tex);
@@ -846,7 +842,6 @@ impl Renderer {
         let mut shelf_y: u32 = 0;
         let mut shelf_h: u32 = 0;
 
-        // Collect unique paths (multiple texture IDs may share the same path)
         let mut unique_paths: Vec<PathBuf> = self.texture_paths.values().cloned().collect();
         unique_paths.sort();
         unique_paths.dedup();
@@ -867,7 +862,6 @@ impl Renderer {
                 ATLAS_SIZE
             );
 
-            // Advance to next shelf if needed
             if shelf_x + w > ATLAS_SIZE {
                 shelf_y += shelf_h;
                 shelf_x = 0;
@@ -882,7 +876,6 @@ impl Renderer {
 
             image::imageops::replace(&mut atlas_image, &img, shelf_x as i64, shelf_y as i64);
 
-            // Half-texel inset so bilinear sampling never bleeds into a neighbour
             let u0 = shelf_x as f32 / ATLAS_SIZE as f32;
             let v0 = shelf_y as f32 / ATLAS_SIZE as f32;
             let u1 = (shelf_x + w) as f32 / ATLAS_SIZE as f32;
@@ -894,7 +887,6 @@ impl Renderer {
             shelf_h = shelf_h.max(h);
         }
 
-        // Upload to GPU
         unsafe {
             let tex = gl.create_texture().unwrap();
             gl.bind_texture(glow::TEXTURE_2D, Some(tex));
