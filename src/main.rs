@@ -113,6 +113,7 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
     vars.insert("x".to_string(), v.x);
     vars.insert("y".to_string(), v.y);
     vars.insert("z".to_string(), v.z);
+    let mut changed = false;
     ui.horizontal(|ui| {
         let mut current = *v;
         for val in current.as_mut() {
@@ -129,14 +130,14 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
                             .max_decimals(3),
                     );
 
-                    if resp.changed() {
-                        on_change();
-                    }
+                    changed |= resp.changed();
+
                     if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
                         ui.memory_mut(|m| {
                             m.data.insert_temp(id, *v);
                             m.data.insert_temp(id, snapshot_provider());
                         });
+                        changed = true;
                     }
                     if (resp.drag_stopped() || (resp.lost_focus() && !resp.dragged()))
                         && let Some((old, t)) = ui.memory_mut(|m| {
@@ -146,6 +147,7 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
                         })
                         && old != *v
                     {
+                        changed = true;
                         history_pusher(t);
                     }
                 },
@@ -153,6 +155,9 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
         }
         *v = current;
     });
+    if changed {
+        on_change();
+    }
 }
 
 fn vec2_row<T: 'static + Clone + Send + Sync>(
