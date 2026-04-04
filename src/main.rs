@@ -1550,7 +1550,6 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 if !pt_collapsed.0[0] {
                     let rot_mode = &mut pt_collapsed.1;
 
-                    // Position
                     ui.horizontal(|ui| {
                         ui.label("Position");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1574,7 +1573,6 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         || self4.rebuild_meshes(gl),
                     );
 
-                    // Rotation
                     ui.horizontal(|ui| {
                         ui.label("Rotation");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1599,7 +1597,6 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         || self4.rebuild_meshes(gl),
                     );
 
-                    // Scale
                     ui.horizontal(|ui| {
                         ui.label("Scale");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1629,7 +1626,6 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         || self4.rebuild_meshes(gl),
                     );
 
-                    // Remap Data
                     ui.horizontal(|ui| {
                         let icon = if pt_collapsed.0[1] { R_ARROW } else { D_ARROW };
                         if ui.small_button(icon).clicked() {
@@ -1703,10 +1699,14 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 .add_sized([w, 20.], egui::Button::new("+ Add Data"))
                 .clicked()
             {
+                self3.add_history(editor::HistoryEntry::MeshMeta(
+                    mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_idx().unwrap())
+                ));
                 mesh.data.data.insert(
                     format!("new_data_{}", mesh.data.data.len()),
                     Default::default(),
                 );
+                self3.rebuild_meshes(gl);
             }
 
             let mut data_to_remove = None;
@@ -1762,25 +1762,44 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     ui.horizontal(|ui| {
                         let mat_label = format!("Material {}", entry.material);
                         if ui.button(mat_label).clicked() {
+                            self3.add_history(editor::HistoryEntry::MeshMeta(
+                                mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_idx().unwrap())
+                            ));
                             entry.material = (entry.material + 1) % 3;
+                            self3.rebuild_meshes(gl);
                         }
-
+                        let mut current = entry.color;
                         egui::ComboBox::from_id_salt(egui::Id::new("data_ch").with(di))
-                            .selected_text(format!("Channel {}", entry.color))
+                            .selected_text(format!("Channel {}", current))
                             .show_ui(ui, |ui| {
                                 for ch in 0u8..8 {
-                                    ui.selectable_value(&mut entry.color, ch, ch.to_string());
+                                    ui.selectable_value(&mut current, ch, ch.to_string());
                                 }
                             });
+                        if current != entry.color {
+                            self3.add_history(editor::HistoryEntry::MeshMeta(
+                                mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_idx().unwrap())
+                            ));
+                            entry.color = current;
+                            self3.rebuild_meshes(gl);
+                        }
                     });
 
                     ui.horizontal(|ui| {
                         ui.label("Texture");
-                        ui.add(
-                            egui::DragValue::new(&mut entry.texture)
+                        let mut current = entry.texture;
+                        let resp = ui.add(
+                            egui::DragValue::new(&mut current)
                                 .range(0..=255u8)
                                 .speed(1),
                         );
+                        if resp.changed() {
+                            self3.add_history(editor::HistoryEntry::MeshMeta(
+                                mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_idx().unwrap())
+                            ));
+                            entry.texture = current;
+                            self3.rebuild_meshes(gl);
+                        }
                     });
                 }
 
@@ -1788,6 +1807,9 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
 
             if let Some(key) = data_to_remove {
+                self3.add_history(editor::HistoryEntry::MeshMeta(
+                    mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_idx().unwrap())
+                ));
                 mesh.data.data.shift_remove(&key);
                 self3.rebuild_meshes(gl);
             }

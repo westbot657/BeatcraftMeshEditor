@@ -1433,6 +1433,17 @@ impl LightMesh {
         let part_names = self.parts.keys().cloned().collect();
         self.part_names = part_names;
     }
+
+    pub fn snapshot_mesh_meta(&self, idx: usize) -> LightMeshMetaSnapshot {
+        LightMeshMetaSnapshot {
+            idx,
+            credits: self.credits.clone(),
+            textures: self.textures.clone(),
+            data: self.data.clone(),
+            cull: self.cull,
+        }
+    }
+
 }
 
 impl From<crate::data::LightMeshData> for LightMesh {
