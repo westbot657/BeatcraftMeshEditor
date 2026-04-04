@@ -388,7 +388,7 @@ mod triangle_data_serde {
 
     impl From<&TriangleData> for TriData {
         fn from(t: &TriangleData) -> Self {
-            if let Some(mat) = &t.mat {
+            if let Some(mat) = &t.mat && *mat != "default" {
                 TriData::WithMat([
                     (&t.verts[0]).into(),
                     (&t.verts[1]).into(),
@@ -440,7 +440,7 @@ mod data_tests {
 
     #[test]
     fn test_deserialize() -> anyhow::Result<()> {
-        let _setup: Value = serde_json::from_str(include_str!("../test_mesh.json"))?;
+        let _setup: Value = serde_json::from_str(include_str!("../local/test_mesh.json"))?;
 
         let data = serde_json::to_string(&_setup)?;
 

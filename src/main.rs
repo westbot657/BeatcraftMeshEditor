@@ -2672,6 +2672,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let rd = RefDuper;
     let s2 = unsafe { rd.detach_mut_ref(s) };
+    let s3 = unsafe { rd.detach_mut_ref(s) };
     let self3 = unsafe { rd.detach_mut_ref(s) };
     let self4 = unsafe { rd.detach_mut_ref(s) };
 
@@ -2697,11 +2698,11 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 
     if let Selection::Vertices(verts) = &mut s2.selection
+        && let Some(vm) = s3.get_current_view_mesh()
         && let Some(part) = s.get_current_part_mut()
     {
         let rd2 = RefDuper;
         let part2 = unsafe { rd2.detach_mut_ref(part) };
-        //let tri_verts: Vec<&VertexId> = part.filter_triangle_vertices(verts).collect();
         let verts2: Vec<&VertexId> = verts.iter().collect();
         let mut values: Vec<&mut Vec3> = part.filter_non_compute_vertices(&verts2).collect();
         let w2 = (w - ui.spacing().item_spacing.x) / 2.;
@@ -2804,15 +2805,15 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         let part3 = unsafe { rd2.detach_mut_ref(part2) };
         let part4 = unsafe { rd2.detach_mut_ref(part2) };
-        let mut tris: Vec<[(&mut NormalId, &mut UvId); 3]> = part3
+        let mut tris: Vec<_> = part3
             .filter_triangles(&verts2)
             .map(|tri| {
                 let [a, b, c] = &mut tri.vertices;
-                [
+                ([
                     (&mut a.normal, &mut a.uv),
                     (&mut b.normal, &mut b.uv),
                     (&mut c.normal, &mut c.uv),
-                ]
+                ], &mut tri.material)
             })
             .collect();
 
@@ -2881,7 +2882,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             },
                         ));
                         for tri in tris.iter_mut() {
-                            *tri[idx].0 = normal.clone();
+                            *tri.0[idx].0 = normal.clone();
                         }
                         self3.rebuild_meshes(gl);
                     }
@@ -2913,9 +2914,36 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             },
                         ));
                         for tri in tris.iter_mut() {
-                            *tri[idx].1 = uv.clone();
+                            *tri.0[idx].1 = uv.clone();
                         }
                         self3.rebuild_meshes(gl);
+                    }
+                }
+            });
+            ui.label("Material");
+            ui.horizontal(|ui| {
+                let mut mat = String::new();
+                egui::ComboBox::from_id_salt("multi-material")
+                    .width(w)
+                    .show_ui(ui, |ui| {
+                        for name in vm.data.data.keys() {
+                            ui.selectable_value(&mut mat, name.to_string(), name);
+                        }
+                    });
+                if !mat.is_empty() {
+                    self3.add_history(editor::HistoryEntry::MeshPart(
+                        light_mesh::LightMeshPartSnapshot {
+                            idx: self3.get_current_mesh_idx().unwrap(),
+                            name: self3.get_current_part_name().unwrap().to_string(),
+                            part: Box::new(part.clone()),
+                        },
+                    ));
+                    for tri in tris.iter_mut() {
+                        if mat == "default" {
+                            *tri.1 = None;
+                        } else {
+                            *tri.1 = Some(mat.clone())
+                        }
                     }
                 }
             });
