@@ -919,7 +919,6 @@ impl App {
     }
 
     pub fn rebuild_meshes(&mut self, gl: &Context) {
-        // Rebuild the atlas first so UV remapping uses fresh rects.
         self.render.renderer.rebuild_atlases(gl);
         let texture_paths = self.render.renderer.texture_paths.clone();
         let atlas_map = self.render.renderer.atlas_map.clone();
@@ -1057,6 +1056,8 @@ impl App {
         if input.key_pressed(Key::I) {
             self.last_mode = self.mode;
             self.mode = EditorMode::View;
+            self.selection = Selection::None;
+            self.upload_selection_points(gl);
         }
 
         if input.key_pressed(Key::Escape) {
@@ -1069,6 +1070,8 @@ impl App {
             EditorMode::Assembly => {
                 if input.key_pressed(Key::E) {
                     self.last_mode = self.mode;
+                    self.selection = Selection::None;
+                    self.upload_selection_points(gl);
                     self.mode = EditorMode::Edit;
                     if self.editor.part.is_none()
                         && let Some(sel) = self.editor.mesh
@@ -1082,6 +1085,8 @@ impl App {
             EditorMode::Edit => {
                 if input.key_pressed(Key::E) {
                     self.last_mode = self.mode;
+                    self.selection = Selection::None;
+                    self.upload_selection_points(gl);
                     self.mode = EditorMode::Assembly;
                 }
                 if input.key_pressed(Key::A)
@@ -1095,6 +1100,8 @@ impl App {
                         self.editor.part =
                             Some(self.editor.part.map(|x| (x + l - 1) % l).unwrap_or(0));
                     }
+                    self.selection = Selection::None;
+                    self.upload_selection_points(gl);
                 }
                 if input.key_pressed(Key::D)
                     && let Some(sel) = self.editor.mesh
@@ -1110,6 +1117,8 @@ impl App {
                                 .unwrap_or(0),
                         );
                     }
+                    self.selection = Selection::None;
+                    self.upload_selection_points(gl);
                 }
                 if (input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace))
                     && let Selection::Vertices(_) = self.selection
@@ -1911,7 +1920,7 @@ impl App {
                     }
                     self.render.sel_points = Some(GpuMesh::new(
                         gl,
-                        &selected,
+                        &[],
                         &[],
                         &[],
                         &[],
@@ -1945,7 +1954,7 @@ impl App {
                     }
                     self.render.inst_points = Some(GpuMesh::new(
                         gl,
-                        &selected,
+                        &[],
                         &[],
                         &[],
                         &[],
