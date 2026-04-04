@@ -547,20 +547,44 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
         RotationDisplayMode::Euler(swizzle) => {
             let (ax, ay, az) = q.to_euler(swizzle.to_glam());
             let [n1, n2, n3] = swizzle.names();
-            let normalize_angle = |d: f32| {
+
+            let anchor_id = ui.id().with("euler_anchor");
+
+            let raw = [ax.to_degrees(), ay.to_degrees(), az.to_degrees()];
+
+            let normalize_angle = |d: f32| -> f32 {
                 let d = if d == -0.0 { 0.0 } else { d };
-                if (d - 180.0).abs() < 0.001 || (d + 180.0).abs() < 0.001 {
-                    180.0
-                } else {
-                    d
-                }
+                let d = ((d + 180.0).rem_euclid(360.0)) - 180.0;
+                if (d.abs() - 180.0).abs() < 0.001 { 180.0 } else { d }
             };
 
-            let mut degrees = [
-                normalize_angle(ax.to_degrees()),
-                normalize_angle(ay.to_degrees()),
-                normalize_angle(az.to_degrees()),
+            let candidate_a = [
+                normalize_angle(raw[0]),
+                normalize_angle(raw[1]),
+                normalize_angle(raw[2]),
             ];
+            let candidate_b = [
+                normalize_angle(raw[0] + 180.0),
+                normalize_angle(180.0 - raw[1]),
+                normalize_angle(raw[2] + 180.0),
+            ];
+
+            let anchor: [f32; 3] = ui
+                .memory(|m| m.data.get_temp(anchor_id))
+                .unwrap_or(candidate_a);
+
+            let dist = |c: &[f32; 3]| -> f32 {
+                c.iter().zip(anchor.iter()).map(|(a, b)| {
+                    let d = (a - b + 180.0).rem_euclid(360.0) - 180.0;
+                    d * d
+                }).sum()
+            };
+
+            let mut degrees = if dist(&candidate_b) < dist(&candidate_a) {
+                candidate_b
+            } else {
+                candidate_a
+            };
 
             let mut vars = HashMap::new();
             vars.insert(n1.to_string(), degrees[0]);
@@ -606,6 +630,9 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
                     );
                 }
             });
+
+            ui.memory_mut(|m| m.data.insert_temp(anchor_id, degrees));
+
             let rot = glam::EulerRot::from(*swizzle);
             *q = Quat::from_euler(
                 rot,
