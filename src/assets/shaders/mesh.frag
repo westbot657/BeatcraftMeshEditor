@@ -28,7 +28,7 @@ const int BAYER[16] = int[16](
 
 void main() {
     if (uWire != 0) {
-        fragColor = vec4(vec3(0.4), 0.4);
+        fragColor = vec4(vec3(0.4), 0.4); // 0.7,0.87,1.0,0.45
         return;
     }
     float x = gl_FragCoord.x;

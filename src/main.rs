@@ -2949,6 +2949,19 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 }
             });
         }
+
+        if !verts.is_empty()
+        && ui.add_sized([w, 20.], egui::Button::new("Dedupe Vertices")).clicked() {
+            self3.add_history(editor::HistoryEntry::MeshPart(
+                light_mesh::LightMeshPartSnapshot {
+                    idx: self3.get_current_mesh_idx().unwrap(),
+                    name: self3.get_current_part_name().unwrap().to_string(),
+                    part: Box::new(part.clone()),
+                },
+            ));
+            part.dedupe_data();
+            self3.rebuild_meshes(gl);
+        }
     }
 }
 
