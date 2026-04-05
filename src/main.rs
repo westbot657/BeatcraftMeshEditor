@@ -2945,6 +2945,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             *tri.1 = Some(mat.clone())
                         }
                     }
+                    self3.rebuild_meshes(gl);
                 }
             });
         }
