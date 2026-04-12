@@ -16,14 +16,8 @@ use crate::light_mesh::{
     LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot,
     LightMeshSnapshot, Part,
 };
-use crate::render::{GpuMesh, InstanceData, Renderer};
+use crate::render::{GpuMesh, InstanceData, LIGHT_COLORS, Renderer};
 
-pub static LIGHT_COLORS: [Vec4; 8] = [
-    Vec4::new(0.55,0.70,1.00, 1.), Vec4::new(1.00,0.25,0.35, 1.),
-    Vec4::new(0.15,0.95,0.45, 1.), Vec4::new(1.00,0.90,0.10, 1.),
-    Vec4::new(0.20,0.50,1.00, 1.), Vec4::new(0.90,0.20,1.00, 1.),
-    Vec4::new(0.10,0.95,0.95, 1.), Vec4::new(1.00,0.55,0.10, 1.)
-];
 
 #[derive(Copy, Clone)]
 pub struct Camera {
@@ -219,7 +213,7 @@ impl ViewMesh {
                         calls.push(InstanceData::new(
                             Vec4::ZERO,
                             Mat4::from_translation(pos) * Mat4::from_quat(rot),
-                            [Vec4::new(0.2, 0.2, 0.2, 1.); 8],
+                            LIGHT_COLORS,
                         ));
                         pos += placement.offset_pos;
                         rot *= placement.offset_rot;
@@ -236,7 +230,7 @@ impl ViewMesh {
         calls.push(InstanceData::new(
             Vec4::ZERO,
             Mat4::IDENTITY,
-            [Vec4::new(0.2, 0.2, 0.2, 1.); 8]
+            LIGHT_COLORS
         ));
         self.gpu_bufs.1.as_ref()
     }
@@ -402,6 +396,23 @@ pub enum Clipboard {
     Instance(Vec<(PathBuf, ViewPlacement)>),
 }
 
+#[derive(Default, PartialEq, Eq, Debug)]
+pub enum ViewStyle {
+    #[default]
+    Edit,
+    Beatcraft { blackout_sky: bool },
+}
+
+impl ViewStyle {
+    pub fn cycle(&mut self) {
+        *self = match self {
+            ViewStyle::Edit => ViewStyle::Beatcraft { blackout_sky: false },
+            ViewStyle::Beatcraft { blackout_sky: false } => ViewStyle::Beatcraft { blackout_sky: true },
+            ViewStyle::Beatcraft { blackout_sky: true } => ViewStyle::Edit
+        };
+    }
+}
+
 pub struct State {
     pub vp_rect: egui::Rect,
     pub wireframe: bool,
@@ -415,6 +426,7 @@ pub struct State {
     pub dirty: bool,
     pub gl: Arc<Context>,
     pub ui: UiState,
+    pub view_style: ViewStyle
 }
 
 pub struct PartCollapseToggles {
@@ -878,6 +890,7 @@ impl App {
                 dirty: false,
                 gl,
                 ui: UiState::default(),
+                view_style: ViewStyle::default(),
             },
             assembly: Assembly {
                 handles: Vec::new(),
@@ -1065,6 +1078,9 @@ impl App {
         }
         if input.key_pressed(Key::V) {
             self.state.show_verts = !self.state.show_verts;
+        }
+        if input.key_pressed(Key::F) {
+            self.state.view_style.cycle();
         }
         if input.key_pressed(Key::I) {
             self.last_mode = self.mode;

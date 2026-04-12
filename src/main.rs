@@ -32,7 +32,7 @@ use indexmap::map::MutableKeys;
 
 use self::data::{NormalId, UvId, VertexId};
 use self::easing::Easing;
-use self::editor::{App, RotationDisplayMode, Selection, ViewPlacement, WorkingRenameKey};
+use self::editor::{App, RotationDisplayMode, Selection, ViewPlacement, ViewStyle, WorkingRenameKey};
 use self::light_mesh::{BloomfogStyle, ComputeNormal, ComputeVertex, Part, Triangle};
 use self::renaming::light_mesh::rehash;
 use self::render::{HandleDrawCall, InstanceData, MeshDrawCall, PointDrawCall};
@@ -1183,51 +1183,33 @@ impl eframe::App for App {
                                 let view = s.ref_mut().cam().view_mat();
                                 let proj = s.ref_mut().cam().proj_mat(w, h);
 
-                                gl.clear_color(0.07, 0.08, 0.11, 1.);
+                                match s.state.view_style {
+                                    editor::ViewStyle::Beatcraft { blackout_sky: true } => {
+                                        gl.clear_color(0., 0., 0., 1.);
+                                    }
+                                    _ => {
+                                        gl.clear_color(0.07, 0.08, 0.11, 1.);
+                                        gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+                                    }
+                                }
+
                                 gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
                                 gl.enable(glow::DEPTH_TEST);
+                                gl.depth_mask(true);
 
-                                if s.state.show_grid {
-                                    let flat = s.render.renderer.flat;
-                                    gl.line_width(1.);
-                                    gl.use_program(Some(flat));
-                                    if let Some(l) = gl.get_uniform_location(flat, "uMVP") {
-                                        gl.uniform_matrix_4_f32_slice(
-                                            Some(&l),
-                                            false,
-                                            &vp.to_cols_array(),
-                                        );
-                                    }
-                                    if let Some(l) = gl.get_uniform_location(flat, "uColor") {
-                                        gl.uniform_4_f32(Some(&l), 0.27, 0.27, 0.34, 0.5);
-                                    }
-                                    gl.bind_vertex_array(Some(s.render.renderer.grid_vao));
-                                    gl.draw_arrays(glow::LINES, 0, s.render.renderer.grid_n);
-                                    gl.line_width(2.);
-                                    if let Some(l) = gl.get_uniform_location(flat, "uColor") {
-                                        gl.uniform_4_f32(Some(&l), 0.85, 0.2, 0.2, 0.9);
-                                    }
-                                    gl.bind_vertex_array(Some(s.render.renderer.axis_vao));
-                                    gl.draw_arrays(glow::LINES, 0, 2);
-                                    if let Some(l) =
-                                        gl.get_uniform_location(s.render.renderer.flat, "uColor")
-                                    {
-                                        gl.uniform_4_f32(Some(&l), 0.2, 0.45, 0.9, 0.9);
-                                    }
-                                    gl.draw_arrays(glow::LINES, 2, 2);
-                                    gl.line_width(1.);
-                                    gl.bind_vertex_array(None);
+                                if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
+                                    s.render.renderer.draw_grid(gl, &vp);
                                 }
 
                                 match s.mode {
                                     editor::EditorMode::View => {
-                                        draw_view_gl(&s, gl, &view, &proj);
+                                        draw_view_gl(&s, gl, &view, &proj, (w as i32, h as i32));
                                     }
                                     editor::EditorMode::Assembly => {
-                                        draw_assembly_gl(&s, gl, &view, &proj);
+                                        draw_assembly_gl(&s, gl, &view, &proj, (w as i32, h as i32));
                                     }
                                     editor::EditorMode::Edit => {
-                                        draw_edit_gl(&s, gl, &view, &proj);
+                                        draw_edit_gl(&s, gl, &view, &proj, (w as i32, h as i32));
                                     }
                                 }
                             }
@@ -1506,7 +1488,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4) {
+fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32)) {
     let mut calls = Vec::new();
     for vm in s.view.meshes.iter() {
         let mut draws = Vec::new();
@@ -1518,7 +1500,14 @@ fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
             })
         }
     }
-    s.render.renderer.draw_meshes(gl, view, proj, &calls);
+    match s.state.view_style {
+        editor::ViewStyle::Edit => {
+            s.render.renderer.draw_meshes(gl, view, proj, &calls);
+        }
+        editor::ViewStyle::Beatcraft { .. } => {
+            s.ref_mut().render.renderer.draw_meshes_fancy(gl, view, proj, &calls, window, s.state.show_grid);
+        }
+    }
 }
 
 fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
@@ -2042,22 +2031,39 @@ fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4) {
+fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32)) {
     let vp = proj * view;
     if let Some(sel) = s.editor.mesh
         && let Some(mesh) = s.view.meshes.get(sel)
     {
         let mut instances = Vec::new();
         if let Some(mesh) = mesh.render_assembly(&mut instances) {
-            s.render.renderer.draw_meshes(
-                gl,
-                view, proj,
-                &[MeshDrawCall {
-                    mesh,
-                    instances: instances.clone(),
-                    wireframe: s.state.wireframe,
-                }],
-            );
+            match s.state.view_style {
+                editor::ViewStyle::Edit => {
+                    s.render.renderer.draw_meshes(
+                        gl,
+                        view, proj,
+                        &[MeshDrawCall {
+                            mesh,
+                            instances: instances.clone(),
+                            wireframe: s.state.wireframe,
+                        }],
+                    );
+                }
+                editor::ViewStyle::Beatcraft { .. } => {
+                    s.ref_mut().render.renderer.draw_meshes_fancy(
+                        gl,
+                        view, proj,
+                        &[MeshDrawCall {
+                            mesh,
+                            instances: instances.clone(),
+                            wireframe: s.state.wireframe,
+                        }],
+                        window,
+                        s.state.show_grid
+                    );
+                }
+            }
         }
         if s.state.show_verts
             && let Some(handles) = mesh.gpu_bufs.2.as_ref()
@@ -2976,7 +2982,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4) {
+fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32)) {
     let vp = proj * view;
     if let Some((_, name, _part)) = s.get_current_part()
         && let Some(sel) = s.editor.mesh
@@ -2993,7 +2999,14 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
             wireframe: s.state.wireframe,
         }];
 
-        s.render.renderer.draw_meshes(gl, view, proj, &calls);
+        match s.state.view_style {
+            editor::ViewStyle::Edit => {
+                s.render.renderer.draw_meshes(gl, view, proj, &calls);
+            }
+            editor::ViewStyle::Beatcraft { .. } => {
+                s.ref_mut().render.renderer.draw_meshes_fancy(gl, view, proj, &calls, window, s.state.show_grid);
+            }
+        }
 
         let mut calls = Vec::new();
         if s.state.show_verts {

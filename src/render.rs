@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::f32;
 use std::path::{Path, PathBuf};
 
 use eframe::glow::{self, HasContext};
-use glam::{FloatExt, IVec3, Mat3, Mat4, Vec2, Vec3, Vec4};
+use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 
+use crate::RefDuper;
 use crate::data::MaterialData;
 use crate::light_mesh::{LightMesh, Part, Triangle, Vertex};
 
@@ -210,7 +212,6 @@ impl GpuMesh {
             return;
         }
         unsafe {
-            renderer.set_int(gl, renderer.mesh, "u_render_mode", 1);
             gl.bind_vertex_array(Some(self.vao));
             Self::upload_instances(gl, self.instance_vbo, instances);
             let n = instances.len() as i32;
@@ -568,8 +569,10 @@ pub struct Renderer {
     pub handles: glow::NativeProgram,
     pub handle_points: glow::NativeProgram,
     pub grid_vao: glow::NativeVertexArray,
+    pub gvbo: glow::NativeBuffer,
     pub grid_n: i32,
     pub axis_vao: glow::NativeVertexArray,
+    pub avbo: glow::NativeBuffer,
     pub blue_noise: glow::NativeTexture,
     pub missing_texture: glow::NativeTexture,
     /// maps a texture id ('beatcraft:textures/...') to a real path.
@@ -578,6 +581,7 @@ pub struct Renderer {
     pub atlas: Option<glow::NativeTexture>,
     /// maps a path to its UV rect (x0, y0, x1, y1) within the atlas
     pub atlas_map: HashMap<PathBuf, Vec4>,
+    pub bloomfog: BloomfogRenderer,
 }
 
 impl Renderer {
@@ -738,12 +742,12 @@ impl Renderer {
                 gl.tex_parameter_i32(
                     glow::TEXTURE_2D,
                     glow::TEXTURE_MIN_FILTER,
-                    glow::LINEAR as i32,
+                    glow::NEAREST as i32,
                 );
                 gl.tex_parameter_i32(
                     glow::TEXTURE_2D,
                     glow::TEXTURE_MAG_FILTER,
-                    glow::LINEAR as i32,
+                    glow::NEAREST as i32,
                 );
                 gl.tex_image_2d(
                     glow::TEXTURE_2D,
@@ -766,13 +770,16 @@ impl Renderer {
                 handles,
                 handle_points,
                 grid_vao,
+                gvbo,
                 grid_n,
                 axis_vao,
+                avbo,
                 blue_noise,
                 missing_texture,
                 texture_paths: HashMap::new(),
                 atlas: None,
                 atlas_map: HashMap::new(),
+                bloomfog: BloomfogRenderer::new(gl)?
             })
         }
     }
@@ -884,15 +891,69 @@ impl Renderer {
         }
     }
 
+    pub fn draw_grid(
+        &self,
+        gl: &glow::Context,
+        vp: &Mat4
+    ) {
+        unsafe {
+            let flat = self.flat;
+            gl.line_width(1.);
+            gl.use_program(Some(flat));
+            if let Some(l) = gl.get_uniform_location(flat, "uMVP") {
+                gl.uniform_matrix_4_f32_slice(
+                    Some(&l),
+                    false,
+                    &vp.to_cols_array(),
+                );
+            }
+            if let Some(l) = gl.get_uniform_location(flat, "uColor") {
+                gl.uniform_4_f32(Some(&l), 0.27, 0.27, 0.34, 0.5);
+            }
+            gl.bind_vertex_array(Some(self.grid_vao));
+            gl.draw_arrays(glow::LINES, 0, self.grid_n);
+            gl.line_width(2.);
+            if let Some(l) = gl.get_uniform_location(flat, "uColor") {
+                gl.uniform_4_f32(Some(&l), 0.85, 0.2, 0.2, 0.9);
+            }
+            gl.bind_vertex_array(Some(self.axis_vao));
+            gl.draw_arrays(glow::LINES, 0, 2);
+            if let Some(l) =
+                gl.get_uniform_location(self.flat, "uColor")
+            {
+                gl.uniform_4_f32(Some(&l), 0.2, 0.45, 0.9, 0.9);
+            }
+            gl.draw_arrays(glow::LINES, 2, 2);
+            gl.line_width(1.);
+            gl.bind_vertex_array(None);
+        }
+    }
+
+    pub fn draw_meshes_fancy(
+        &mut self,
+        gl: &glow::Context,
+        view: &Mat4,
+        proj: &Mat4,
+        calls: &[MeshDrawCall<'_>],
+        window: (i32, i32),
+        draw_grid: bool,
+    ) {
+        let rd = RefDuper;
+        let self2 = unsafe { rd.detach_ref(self) };
+        self.bloomfog.draw_meshes(self2, gl, view, proj, calls, window, draw_grid);
+    }
+
     pub fn draw_meshes(&self, gl: &glow::Context, view: &Mat4, proj: &Mat4, calls: &[MeshDrawCall<'_>]) {
         unsafe {
             gl.use_program(Some(self.mesh));
+            self.set_int(gl, self.mesh, "passType", 0);
             self.set_mat4(gl, self.mesh, "u_view", view);
             self.set_mat4(gl, self.mesh, "u_projection", proj);
             let tex = self.atlas.or(Some(self.missing_texture));
             self.set_sampler(gl, self.mesh, "u_texture", tex, 0);
             self.set_sampler(gl, self.mesh, "u_noise", Some(self.blue_noise), 1);
             for call in calls {
+                self.set_int(gl, self.mesh, "u_render_mode", 1);
                 call.mesh
                     .draw_tris(gl, &call.instances, call.wireframe, self);
             }
@@ -970,6 +1031,13 @@ impl Renderer {
             }
         }
     }
+    fn set_vec2(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec2) {
+        unsafe {
+            if let Some(l) = gl.get_uniform_location(prog, name) {
+                gl.uniform_2_f32(Some(&l), v.x, v.y);
+            }
+        }
+    }
     fn set_int(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: i32) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
@@ -978,3 +1046,471 @@ impl Renderer {
         }
     }
 }
+
+struct RenderTarget {
+    fbo: glow::NativeFramebuffer,
+    color: glow::NativeTexture,
+    depth: glow::NativeTexture,
+    size: (i32, i32),
+}
+
+impl RenderTarget {
+    pub fn new(gl: &glow::Context, width: i32, height: i32) -> Self {
+        unsafe {
+            let fbo = gl.create_framebuffer().unwrap();
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+
+            let color = gl.create_texture().unwrap();
+            gl.bind_texture(glow::TEXTURE_2D, Some(color));
+            gl.tex_image_2d(
+                glow::TEXTURE_2D, 0,
+                glow::RGBA as i32,
+                width, height, 0,
+                glow::RGBA, glow::UNSIGNED_BYTE,
+                glow::PixelUnpackData::Slice(None),
+            );
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
+            gl.framebuffer_texture_2d(
+                glow::FRAMEBUFFER, glow::COLOR_ATTACHMENT0,
+                glow::TEXTURE_2D, Some(color), 0,
+            );
+
+            let depth = gl.create_texture().unwrap();
+            gl.bind_texture(glow::TEXTURE_2D, Some(depth));
+            gl.tex_image_2d(
+                glow::TEXTURE_2D, 0,
+                glow::DEPTH_COMPONENT24 as i32,
+                width, height, 0,
+                glow::DEPTH_COMPONENT, glow::UNSIGNED_INT,
+                glow::PixelUnpackData::Slice(None),
+            );
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+            gl.framebuffer_texture_2d(
+                glow::FRAMEBUFFER, glow::DEPTH_ATTACHMENT,
+                glow::TEXTURE_2D, Some(depth), 0,
+            );
+
+            assert_eq!(
+                gl.check_framebuffer_status(glow::FRAMEBUFFER),
+                glow::FRAMEBUFFER_COMPLETE,
+                "framebuffer incomplete"
+            );
+
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            gl.bind_texture(glow::TEXTURE_2D, None);
+
+            Self { fbo, color, depth, size: (width, height) }
+        }
+    }
+
+    pub fn resize(&mut self, gl: &glow::Context, width: i32, height: i32) {
+        self.size = (width, height);
+        unsafe {
+            gl.bind_texture(glow::TEXTURE_2D, Some(self.color));
+            gl.tex_image_2d(
+                glow::TEXTURE_2D, 0,
+                glow::RGBA as i32,
+                width, height, 0,
+                glow::RGBA, glow::UNSIGNED_BYTE,
+                glow::PixelUnpackData::Slice(None),
+            );
+
+            gl.bind_texture(glow::TEXTURE_2D, Some(self.depth));
+            gl.tex_image_2d(
+                glow::TEXTURE_2D, 0,
+                glow::DEPTH_COMPONENT24 as i32,
+                width, height, 0,
+                glow::DEPTH_COMPONENT, glow::UNSIGNED_INT,
+                glow::PixelUnpackData::Slice(None),
+            );
+
+            gl.bind_texture(glow::TEXTURE_2D, None);
+        }
+    }
+
+    pub fn bind(&self, gl: &glow::Context) {
+        unsafe {
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.fbo));
+            gl.viewport(0, 0, self.size.0, self.size.1);
+        }
+    }
+
+    pub fn unbind(&self, gl: &glow::Context) {
+        unsafe {
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+        }
+    }
+
+    pub fn destroy(self, gl: &glow::Context) {
+        unsafe {
+            gl.delete_texture(self.color);
+            gl.delete_texture(self.depth);
+            gl.delete_framebuffer(self.fbo);
+        }
+    }
+}
+
+pub struct BloomfogRenderer {
+    framebuffer: RenderTarget,
+    extra_buffer: RenderTarget,
+    blurred_buffer: RenderTarget,
+    bloom_input: RenderTarget,
+    bloom_swap: RenderTarget,
+    bloom_output: RenderTarget,
+    light_depth: RenderTarget,
+    pyramid_buffers: [RenderTarget; 7],
+    blur_down: glow::NativeProgram,
+    blur_up: glow::NativeProgram,
+    gaussian_v: glow::NativeProgram,
+    gaussian_h: glow::NativeProgram,
+    blue_noise: glow::NativeProgram,
+    blit: glow::NativeProgram,
+    comp: glow::NativeProgram,
+    vao: glow::VertexArray,
+    vbo: glow::Buffer,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum PassType {
+    DownSample,
+    UpSample,
+    GaussianV,
+    GaussianH,
+    BlueNoise,
+    Blit,
+    Comp,
+}
+
+impl BloomfogRenderer {
+    pub fn new(gl: &glow::Context) -> Result<Self, String> {
+
+        let blur_vsh = include_str!("assets/shaders/core/bloomfog_blur.vsh");
+
+        let blur_down = Renderer::compile_shader(gl,
+            blur_vsh,
+            include_str!("assets/shaders/core/bloomfog_downsample.fsh")
+        )?;
+        let blur_up = Renderer::compile_shader(gl,
+            blur_vsh,
+            include_str!("assets/shaders/core/bloomfog_upsample.fsh")
+        )?;
+        let gaussian_v = Renderer::compile_shader(gl,
+            blur_vsh,
+            include_str!("assets/shaders/core/gaussian_v.fsh")
+        )?;
+        let gaussian_h = Renderer::compile_shader(gl,
+            blur_vsh,
+            include_str!("assets/shaders/core/gaussian_h.fsh")
+        )?;
+        let blue_noise = Renderer::compile_shader(gl,
+            blur_vsh,
+            include_str!("assets/shaders/core/blue_noise.fsh")
+        )?;
+        let blit = Renderer::compile_shader(gl,
+            include_str!("assets/shaders/core/beatcraft_blit.vsh"),
+            include_str!("assets/shaders/core/beatcraft_blit.fsh")
+        )?;
+        let comp = Renderer::compile_shader(gl,
+            blur_vsh,
+            include_str!("assets/shaders/core/composite.fsh")
+        )?;
+
+        unsafe {
+            let vao = gl.create_vertex_array()?;
+            gl.bind_vertex_array(Some(vao));
+            let vbo = gl.create_buffer()?;
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+            let stride = (3 + 2 + 4) * 4;
+            gl.enable_vertex_attrib_array(0);
+            gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, stride, 0);
+            gl.enable_vertex_attrib_array(1);
+            gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, stride, 3 * 4);
+            gl.enable_vertex_attrib_array(2);
+            gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, stride, 5 * 4);
+            gl.bind_vertex_array(None);
+
+            Ok(Self {
+                framebuffer: RenderTarget::new(gl, 1920, 1080),
+                extra_buffer: RenderTarget::new(gl, 1920, 1080),
+                blurred_buffer: RenderTarget::new(gl, 1920, 1080),
+                bloom_input: RenderTarget::new(gl, 1920, 1080),
+                bloom_swap: RenderTarget::new(gl, 1920, 1080),
+                bloom_output: RenderTarget::new(gl, 1920, 1080),
+                light_depth: RenderTarget::new(gl, 1920, 1080),
+                pyramid_buffers: [
+                    RenderTarget::new(gl, 512, 512),
+                    RenderTarget::new(gl, 512, 512),
+                    RenderTarget::new(gl, 512, 512),
+                    RenderTarget::new(gl, 512, 512),
+                    RenderTarget::new(gl, 512, 512),
+                    RenderTarget::new(gl, 512, 512),
+                    RenderTarget::new(gl, 512, 512),
+                ],
+                blur_down,
+                blur_up,
+                gaussian_v,
+                gaussian_h,
+                blue_noise,
+                blit,
+                comp,
+                vao,
+                vbo,
+            })
+        }
+    }
+
+    pub fn resize(&mut self, gl: &glow::Context, window: (i32, i32)) {
+        self.framebuffer.resize(gl, window.0*2, window.1*2);
+        self.blurred_buffer.resize(gl, window.0*2, window.1*2);
+        self.extra_buffer.resize(gl, window.0*2, window.1*2);
+        self.bloom_input.resize(gl, window.0, window.1);
+        self.bloom_swap.resize(gl, window.0, window.1);
+        self.bloom_output.resize(gl, window.0, window.1);
+        self.light_depth.resize(gl, window.0, window.1);
+
+        let mut md = 2.;
+        for rt in self.pyramid_buffers.iter_mut() {
+            if window.0 as f32 / md > 0. && window.1 as f32 / md > 0. {
+                rt.resize(gl, (window.0 as f32 * 2. / md) as i32, (window.1 as f32 * 2. / md) as i32);
+            }
+            md *= 2.;
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_meshes(
+        &mut self,
+        renderer: &Renderer,
+        gl: &glow::Context,
+        view: &Mat4,
+        proj: &Mat4,
+        calls: &[MeshDrawCall<'_>],
+        window: (i32, i32),
+        draw_grid: bool,
+    ) {
+        unsafe {
+            // pre-render beatmaps
+            // render bloomfog
+
+            let mut saved_vp = [0i32; 4];
+            gl.get_parameter_i32_slice(glow::VIEWPORT, &mut saved_vp);
+
+            if window != self.bloom_input.size {
+                self.resize(gl, window);
+            }
+            gl.disable(glow::SCISSOR_TEST);
+
+            self.framebuffer.bind(gl);
+            // gl.blend_func_separate(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA, glow::ONE, glow::ZERO);
+            //gl.clear_color(0., 0., 0., 0.);
+            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+            self.render_bloomfog(renderer, gl, view, proj, calls);
+            gl.depth_mask(false);
+
+            self.apply_pyramid_blur(renderer, gl, window);
+
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
+            self.apply_effect_pass(renderer, gl, &self.blurred_buffer, None, PassType::Blit, false, true, window, 11., 2.);
+            gl.depth_mask(true);
+
+            if draw_grid {
+                renderer.draw_grid(gl, &(*proj * *view));
+            }
+            // render mirrored?
+            // render HUD
+            // render beatmaps
+            //   draw mirrors
+            //   draw maps
+            //     bloomfogPosCol
+            //     envLights
+            self.render_solid(renderer, gl, view, proj, calls);
+            //     floor1
+            //     floorLights
+            //     obstacles
+            // render debug
+            // render particles
+            // render sabers
+            // render smoke
+            // render bloom
+            //
+            gl.enable(glow::SCISSOR_TEST);
+        }
+    }
+
+    fn render_bloomfog(
+        &mut self,
+        renderer: &Renderer,
+        gl: &glow::Context,
+        view: &Mat4,
+        proj: &Mat4,
+        calls: &[MeshDrawCall<'_>],
+    ) {
+        unsafe {
+            let cam_pos = view.inverse().transform_point3(Vec3::ZERO);
+            let cam_rot = Quat::from_mat4(view);
+
+            // TODO: conditionally enable clipping plane
+            gl.enable(glow::CLIP_DISTANCE0);
+
+            // TODO: re-set instance divisor?
+
+            gl.use_program(Some(renderer.mesh));
+            renderer.set_mat4(gl, renderer.mesh, "u_view", view);
+            renderer.set_mat4(gl, renderer.mesh, "u_projection", proj);
+            let tex = renderer.atlas.or(Some(renderer.missing_texture));
+            renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
+            renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.extra_buffer.color), 1);
+            renderer.set_int(gl, renderer.mesh, "passType", 2);
+            renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(-50., -30.));
+
+            let mut world_transform = Mat4::from_translation(cam_pos);
+            world_transform *= Mat4::from_quat(cam_rot.conjugate());
+            renderer.set_mat4(gl, renderer.mesh, "world_transform", &world_transform);
+            for call in calls.iter() {
+                gl.bind_vertex_array(Some(call.mesh.vao));
+                renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
+                call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer);
+            }
+
+            gl.disable(glow::CLIP_DISTANCE0);
+            gl.use_program(None);
+        }
+    }
+
+    fn render_solid(
+        &mut self,
+        renderer: &Renderer,
+        gl: &glow::Context,
+        view: &Mat4,
+        proj: &Mat4,
+        calls: &[MeshDrawCall<'_>],
+    ) {
+        unsafe {
+            let cam_pos = view.inverse().transform_point3(Vec3::ZERO);
+            let cam_rot = Quat::from_mat4(view);
+
+            // TODO: conditionally enable clipping plane
+            gl.enable(glow::CLIP_DISTANCE0);
+
+            // TODO: re-set instance divisor?
+
+            gl.use_program(Some(renderer.mesh));
+            renderer.set_mat4(gl, renderer.mesh, "u_view", view);
+            renderer.set_mat4(gl, renderer.mesh, "u_projection", proj);
+            let tex = renderer.atlas.or(Some(renderer.missing_texture));
+            renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
+            renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.blurred_buffer.color), 1);
+            renderer.set_int(gl, renderer.mesh, "passType", 0);
+            renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(-50., -30.));
+
+            let mut world_transform = Mat4::from_translation(cam_pos);
+            world_transform *= Mat4::from_quat(cam_rot.conjugate());
+            renderer.set_mat4(gl, renderer.mesh, "world_transform", &world_transform);
+            for call in calls.iter() {
+                gl.bind_vertex_array(Some(call.mesh.vao));
+                renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
+                call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer);
+            }
+
+            gl.disable(glow::CLIP_DISTANCE0);
+            gl.use_program(None);
+        }
+    }
+
+    fn apply_pyramid_blur(&self, renderer: &Renderer, gl: &glow::Context, window: (i32, i32)) {
+        let quad_size = 1.;
+
+        // self.apply_effect_pass(renderer, gl, &self.framebuffer, Some(&self.extra_buffer), PassType::GaussianV, true, true, window, 11., quad_size);
+        // self.apply_effect_pass(renderer, gl, &self.extra_buffer, Some(&self.blurred_buffer), PassType::GaussianH, true, true, window, 11., quad_size);
+
+        let mut current = &self.framebuffer;
+        for l in 0..7 {
+            self.apply_effect_pass(renderer, gl, current, Some(&self.pyramid_buffers[l]), PassType::DownSample, true, true, window, 11., quad_size);
+            current = &self.pyramid_buffers[l];
+        }
+
+        self.apply_effect_pass(renderer, gl, current, Some(&self.extra_buffer), PassType::UpSample, true, true, window, 11., quad_size);
+        self.apply_effect_pass(renderer, gl, &self.extra_buffer, Some(&self.framebuffer), PassType::GaussianV, true, true, window, 11., quad_size);
+        self.apply_effect_pass(renderer, gl, &self.framebuffer, Some(&self.extra_buffer), PassType::GaussianH, true, true, window, 11., quad_size);
+        self.apply_effect_pass(renderer, gl, &self.extra_buffer, Some(&self.blurred_buffer), PassType::BlueNoise, false, true, window, 11., quad_size);
+
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn apply_effect_pass(
+        &self,
+        renderer: &Renderer,
+        gl: &glow::Context,
+        input: &RenderTarget,
+        output: Option<&RenderTarget>,
+        pass: PassType,
+        linear: bool,
+        clear_output: bool,
+        window: (i32, i32),
+        radius: f32,
+        quad_size: f32,
+    ) {
+        unsafe {
+            if let Some(output) = output {
+                output.bind(gl);
+                if clear_output {
+                    gl.clear_color(0., 0., 0., 0.);
+                    gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+                }
+            }
+
+            let shader = match pass {
+                PassType::DownSample => self.blur_down,
+                PassType::UpSample => self.blur_up,
+                PassType::GaussianV => self.gaussian_v,
+                PassType::GaussianH => self.gaussian_h,
+                PassType::BlueNoise => self.blue_noise,
+                PassType::Blit => self.blit,
+                PassType::Comp => self.comp,
+            };
+
+            gl.use_program(Some(shader));
+            renderer.set_sampler(gl, shader, "Sampler0", Some(input.color), 0);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, if linear { glow::LINEAR } else { glow::NEAREST } as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, if linear { glow::LINEAR } else { glow::NEAREST } as i32);
+            if pass == PassType::BlueNoise {
+                renderer.set_sampler(gl, shader, "Sampler1", Some(renderer.blue_noise), 1);
+                renderer.set_vec2(gl, shader, "texelSize", Vec2::new(512. / window.0 as f32, 512. / window.1 as f32));
+            }
+            else if pass == PassType::Comp {
+                renderer.set_sampler(gl, shader, "Sampler1", None, 1);
+            }
+            else {
+                renderer.set_vec2(gl, shader, "texelSize", Vec2::new(radius / window.0 as f32, radius / window.1 as f32));
+            }
+
+            let rg = 2./255.;
+
+            let data: [f32; 54] = [
+                -quad_size, -quad_size, 0.,  0., 0., rg, rg, 0., 1.,
+                 quad_size, -quad_size, 0.,  1., 0., rg, rg, 0., 1.,
+                 quad_size,  quad_size, 0.,  1., 1., rg, rg, 0., 1.,
+
+                -quad_size, -quad_size, 0.,  0., 0., rg, rg, 0., 1.,
+                 quad_size,  quad_size, 0.,  1., 1., rg, rg, 0., 1.,
+                -quad_size,  quad_size, 0.,  0., 1., rg, rg, 0., 1.,
+            ];
+            gl.bind_vertex_array(Some(self.vao));
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(&data),
+                glow::DYNAMIC_DRAW
+            );
+            gl.draw_arrays(glow::TRIANGLES, 0, 6);
+            gl.bind_vertex_array(None);
+        }
+    }
+
+}
+
