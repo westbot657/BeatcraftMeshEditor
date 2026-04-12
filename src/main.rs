@@ -26,7 +26,7 @@ use std::sync::{Arc, mpsc};
 
 use eframe::glow::{self, HasContext};
 use egui::{Align2, Frame, Sense, Ui};
-use glam::{Mat4, Quat, Vec2, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 
@@ -1180,6 +1180,8 @@ impl eframe::App for App {
                                 let w = rect.width();
                                 let h = rect.height();
                                 let vp = s.ref_mut().cam().vp(w, h);
+                                let view = s.ref_mut().cam().view_mat();
+                                let proj = s.ref_mut().cam().proj_mat(w, h);
 
                                 gl.clear_color(0.07, 0.08, 0.11, 1.);
                                 gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
@@ -1219,13 +1221,13 @@ impl eframe::App for App {
 
                                 match s.mode {
                                     editor::EditorMode::View => {
-                                        draw_view_gl(&s, gl, &vp);
+                                        draw_view_gl(&s, gl, &view, &proj);
                                     }
                                     editor::EditorMode::Assembly => {
-                                        draw_assembly_gl(&s, gl, &vp);
+                                        draw_assembly_gl(&s, gl, &view, &proj);
                                     }
                                     editor::EditorMode::Edit => {
-                                        draw_edit_gl(&s, gl, &vp);
+                                        draw_edit_gl(&s, gl, &view, &proj);
                                     }
                                 }
                             }
@@ -1504,7 +1506,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
+fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4) {
     let mut calls = Vec::new();
     for vm in s.view.meshes.iter() {
         let mut draws = Vec::new();
@@ -1516,7 +1518,7 @@ fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
             })
         }
     }
-    s.render.renderer.draw_meshes(gl, vp, &calls);
+    s.render.renderer.draw_meshes(gl, view, proj, &calls);
 }
 
 fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
@@ -2040,7 +2042,8 @@ fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
+fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4) {
+    let vp = proj * view;
     if let Some(sel) = s.editor.mesh
         && let Some(mesh) = s.view.meshes.get(sel)
     {
@@ -2048,7 +2051,7 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
         if let Some(mesh) = mesh.render_assembly(&mut instances) {
             s.render.renderer.draw_meshes(
                 gl,
-                vp,
+                view, proj,
                 &[MeshDrawCall {
                     mesh,
                     instances: instances.clone(),
@@ -2061,10 +2064,14 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
         {
             s.render.renderer.draw_handles(
                 gl,
-                vp,
+                &vp,
                 &[HandleDrawCall {
                     mesh: handles,
-                    instances: vec![InstanceData::new(Mat4::IDENTITY, 0.5, Some([1., 1., 1.]))],
+                    instances: vec![InstanceData::new(
+                        Vec4::ZERO,
+                        Mat4::IDENTITY,
+                        [Vec4::splat(1.); 8]
+                    )],
                 }],
             );
         }
@@ -2074,13 +2081,17 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
         if let Some(selected) = s.render.inst_points.as_ref() {
             calls.push(PointDrawCall {
                 mesh: selected,
-                instances: vec![InstanceData::new(Mat4::IDENTITY, 1., Some([1., 1., 1.]))],
+                instances: vec![InstanceData::new(
+                    Vec4::ZERO,
+                    Mat4::IDENTITY,
+                    [Vec4::splat(1.); 8]
+                )],
                 size: 6.,
             });
         }
 
         if !calls.is_empty() {
-            s.render.renderer.draw_points_batch(gl, vp, &calls);
+            s.render.renderer.draw_points_batch(gl, &vp, &calls);
         }
     }
 }
@@ -2965,7 +2976,8 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
+fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4) {
+    let vp = proj * view;
     if let Some((_, name, _part)) = s.get_current_part()
         && let Some(sel) = s.editor.mesh
         && let Some(mesh) = s.view.meshes.get(sel)
@@ -2973,17 +2985,25 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
     {
         let calls = vec![MeshDrawCall {
             mesh,
-            instances: vec![InstanceData::new(Mat4::IDENTITY, 1., Some([0.2, 0.2, 0.2]))],
+            instances: vec![InstanceData::new(
+                Vec4::ZERO,
+                Mat4::IDENTITY,
+                [Vec4::new(0.2, 0.2, 0.2, 1.); 8]
+            )],
             wireframe: s.state.wireframe,
         }];
 
-        s.render.renderer.draw_meshes(gl, vp, &calls);
+        s.render.renderer.draw_meshes(gl, view, proj, &calls);
 
         let mut calls = Vec::new();
         if s.state.show_verts {
             calls.push(PointDrawCall {
                 mesh,
-                instances: vec![InstanceData::new(Mat4::IDENTITY, 1., Some([0., 1., 1.]))],
+                instances: vec![InstanceData::new(
+                    Vec4::ZERO,
+                    Mat4::IDENTITY,
+                    [Vec4::new(0., 1., 1., 1.); 8]
+                )],
                 size: 2.5,
             });
         }
@@ -2991,13 +3011,17 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, vp: &Mat4) {
         if let Some(selected) = s.render.sel_points.as_ref() {
             calls.push(PointDrawCall {
                 mesh: selected,
-                instances: vec![InstanceData::new(Mat4::IDENTITY, 1., Some([1., 1., 0.]))],
+                instances: vec![InstanceData::new(
+                    Vec4::ZERO,
+                    Mat4::IDENTITY,
+                    [Vec4::new(1., 1., 0., 1.); 8]
+                )],
                 size: 4.,
             });
         }
 
         if !calls.is_empty() {
-            s.render.renderer.draw_points_batch(gl, vp, &calls);
+            s.render.renderer.draw_points_batch(gl, &vp, &calls);
         }
     }
 }

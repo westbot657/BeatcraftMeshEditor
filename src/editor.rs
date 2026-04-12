@@ -18,6 +18,13 @@ use crate::light_mesh::{
 };
 use crate::render::{GpuMesh, InstanceData, Renderer};
 
+pub static LIGHT_COLORS: [Vec4; 8] = [
+    Vec4::new(0.55,0.70,1.00, 1.), Vec4::new(1.00,0.25,0.35, 1.),
+    Vec4::new(0.15,0.95,0.45, 1.), Vec4::new(1.00,0.90,0.10, 1.),
+    Vec4::new(0.20,0.50,1.00, 1.), Vec4::new(0.90,0.20,1.00, 1.),
+    Vec4::new(0.10,0.95,0.95, 1.), Vec4::new(1.00,0.55,0.10, 1.)
+];
+
 #[derive(Copy, Clone)]
 pub struct Camera {
     pub target: Vec3,
@@ -189,28 +196,30 @@ impl ViewMesh {
         let full = self
             .gpu_bufs
             .1
-            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[], &[]));
+            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[]));
         full.set_from_full_light_mesh(gl, &self.data, texture_paths, atlas_map);
         let handles = self
             .gpu_bufs
             .2
-            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[], &[], &[]));
+            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[]));
         handles.points_from_light_mesh(gl, &self.data);
     }
 
     pub fn render_view_placements(&self, calls: &mut Vec<InstanceData>) -> Option<&GpuMesh> {
         if self.visible {
             if self.view_placements.is_empty() {
-                calls.push(InstanceData::new(Mat4::IDENTITY, 1., Some([0.2, 0.2, 0.2])));
+                calls.push(InstanceData::new(
+                    Vec4::ZERO, Mat4::IDENTITY, [Vec4::new(0., 0., 0., 1.); 8]
+                ));
             } else {
                 for placement in self.view_placements.iter() {
                     let mut pos = placement.position;
                     let mut rot = placement.rotation;
                     for _ in 0..placement.count {
                         calls.push(InstanceData::new(
+                            Vec4::ZERO,
                             Mat4::from_translation(pos) * Mat4::from_quat(rot),
-                            1.,
-                            Some([0.2, 0.2, 0.2]),
+                            [Vec4::new(0.2, 0.2, 0.2, 1.); 8],
                         ));
                         pos += placement.offset_pos;
                         rot *= placement.offset_rot;
@@ -224,7 +233,11 @@ impl ViewMesh {
     }
 
     pub fn render_assembly(&self, calls: &mut Vec<InstanceData>) -> Option<&GpuMesh> {
-        calls.push(InstanceData::new(Mat4::IDENTITY, 1., Some([0.2, 0.2, 0.2])));
+        calls.push(InstanceData::new(
+            Vec4::ZERO,
+            Mat4::IDENTITY,
+            [Vec4::new(0.2, 0.2, 0.2, 1.); 8]
+        ));
         self.gpu_bufs.1.as_ref()
     }
 
@@ -1923,10 +1936,7 @@ impl App {
                         &[],
                         &[],
                         &[],
-                        &[],
                         &selected,
-                        &[],
-                        &[],
                     ));
                 }
             }
@@ -1957,10 +1967,7 @@ impl App {
                         &[],
                         &[],
                         &[],
-                        &[],
                         &selected,
-                        &[],
-                        &[],
                     ));
                 }
             }
