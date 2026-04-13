@@ -298,18 +298,6 @@ pub struct EnvPlacementData {
     pub type_data: TypeData,
 }
 
-impl From<ViewPlacement> for EnvPlacementData {
-    fn from(value: ViewPlacement) -> Self {
-        Self {
-            position: value.position,
-            rotation: value.rotation,
-            count: value.count,
-            offset: value.offset_pos,
-            rotation_offset: value.offset_rot,
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum EnvMeshData {
@@ -348,20 +336,63 @@ impl From<Camera> for CameraData {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub enum TowerStyle {
+    #[default]
+    #[serde(rename = "cuboid")]
+    Cuboid,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SpectrogramData {
+    #[serde(skip_serializing_if = "is_vec_zero")]
+    pub position: Vec3,
+    #[serde(skip_serializing_if = "is_quat_identity")]
+    pub rotation: Quat,
+    #[serde(skip_serializing_if = "is_vec_zero")]
+    pub offset: Vec3,
+    pub count: u32,
+    pub style: TowerStyle,
+    #[serde(rename="half-split", default = "b_true")]
+    pub half_split: bool,
+}
+
+const fn b_true() -> bool {
+    true
+}
+
+fn is_vec_zero(v: &Vec3) -> bool {
+    *v == Vec3::ZERO
+}
+
+fn is_quat_identity(q: &Quat) -> bool {
+    q.is_near_identity()
+}
+
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct EnvData {
-    layout: IndexMap<String, EnvMeshData>
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub layout: IndexMap<String, EnvMeshData>,
+    pub mirror: Option<String>,
+    #[serde(rename = "fog-heights", skip_serializing_if = "Option::is_none")]
+    pub fog_heights: Option<[f32; 2]>,
+    pub spectrogram: Option<SpectrogramData>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SessionData {
     pub env_path: PathBuf,
-    pub env: Option<EnvData>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub mesh_paths: HashMap<String, PathBuf>,
     pub camera: CameraData,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub texture_paths: HashMap<String, PathBuf>,
+
+    #[serde(default, skip)]
+    pub env: Option<EnvData>,
+    #[serde(default, skip)]
+    pub mirror_path: Option<PathBuf>,
 }
 
 mod triangle_data_serde {
