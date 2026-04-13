@@ -1434,9 +1434,9 @@ impl LightMesh {
         self.part_names = part_names;
     }
 
-    pub fn snapshot_mesh_meta(&self, idx: usize) -> LightMeshMetaSnapshot {
+    pub fn snapshot_mesh_meta(&self, id: String) -> LightMeshMetaSnapshot {
         LightMeshMetaSnapshot {
-            idx,
+            id,
             credits: self.credits.clone(),
             textures: self.textures.clone(),
             data: self.data.clone(),
@@ -1494,26 +1494,26 @@ impl From<LightMesh> for crate::data::LightMeshData {
 
 #[derive(Clone, Debug)]
 pub struct LightMeshSnapshot {
-    pub idx: usize,
+    pub id: String,
     pub mesh: Box<LightMesh>,
 }
 
 #[derive(Clone, Debug)]
 pub struct LightMeshPartSnapshot {
-    pub idx: usize,
+    pub id: String,
     pub name: String,
     pub part: Box<Part>,
 }
 
 #[derive(Clone, Debug)]
 pub struct LightMeshPlacementSnapshot {
-    pub view_idx: usize,
+    pub view_id: String,
     pub placements: Vec<Placement>,
 }
 
 #[derive(Clone, Debug)]
 pub struct LightMeshMetaSnapshot {
-    pub idx: usize,
+    pub id: String,
     pub credits: Vec<String>,
     pub textures: IndexMap<String, String>,
     pub data: IndexMap<String, MaterialData>,

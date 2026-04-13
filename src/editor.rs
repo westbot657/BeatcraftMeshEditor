@@ -7,10 +7,11 @@ use std::{fs, mem};
 use eframe::glow::Context;
 use egui::{Key, Response};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
+use indexmap::IndexMap;
 
 use crate::RefDuper;
 use crate::data::{
-    LightMeshData, NormalId, SessionData, SessionMeshData, SessionPlacementData, UvId, VertexId,
+    EnvMeshData, EnvPlacementData, IdList, LightMeshData, NormalId, SessionData, UvId, VertexId
 };
 use crate::light_mesh::{
     LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot,
@@ -120,12 +121,47 @@ pub struct ViewMesh {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub enum SpinSide {
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum RingType {
+    Inner,
+    Outer,
+}
+
+#[derive(Debug, Clone)]
+pub enum ActionType {
+    Spinning {
+        side: SpinSide,
+        axis: Option<Vec3>,
+    },
+    Ring {
+        layer: RingType,
+        angles: Vec<f32>,
+        deltas: Vec<f32>,
+        start: Option<[f32; 4]>,
+    },
+    Static,
+}
+
+#[derive(Debug, Clone)]
 pub struct ViewPlacement {
+    pub ids: IdList,
+    pub id_step: Vec<i32>,
     pub position: Vec3,
-    pub rotation: Quat,
+    pub offset: Vec3,
     pub count: u32,
-    pub offset_pos: Vec3,
-    pub offset_rot: Quat,
+    pub rotation: Quat,
+    pub rotation_offset: Quat,
+    pub orientation: Quat,
+    pub orientation_offset: Quat,
+    pub action_type: ActionType,
+
+    pub resource_location: Option<String>,
+    pub path: Option<PathBuf>,
     pub visible: bool,
 }
 
@@ -138,11 +174,19 @@ pub struct ViewPlacementsSnapshot {
 impl Default for ViewPlacement {
     fn default() -> Self {
         Self {
+            ids: IdList::default(),
+            id_step: Vec::new(),
             position: Vec3::ZERO,
-            rotation: Quat::IDENTITY,
+            offset: Vec3::ZERO,
             count: 1,
-            offset_pos: Vec3::ZERO,
-            offset_rot: Quat::IDENTITY,
+            rotation: Quat::IDENTITY,
+            rotation_offset: Quat::IDENTITY,
+            orientation: Quat::IDENTITY,
+            orientation_offset: Quat::IDENTITY,
+            action_type: ActionType::Static,
+
+            resource_location: None,
+            path: None,
             visible: true,
         }
     }
@@ -203,20 +247,22 @@ impl ViewMesh {
         if self.visible {
             if self.view_placements.is_empty() {
                 calls.push(InstanceData::new(
-                    Vec4::ZERO, Mat4::IDENTITY, [Vec4::new(0., 0., 0., 1.); 8]
+                    Vec4::ZERO, Mat4::IDENTITY, LIGHT_COLORS
                 ));
             } else {
                 for placement in self.view_placements.iter() {
                     let mut pos = placement.position;
                     let mut rot = placement.rotation;
+                    let mut ori = placement.orientation;
                     for _ in 0..placement.count {
                         calls.push(InstanceData::new(
                             Vec4::ZERO,
-                            Mat4::from_translation(pos) * Mat4::from_quat(rot),
+                            Mat4::from_translation(pos) * Mat4::from_quat(rot) * Mat4::from_quat(ori),
                             LIGHT_COLORS,
                         ));
-                        pos += placement.offset_pos;
-                        rot *= placement.offset_rot;
+                        pos += placement.offset;
+                        rot *= placement.rotation_offset;
+                        ori *= placement.orientation_offset;
                     }
                 }
             }
@@ -255,7 +301,7 @@ pub struct Render {
 }
 
 pub struct Editor {
-    pub mesh: Option<usize>,
+    pub mesh: Option<String>,
     pub camera: Camera,
     pub part: Option<usize>,
     pub hovered: Option<VertexId>,
@@ -295,7 +341,7 @@ pub struct ClickCycle {
 }
 
 pub struct View {
-    pub meshes: Vec<ViewMesh>,
+    pub meshes: IndexMap<String, ViewMesh>,
     pub session: Option<PathBuf>,
     pub camera: Camera,
 }
@@ -530,7 +576,7 @@ pub struct UiState {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PartId {
-    pub view_idx: usize,
+    pub view_id: String,
     pub name: String,
 }
 
@@ -552,11 +598,11 @@ impl<T: std::fmt::Debug + PartialEq + Eq + Clone> DataSwap<T> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Rename {
     DataTag {
-        view_idx: usize,
+        view_id: String,
         swap: DataSwap<String>,
     },
     Part {
-        view_idx: usize,
+        view_id: String,
         swap: DataSwap<String>,
     },
     /// Can rename any vertex between indexed and named.
@@ -576,12 +622,12 @@ pub enum Rename {
 impl Rename {
     pub fn invert(self) -> Self {
         match self {
-            Self::DataTag { view_idx, swap } => Self::DataTag {
-                view_idx,
+            Self::DataTag { view_id, swap } => Self::DataTag {
+                view_id,
                 swap: swap.invert(),
             },
-            Self::Part { view_idx, swap } => Self::Part {
-                view_idx,
+            Self::Part { view_id, swap } => Self::Part {
+                view_id,
                 swap: swap.invert(),
             },
             Self::Uv { part, swap } => Self::Uv {
@@ -968,7 +1014,7 @@ impl App {
                 placements.push((*place).into());
             }
 
-            meshes.push(SessionMeshData {
+            meshes.push(EnvMeshData {
                 path: view.path.clone(),
                 placements,
             });
@@ -1159,7 +1205,7 @@ impl App {
                     let self2 = unsafe { rd.detach_mut_ref(self) };
                     if let Some(part) = self.get_current_part_mut() {
                         self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
-                            idx: self2.get_current_mesh_idx().unwrap(),
+                            idx: self2.get_current_mesh_id().unwrap(),
                             name: self2.get_current_part_name().unwrap().to_string(),
                             part: Box::new(part.clone()),
                         }));
@@ -1176,7 +1222,7 @@ impl App {
                     let eye = self.cam().eye();
                     if let Some(part) = self.get_current_part_mut() {
                         self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
-                            idx: self2.get_current_mesh_idx().unwrap(),
+                            idx: self2.get_current_mesh_id().unwrap(),
                             name: self2.get_current_part_name().unwrap().to_string(),
                             part: Box::new(part.clone()),
                         }));
@@ -1192,7 +1238,7 @@ impl App {
                     let self2 = unsafe { rd.detach_mut_ref(self) };
                     if let Some(part) = self.get_current_part_mut() {
                         self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
-                            idx: self2.get_current_mesh_idx().unwrap(),
+                            idx: self2.get_current_mesh_id().unwrap(),
                             name: self2.get_current_part_name().unwrap().to_string(),
                             part: Box::new(part.clone()),
                         }));
@@ -1264,7 +1310,7 @@ impl App {
                 && let Some(part) = self.get_current_part_mut()
             {
                 self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
-                    idx: self2.get_current_mesh_idx().unwrap(),
+                    idx: self2.get_current_mesh_id().unwrap(),
                     name: self2.get_current_part_name().unwrap().to_string(),
                     part: Box::new(part.clone()),
                 }));
@@ -1522,8 +1568,8 @@ impl App {
         self.view.meshes.get_mut(self.editor.mesh?)
     }
 
-    pub fn get_current_mesh_idx(&self) -> Option<usize> {
-        self.editor.mesh
+    pub fn get_current_mesh_id(&self) -> Option<&str> {
+        self.editor.mesh.as_deref()
     }
 
     pub fn get_current_part_name(&self) -> Option<&str> {
@@ -1536,14 +1582,14 @@ impl App {
     }
 
     pub fn get_current_part(&self) -> Option<(usize, &str, &Part)> {
-        let idx = self.get_current_mesh_idx()?;
+        let idx = self.get_current_mesh_id()?;
         let name = self.get_current_part_name()?;
 
         Some((idx, name, self.view.meshes.get(idx)?.data.parts.get(name)?))
     }
 
     pub fn get_current_part_mut(&mut self) -> Option<&mut Part> {
-        let idx = self.get_current_mesh_idx()?;
+        let idx = self.get_current_mesh_id()?;
         let name = self.get_current_part_name()?;
 
         // # SAFETY:
@@ -1737,7 +1783,7 @@ impl App {
                     self.drag.state = DragState::Instance;
                     self.drag.drag_last = Vec2::new(mx, my);
                     self.add_history(HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
-                        view_idx: self.get_current_mesh_idx().unwrap(),
+                        view_idx: self.get_current_mesh_id().unwrap(),
                         placements: self
                             .get_current_view_mesh()
                             .unwrap()
@@ -2086,10 +2132,10 @@ impl App {
 
         let mut vms = Vec::new();
 
-        for SessionMeshData { path, placements } in session.meshes {
+        for EnvMeshData { path, placements } in session.meshes {
             let mut vm = LightMesh::load(&path)?.into_view_mesh(path, gl, &self.render.renderer);
 
-            for SessionPlacementData {
+            for EnvPlacementData {
                 position,
                 rotation,
                 count,
@@ -2118,6 +2164,7 @@ impl App {
         self.render.renderer.texture_paths = session.texture_paths;
 
         self.view.session = Some(path.to_path_buf());
+        self.rebuild_meshes(gl);
 
         Ok(())
     }

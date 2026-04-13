@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::f32;
 use std::path::{Path, PathBuf};
 
-use eframe::glow::{self, HasContext};
+use eframe::glow::{self, HasContext, NativeTexture};
 use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 
@@ -41,6 +41,11 @@ pub struct MeshDrawCall<'a> {
     pub mesh: &'a GpuMesh,
     pub instances: Vec<InstanceData>,
     pub wireframe: bool,
+    pub cull: bool,
+    pub bloomfog: bool,
+    pub solid: bool,
+    pub bloom: bool,
+    pub mirror: bool,
 }
 
 pub struct PointDrawCall<'a> {
@@ -1337,8 +1342,9 @@ impl BloomfogRenderer {
             // render sabers
             // render smoke
             // render bloom
-            //
+            self.render_bloom(renderer, gl, view, proj, calls, window, saved_vp);
             gl.enable(glow::SCISSOR_TEST);
+            gl.enable(glow::DEPTH_TEST);
         }
     }
 
@@ -1372,9 +1378,18 @@ impl BloomfogRenderer {
             world_transform *= Mat4::from_quat(cam_rot.conjugate());
             renderer.set_mat4(gl, renderer.mesh, "world_transform", &world_transform);
             for call in calls.iter() {
+                if !call.bloomfog {
+                    continue;
+                }
+                if call.cull {
+                    gl.enable(glow::CULL_FACE);
+                }
                 gl.bind_vertex_array(Some(call.mesh.vao));
                 renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
-                call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer);
+                call.mesh.draw_tris(gl, &call.instances, false, renderer);
+                if call.cull {
+                    gl.disable(glow::CULL_FACE);
+                }
             }
 
             gl.disable(glow::CLIP_DISTANCE0);
@@ -1396,6 +1411,7 @@ impl BloomfogRenderer {
 
             // TODO: conditionally enable clipping plane
             gl.enable(glow::CLIP_DISTANCE0);
+            gl.depth_mask(true);
 
             // TODO: re-set instance divisor?
 
@@ -1412,13 +1428,121 @@ impl BloomfogRenderer {
             world_transform *= Mat4::from_quat(cam_rot.conjugate());
             renderer.set_mat4(gl, renderer.mesh, "world_transform", &world_transform);
             for call in calls.iter() {
+                if !call.solid {
+                    continue;
+                }
+                if call.cull {
+                    gl.enable(glow::CULL_FACE);
+                }
                 gl.bind_vertex_array(Some(call.mesh.vao));
                 renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
                 call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer);
+                if call.cull {
+                    gl.disable(glow::CULL_FACE);
+                }
+            }
+
+            renderer.set_int(gl, renderer.mesh, "passType", 3);
+            for call in calls.iter() {
+                if !call.solid {
+                    continue;
+                }
+                if call.cull {
+                    gl.enable(glow::CULL_FACE);
+                }
+                gl.bind_vertex_array(Some(call.mesh.vao));
+                renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
+                call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer);
+                if call.cull {
+                    gl.disable(glow::CULL_FACE);
+                }
             }
 
             gl.disable(glow::CLIP_DISTANCE0);
             gl.use_program(None);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_bloom(
+        &self,
+        renderer: &Renderer,
+        gl: &glow::Context,
+        view: &Mat4,
+        proj: &Mat4,
+        calls: &[MeshDrawCall<'_>],
+        window: (i32, i32),
+        saved_vp: [i32; 4]
+    ) {
+        unsafe {
+            self.light_depth.bind(gl);
+            gl.clear_color(0., 0., 0., 0.);
+            gl.clear(glow::DEPTH_BUFFER_BIT);
+
+            gl.use_program(Some(renderer.mesh));
+            renderer.set_mat4(gl, renderer.mesh, "u_view", view);
+            renderer.set_mat4(gl, renderer.mesh, "u_projection", proj);
+            let tex = renderer.atlas.or(Some(renderer.missing_texture));
+            renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
+            renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.blurred_buffer.color), 1);
+            renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(-50., -30.));
+            renderer.set_sampler(gl, renderer.mesh, "u_depth", Some(self.light_depth.depth), 2);
+            renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
+            renderer.set_int(gl, renderer.mesh, "passType", 0);
+            for call in calls {
+                if !call.solid {
+                    continue;
+                }
+                if call.cull {
+                    gl.enable(glow::CULL_FACE);
+                }
+                call.mesh.draw_tris(gl, &call.instances, false, renderer);
+                if call.cull {
+                    gl.disable(glow::CULL_FACE);
+                }
+            }
+            renderer.set_int(gl, renderer.mesh, "passType", 1);
+            for call in calls {
+                if !call.solid {
+                    continue;
+                }
+                if call.cull {
+                    gl.enable(glow::CULL_FACE);
+                }
+                call.mesh.draw_tris(gl, &call.instances, false, renderer);
+                if call.cull {
+                    gl.disable(glow::CULL_FACE);
+                }
+            }
+
+
+            self.bloom_input.bind(gl);
+            gl.clear_color(0., 0., 0., 0.);
+            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+            renderer.set_int(gl, renderer.mesh, "passType", 1);
+            //gl.blend_func(glow::ONE, glow::ONE);
+            gl.enable(glow::BLEND);
+            gl.disable(glow::DEPTH_TEST);
+            for call in calls {
+                if !call.bloom {
+                    continue;
+                }
+                if call.cull {
+                    gl.enable(glow::CULL_FACE);
+                }
+                call.mesh.draw_tris(gl, &call.instances, false, renderer);
+                if call.cull {
+                    gl.disable(glow::CULL_FACE);
+                }
+            }
+
+            self.apply_effect_pass(renderer, gl, &self.bloom_input, Some(&self.bloom_swap), PassType::GaussianH, true, true, window, 3.25, 1.);
+            self.apply_effect_pass(renderer, gl, &self.bloom_swap, Some(&self.bloom_output), PassType::GaussianV, true, true, window, 3.25, 1.);
+
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
+
+            self.apply_effect_pass(renderer, gl, &self.bloom_output, None, PassType::Blit, false, false, window, 11., 1.);
         }
     }
 

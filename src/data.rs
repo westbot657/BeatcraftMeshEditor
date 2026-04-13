@@ -215,31 +215,106 @@ fn is_zero(v: &u8) -> bool {
     *v == 0
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
-pub struct SessionPlacementData {
-    pub position: Vec3,
-    pub rotation: Quat,
-    pub count: u32,
-    pub offset_pos: Vec3,
-    pub offset_rot: Quat,
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+pub enum EventGroup {
+    #[default]
+    #[serde(skip_serializing)]
+    None,
+    #[serde(rename="outer-ring")]
+    OuterRing,
+    #[serde(rename="inner-ring")]
+    InnerRing,
+    #[serde(rename="left-spinning")]
+    LeftSpinning,
+    #[serde(rename="right-spinning")]
+    RightSpinning,
 }
 
-impl From<ViewPlacement> for SessionPlacementData {
+impl EventGroup {
+    pub fn is_none(&self) -> bool {
+        *self == EventGroup::None
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(untagged)]
+pub enum TypeData {
+    Spinning {
+        axis: Vec3,
+    },
+    Rings {
+        angles: Vec<f32>,
+        deltas: Vec<f32>,
+        starts: Option<[f32; 4]>,
+    },
+    #[default]
+    None
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(transparent)]
+pub struct IdList {
+    list: Vec<LightIdElement>
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum LightIdElement {
+    GroupName(LightGroup),
+    Id(u32)
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum LightGroup {
+    #[serde(rename="left-lasers", alias="left-lights")]
+    LeftLasers,
+    #[serde(rename="right-lasers", alias="right-lights")]
+    RightLasers,
+    #[serde(rename="center-lasers", alias="center-light")]
+    CenterLasers,
+    #[serde(rename="back-lasers", alias="back-lights")]
+    BackLasers,
+    #[serde(rename="ring-lights", alias="ring-laseers")]
+    RingLights,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct EnvPlacementData {
+    #[serde(rename="type", skip_serializing_if="EventGroup::is_none")]
+    pub typ: EventGroup,
+    pub ids: IdList,
+    pub position: Vec3,
+    pub offset: Vec3,
+    pub count: u32,
+    pub rotation: Quat,
+    #[serde(rename="rotation-offset")]
+    pub rotation_offset: Quat,
+    pub orientation: Quat,
+    #[serde(rename="orientation-offset")]
+    pub orientation_offset: Quat,
+    #[serde(rename="id-step")]
+    pub id_step: Vec<i32>,
+    #[serde(flatten)]
+    pub type_data: TypeData,
+}
+
+impl From<ViewPlacement> for EnvPlacementData {
     fn from(value: ViewPlacement) -> Self {
         Self {
             position: value.position,
             rotation: value.rotation,
             count: value.count,
-            offset_pos: value.offset_pos,
-            offset_rot: value.offset_rot,
+            offset: value.offset_pos,
+            rotation_offset: value.offset_rot,
         }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct SessionMeshData {
-    pub path: PathBuf,
-    pub placements: Vec<SessionPlacementData>,
+#[serde(untagged)]
+pub enum EnvMeshData {
+    MultiPlacement { placements: Vec<EnvPlacementData> },
+    SinglePlacement(EnvPlacementData)
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Copy, Clone)]
@@ -274,8 +349,16 @@ impl From<Camera> for CameraData {
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct EnvData {
+    layout: IndexMap<String, EnvMeshData>
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SessionData {
-    pub meshes: Vec<SessionMeshData>,
+    pub env_path: PathBuf,
+    pub env: Option<EnvData>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub mesh_paths: HashMap<String, PathBuf>,
     pub camera: CameraData,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub texture_paths: HashMap<String, PathBuf>,
