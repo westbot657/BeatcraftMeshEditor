@@ -37,6 +37,7 @@ impl InstanceData {
     }
 }
 
+#[derive(Clone)]
 pub struct MeshDrawCall<'a> {
     pub mesh: &'a GpuMesh,
     pub instances: Vec<InstanceData>,
@@ -570,6 +571,7 @@ impl GpuMesh {
 
 pub struct Renderer {
     pub mesh: glow::NativeProgram,
+    pub mirror: glow::NativeProgram,
     pub point: glow::NativeProgram,
     pub flat: glow::NativeProgram,
     pub handles: glow::NativeProgram,
@@ -632,6 +634,11 @@ impl Renderer {
                 gl,
                 include_str!("./assets/shaders/mesh.vert"),
                 include_str!("./assets/shaders/mesh.frag"),
+            )?;
+            let mirror = Self::compile_shader(
+                gl,
+                include_str!("./assets/shaders/mirror.vert"),
+                include_str!("./assets/shaders/mirror.frag")
             )?;
             let point = Self::compile_shader(
                 gl,
@@ -771,6 +778,7 @@ impl Renderer {
 
             Ok(Self {
                 mesh,
+                mirror,
                 point,
                 flat,
                 handles,
@@ -785,7 +793,7 @@ impl Renderer {
                 texture_paths: HashMap::new(),
                 atlas: None,
                 atlas_map: HashMap::new(),
-                bloomfog: BloomfogRenderer::new(gl)?
+                bloomfog: BloomfogRenderer::new(gl)?,
             })
         }
     }
@@ -935,6 +943,7 @@ impl Renderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_meshes_fancy(
         &mut self,
         gl: &glow::Context,
@@ -943,13 +952,44 @@ impl Renderer {
         calls: &[MeshDrawCall<'_>],
         window: (i32, i32),
         draw_grid: bool,
+        mirror_mesh: Option<&GpuMesh>,
+        wireframe: bool,
     ) {
         let rd = RefDuper;
-        let self2 = unsafe { rd.detach_ref(self) };
-        self.bloomfog.draw_meshes(self2, gl, view, proj, calls, window, draw_grid);
+        let self2 = unsafe { rd.detach_mut_ref(self) };
+        self.bloomfog.draw_meshes(
+            self2, gl, view, proj, calls, window, draw_grid,
+            None, mirror_mesh, wireframe,
+        );
     }
 
-    pub fn draw_meshes(&self, gl: &glow::Context, view: &Mat4, proj: &Mat4, calls: &[MeshDrawCall<'_>]) {
+    pub fn draw_meshes(
+        &mut self,
+        gl: &glow::Context,
+        view: &Mat4, proj: &Mat4,
+        calls: &[MeshDrawCall<'_>],
+        mirror_mesh: Option<&GpuMesh>,
+        wireframe: bool,
+    ) {
+        unsafe {
+            self.draw_meshes_internal(gl, view, proj, calls);
+            let rd = RefDuper;
+            let self2 = rd.detach_mut_ref(self);
+            if let Some(mirror_mesh) = mirror_mesh {
+                self.bloomfog.draw_mirror(
+                    self2, gl, view, proj, calls, mirror_mesh,
+                    1, wireframe
+                );
+            }
+        }
+    }
+
+    fn draw_meshes_internal(
+        &mut self,
+        gl: &glow::Context,
+        view: &Mat4, proj: &Mat4,
+        calls: &[MeshDrawCall<'_>],
+    ) {
         unsafe {
             gl.use_program(Some(self.mesh));
             self.set_int(gl, self.mesh, "passType", 0);
@@ -1022,14 +1062,14 @@ impl Renderer {
     //         }
     //     }
     // }
-    //
-    // fn set_vec3(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec3) {
-    //     unsafe {
-    //         if let Some(l) = gl.get_uniform_location(prog, name) {
-    //             gl.uniform_3_f32(Some(&l), v.x, v.y, v.z);
-    //         }
-    //     }
-    // }
+
+    fn set_vec3(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec3) {
+        unsafe {
+            if let Some(l) = gl.get_uniform_location(prog, name) {
+                gl.uniform_3_f32(Some(&l), v.x, v.y, v.z);
+            }
+        }
+    }
     fn set_float(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: f32) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
@@ -1145,12 +1185,6 @@ impl RenderTarget {
         }
     }
 
-    pub fn unbind(&self, gl: &glow::Context) {
-        unsafe {
-            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
-        }
-    }
-
     pub fn destroy(self, gl: &glow::Context) {
         unsafe {
             gl.delete_texture(self.color);
@@ -1178,6 +1212,7 @@ pub struct BloomfogRenderer {
     comp: glow::NativeProgram,
     vao: glow::VertexArray,
     vbo: glow::Buffer,
+    mirror_target: RenderTarget,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -1265,6 +1300,7 @@ impl BloomfogRenderer {
                 comp,
                 vao,
                 vbo,
+                mirror_target: RenderTarget::new(gl, 1920, 1080),
             })
         }
     }
@@ -1277,6 +1313,7 @@ impl BloomfogRenderer {
         self.bloom_swap.resize(gl, window.0, window.1);
         self.bloom_output.resize(gl, window.0, window.1);
         self.light_depth.resize(gl, window.0, window.1);
+        self.mirror_target.resize(gl, window.0, window.1);
 
         let mut md = 2.;
         for rt in self.pyramid_buffers.iter_mut() {
@@ -1287,16 +1324,93 @@ impl BloomfogRenderer {
         }
     }
 
+    /// This function flips the render calls across Y.
     #[allow(clippy::too_many_arguments)]
-    pub fn draw_meshes(
+    pub fn draw_mirror(
         &mut self,
-        renderer: &Renderer,
+        renderer: &mut Renderer,
+        gl: &glow::Context,
+        view: &Mat4,
+        proj: &Mat4,
+        calls: &[MeshDrawCall<'_>],
+        mirror: &GpuMesh,
+        render_mode: i32,
+        wireframe: bool,
+    ) {
+        unsafe {
+
+            let mut saved_vp = [0i32; 4];
+            gl.get_parameter_i32_slice(glow::VIEWPORT, &mut saved_vp);
+
+            self.mirror_target.bind(gl);
+            gl.front_face(glow::CW);
+            gl.clear_color(0., 0., 0., 1.);
+            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+
+            let mut mirrored = Vec::new();
+
+            for call in calls {
+                let mut c = call.clone();
+                for inst in c.instances.iter_mut() {
+                    inst.clipping_plane = Vec4::new(0., -1., 0., 0.);
+                    inst.model *= Mat4::from_scale(Vec3::new(1., -1., 1.))
+                }
+                mirrored.push(c);
+            }
+
+            let view_f = *view;
+
+            gl.enable(glow::CLIP_DISTANCE0);
+            if render_mode == 0 {
+                self.render_solid(
+                    renderer, gl, &view_f, proj, &mirrored,
+                );
+            } else {
+                renderer.draw_meshes_internal(gl, &view_f, proj, &mirrored);
+            }
+
+            gl.front_face(glow::CCW);
+            gl.disable(glow::CLIP_DISTANCE0);
+
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
+
+            gl.use_program(Some(renderer.mirror));
+            gl.enable(glow::CULL_FACE);
+            renderer.set_sampler(gl, renderer.mirror, "u_texture", Some(self.mirror_target.color), 0);
+            renderer.set_sampler(gl, renderer.mirror, "u_noise", Some(renderer.blue_noise), 1);
+            renderer.set_sampler(gl, renderer.mirror, "u_bloomfog", Some(self.blurred_buffer.color), 2);
+            renderer.set_vec3(gl, renderer.mirror, "u_worldPos", Vec3::ZERO);
+            renderer.set_mat4(gl, renderer.mirror, "u_view", view);
+            renderer.set_mat4(gl, renderer.mirror, "u_projection", proj);
+            renderer.set_int(gl, renderer.mirror, "u_render_mode", render_mode);
+            mirror.draw_tris(
+                gl,
+                &[InstanceData::new(
+                    Vec4::ZERO,
+                    Mat4::IDENTITY,
+                    LIGHT_COLORS
+                )],
+                wireframe,
+                renderer
+            );
+            gl.disable(glow::CULL_FACE);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_meshes(
+        &mut self,
+        renderer: &mut Renderer,
         gl: &glow::Context,
         view: &Mat4,
         proj: &Mat4,
         calls: &[MeshDrawCall<'_>],
         window: (i32, i32),
         draw_grid: bool,
+        main_target: Option<&RenderTarget>,
+        mirror_mesh: Option<&GpuMesh>,
+        wireframe: bool,
     ) {
         unsafe {
             // pre-render beatmaps
@@ -1311,16 +1425,16 @@ impl BloomfogRenderer {
             gl.disable(glow::SCISSOR_TEST);
 
             self.framebuffer.bind(gl);
-            // gl.blend_func_separate(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA, glow::ONE, glow::ZERO);
-            //gl.clear_color(0., 0., 0., 0.);
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
             self.render_bloomfog(renderer, gl, view, proj, calls);
             gl.depth_mask(false);
 
             self.apply_pyramid_blur(renderer, gl, window);
 
-            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
-            gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
+            gl.bind_framebuffer(glow::FRAMEBUFFER, main_target.map(|t| t.fbo));
+            if main_target.is_none() {
+                gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
+            }
             self.apply_effect_pass(renderer, gl, &self.blurred_buffer, None, PassType::Blit, false, true, window, 11., 2.);
             gl.depth_mask(true);
 
@@ -1331,6 +1445,12 @@ impl BloomfogRenderer {
             // render HUD
             // render beatmaps
             //   draw mirrors
+            if let Some(mirror_mesh) = mirror_mesh {
+                self.draw_mirror(
+                    renderer, gl, view, proj, calls, mirror_mesh,
+                    0, wireframe
+                );
+            }
             //   draw maps
             //     bloomfogPosCol
             //     envLights
@@ -1343,7 +1463,7 @@ impl BloomfogRenderer {
             // render sabers
             // render smoke
             // render bloom
-            self.render_bloom(renderer, gl, view, proj, calls, window, saved_vp);
+            self.render_bloom(renderer, gl, view, proj, calls, window, saved_vp, main_target, mirror_mesh);
             gl.enable(glow::SCISSOR_TEST);
             gl.enable(glow::DEPTH_TEST);
         }
@@ -1473,7 +1593,9 @@ impl BloomfogRenderer {
         proj: &Mat4,
         calls: &[MeshDrawCall<'_>],
         window: (i32, i32),
-        saved_vp: [i32; 4]
+        saved_vp: [i32; 4],
+        main_target: Option<&RenderTarget>,
+        mirror_mesh: Option<&GpuMesh>,
     ) {
         unsafe {
             self.light_depth.bind(gl);
@@ -1501,6 +1623,9 @@ impl BloomfogRenderer {
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
+            }
+            if let Some(mirror_mesh) = mirror_mesh {
+                mirror_mesh.draw_tris(gl, &[InstanceData::new(Vec4::ZERO, Mat4::IDENTITY, LIGHT_COLORS)], false, renderer);
             }
             renderer.set_int(gl, renderer.mesh, "passType", 1);
             for call in calls {
@@ -1540,9 +1665,10 @@ impl BloomfogRenderer {
             self.apply_effect_pass(renderer, gl, &self.bloom_input, Some(&self.bloom_swap), PassType::GaussianH, true, true, window, 3.25, 1.);
             self.apply_effect_pass(renderer, gl, &self.bloom_swap, Some(&self.bloom_output), PassType::GaussianV, true, true, window, 3.25, 1.);
 
-            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
-            gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
-
+            gl.bind_framebuffer(glow::FRAMEBUFFER, main_target.map(|v| v.fbo));
+            if main_target.is_none() {
+                gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
+            }
             self.apply_effect_pass(renderer, gl, &self.bloom_output, None, PassType::Blit, false, false, window, 11., 1.);
         }
     }

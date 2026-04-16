@@ -502,11 +502,11 @@ pub struct SessionData {
     pub camera: CameraData,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub texture_paths: HashMap<String, PathBuf>,
+    #[serde(default)]
+    pub mirror_path: Option<PathBuf>,
 
     #[serde(default, skip)]
     pub env: Option<EnvData>,
-    #[serde(default, skip)]
-    pub mirror_path: Option<PathBuf>,
 }
 
 

@@ -974,6 +974,25 @@ impl eframe::App for App {
 
         self.handle_file_open(gl);
 
+        let rd = RefDuper;
+        let self2 = unsafe { rd.detach_mut_ref(self) };
+        if let Some((label, popup)) = self.state.ui.custom_popup.last()
+        && let Some(resp) = egui::Window::new(label)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, [0., 0.])
+            .show(ctx, |ui| {
+                popup(self2, ui)
+            })
+        && let Some(inner) = resp.inner
+        {
+            match inner {
+                editor::PopupResponse::KeepOpen => {},
+                editor::PopupResponse::Close => {self.state.ui.custom_popup.pop(); },
+                editor::PopupResponse::OpenNew(x) => self.state.ui.custom_popup.push(x),
+            }
+        }
+
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
@@ -1316,6 +1335,25 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
     match s.view.mirror_id.as_mut() {
         Some(id) => {
+            ui.horizontal(|ui| {
+                ui.add_sized([w - 60., 20.], egui::TextEdit::singleline(id));
+                if ui
+                    .small_button(if s2.view.mirror_path.is_some() {"R"} else {"?"})
+                    .clicked()
+                {
+                    let (sx, rx) = mpsc::channel();
+                    s2.state.ui.select_mirror_channel = Some(rx);
+                    std::thread::spawn(move || {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_title("Open Mirror File")
+                            .add_filter("json", &["json"])
+                            .pick_file()
+                        {
+                            let _ = sx.send(path);
+                        }
+                    });
+                }
+            });
             ui.label("TODO: mirror display ? [x]"); // TODO
         }
         None => {
@@ -1358,6 +1396,9 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         s.view.mirror_path = None;
         s.view.spectrogram = None;
         s.view.fog_heights = None;
+        if let Some(vm) = s.render.mirror.take() {
+            vm.destroy(gl);
+        }
     }
 }
 
@@ -1597,10 +1638,17 @@ fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
     }
     match s.state.view_style {
         editor::ViewStyle::Edit => {
-            s.render.renderer.draw_meshes(gl, view, proj, &calls);
+            s.ref_mut().render.renderer.draw_meshes(
+                gl, view, proj, &calls,
+                s.render.mirror.as_ref(), s.state.wireframe
+            );
         }
         editor::ViewStyle::Beatcraft { .. } => {
-            s.ref_mut().render.renderer.draw_meshes_fancy(gl, view, proj, &calls, window, s.state.show_grid);
+            s.ref_mut().render.renderer.draw_meshes_fancy(
+                gl, view, proj, &calls,
+                window, s.state.show_grid,
+                s.render.mirror.as_ref(), s.state.wireframe
+            );
         }
     }
 }
@@ -2135,7 +2183,7 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
         if let Some(mesh) = vm.render_assembly(&mut instances) {
             match s.state.view_style {
                 editor::ViewStyle::Edit => {
-                    s.render.renderer.draw_meshes(
+                    s.ref_mut().render.renderer.draw_meshes(
                         gl,
                         view, proj,
                         &[MeshDrawCall {
@@ -2148,6 +2196,7 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                             solid: vm.data.do_solid,
                             mirror: vm.data.do_mirroring,
                         }],
+                        s.render.mirror.as_ref(), s.state.wireframe
                     );
                 }
                 editor::ViewStyle::Beatcraft { .. } => {
@@ -2165,7 +2214,8 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                             mirror: vm.data.do_mirroring,
                         }],
                         window,
-                        s.state.show_grid
+                        s.state.show_grid,
+                        s.render.mirror.as_ref(), s.state.wireframe
                     );
                 }
             }
@@ -3111,10 +3161,17 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
 
         match s.state.view_style {
             editor::ViewStyle::Edit => {
-                s.render.renderer.draw_meshes(gl, view, proj, &calls);
+                s.ref_mut().render.renderer.draw_meshes(
+                    gl, view, proj, &calls,
+                    s.render.mirror.as_ref(), s.state.wireframe
+                );
             }
             editor::ViewStyle::Beatcraft { .. } => {
-                s.ref_mut().render.renderer.draw_meshes_fancy(gl, view, proj, &calls, window, s.state.show_grid);
+                s.ref_mut().render.renderer.draw_meshes_fancy(
+                    gl, view, proj, &calls,
+                    window, s.state.show_grid,
+                    s.render.mirror.as_ref(), s.state.wireframe
+                );
             }
         }
 

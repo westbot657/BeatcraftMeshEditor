@@ -6,7 +6,7 @@ use std::{fs, mem};
 
 use eframe::glow::Context;
 use egui::{Key, Response};
-use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
+use glam::{IVec3, Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 
 use crate::RefDuper;
@@ -328,6 +328,7 @@ pub struct Render {
     pub orphans: HashMap<String, GpuMesh>,
     pub sel_points: Option<GpuMesh>,
     pub inst_points: Option<GpuMesh>,
+    pub mirror: Option<GpuMesh>,
 }
 
 pub struct Editor {
@@ -577,10 +578,10 @@ pub enum WorkingRenameKey {
 pub enum PopupResponse {
     KeepOpen,
     Close,
-    OpenNew(Box<dyn Fn(&egui::Ui) -> Self>),
+    OpenNew((String, PopupCallback)),
 }
 
-type PopupCallback = Box<dyn Fn(&egui::Ui) -> PopupResponse>;
+type PopupCallback = Box<dyn Fn(&mut App, &egui::Ui) -> PopupResponse>;
 
 #[derive(Default)]
 pub struct UiState {
@@ -596,8 +597,10 @@ pub struct UiState {
     pub create_mesh_channel: Option<mpsc::Receiver<PathBuf>>,
     /// mpsc channel for linking image paths
     pub select_image_channel: Option<(String, mpsc::Receiver<PathBuf>)>,
+    /// mpsc channel for selecting a mirror geometry file
+    pub select_mirror_channel: Option<mpsc::Receiver<PathBuf>>,
     /// callback for custom popup window logic
-    pub custom_popup: Vec<PopupCallback>,
+    pub custom_popup: Vec<(String, PopupCallback)>,
     /// Map<viewmesh id, Vec<view placement collapse state>>
     pub collapsed: HashMap<String, Vec<bool>>,
     /// Map<viewmesh id, Vec<rotation display modes>>
@@ -931,6 +934,7 @@ impl App {
                 orphans: HashMap::new(),
                 sel_points: None,
                 inst_points: None,
+                mirror: None,
             },
             editor: Editor {
                 mesh: None,
@@ -2150,8 +2154,41 @@ impl App {
                 }
             }
         }
+        if let Some(recv) = self.state.ui.select_mirror_channel.as_ref() {
+            match recv.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.state.ui.select_mirror_channel = None;
+                }
+                Ok(src) => {
+                    if let Err(e) = self.load_mirror(src.as_path(), gl) {
+                        eprintln!("Failed to load mirror geometry: {e}");
+                        self.state.status = "Failed to load mirror geometry".into();
+                        self.state.status_timer = 2.;
+                    } else {
+                        self.view.mirror_path = Some(src);
+                        self.rebuild_meshes(gl);
+                    }
+                }
+            }
+        }
     }
 
+    fn load_mirror(&mut self, path: &Path, gl: &Context) -> anyhow::Result<()> {
+        let raw = fs::read_to_string(path)?;
+        let geo: Vec<Vec3> = serde_json::from_str(&raw)?;
+
+        let geo: Vec<_> = geo.into_iter().map(|v| v.extend(0.)).collect();
+        let normv = vec![Vec4::ZERO; geo.len()];
+        let mats = vec![IVec3::ZERO; geo.len()];
+
+        let mesh = self.render.mirror
+            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[]));
+
+        mesh.rebuild(gl, &geo, &normv, &mats, &[]);
+
+        Ok(())
+    }
 
     fn save_session(&mut self) -> anyhow::Result<()> {
         let mut meshes = IndexMap::new();
@@ -2269,6 +2306,9 @@ impl App {
         }
 
         self.view.mirror_path = session.mirror_path.clone();
+        if let Some(path) = session.mirror_path.as_deref() {
+            self.load_mirror(path, gl)?
+        }
 
         self.render.renderer.texture_paths = session.texture_paths;
 
