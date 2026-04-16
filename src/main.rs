@@ -865,7 +865,7 @@ fn compute_vertex_row(
             if *id != check {
                 s.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
-                        idx: s.get_current_mesh_id().unwrap(),
+                        id: s.get_current_mesh_id().unwrap().to_string(),
                         name: s.get_current_part_name().unwrap().to_string(),
                         part: Box::new(part.clone()),
                     },
@@ -901,7 +901,7 @@ fn compute_vertex_row(
         |t| {
             s.add_history(editor::HistoryEntry::MeshPart(
                 light_mesh::LightMeshPartSnapshot {
-                    idx: s.get_current_mesh_id().unwrap(),
+                    id: s.get_current_mesh_id().unwrap().to_string(),
                     name: s.get_current_part_name().unwrap().to_string(),
                     part: Box::new(t),
                 },
@@ -935,7 +935,7 @@ fn compute_vertex_row(
         |t| {
             s.add_history(editor::HistoryEntry::MeshPart(
                 light_mesh::LightMeshPartSnapshot {
-                    idx: s.get_current_mesh_id().unwrap(),
+                    id: s.get_current_mesh_id().unwrap().to_string(),
                     name: s.get_current_part_name().unwrap().to_string(),
                     part: Box::new(t),
                 },
@@ -1236,24 +1236,20 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let w = ui.available_width();
     let rd = RefDuper;
     let s2 = unsafe { rd.detach_mut_ref(s) };
-    for (i, mesh) in s.view.meshes.iter_mut().enumerate() {
-        let name = mesh.path.with_extension("");
-        let name = name
-            .file_name()
-            .map(|x| x.to_string_lossy())
-            .unwrap_or_else(|| std::borrow::Cow::Borrowed("?"));
+
+    for (id, mesh) in s.view.meshes.iter_mut().filter_map(|(i, v)| v.as_mut().map(|v| (i, v))) {
 
         ui.add_space(2.0);
-        let selected = s.state.ui.view_mesh == Some(i);
+        let selected = s.state.ui.view_mesh == Some(id.clone());
         let available = ui.available_size_before_wrap();
         if ui
             .add_sized(
                 egui::Vec2::new(available.x, 20.0),
-                egui::Button::selectable(selected, name.as_ref()),
+                egui::Button::selectable(selected, id.as_str()),
             )
             .clicked()
         {
-            s.state.ui.view_mesh = if selected { None } else { Some(i) };
+            s.state.ui.view_mesh = if selected { None } else { Some(id.clone()) };
         };
         ui.add_space(2.0);
 
@@ -1262,10 +1258,10 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 ui.checkbox(&mut mesh.visible, "");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("Close").clicked() {
-                        to_remove = Some(i);
+                        to_remove = Some(id.clone());
                     }
                     if ui.button("Edit").clicked() {
-                        s.editor.mesh = Some(i);
+                        s.editor.mesh = Some(id.clone());
                         s.last_mode = s.mode;
                         s.mode = editor::EditorMode::Assembly;
                         s2.rebuild_meshes(gl);
@@ -1283,19 +1279,19 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         ui.separator();
     }
     if let Some(i) = to_remove {
-        s.view.meshes.remove(i);
-        if let Some(sel) = s.state.ui.view_mesh {
-            if sel == i {
+        s.view.meshes.shift_remove(&i);
+        if let Some(sel) = s.state.ui.view_mesh.as_ref() {
+            if *sel == i {
                 s.state.ui.view_mesh = None;
-            } else if sel > i {
-                s.state.ui.view_mesh = Some(sel - 1);
+            } else if !s.view.meshes.is_empty() {
+                s.state.ui.view_mesh = Some(s.view.meshes.keys().next().unwrap().clone());
             }
         }
-        if let Some(sel) = s.editor.mesh {
-            if sel == i {
+        if let Some(sel) = s.editor.mesh.as_ref() {
+            if *sel == i {
                 s.editor.mesh = None;
-            } else if sel > i {
-                s.editor.mesh = Some(sel - 1);
+            } else if !s.view.meshes.is_empty() {
+                s.editor.mesh = Some(s.view.meshes.keys().next().unwrap().clone());
             }
         }
     }
@@ -1318,16 +1314,50 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         });
     }
 
-    if s.view.meshes.len() > 1
+    match s.view.mirror_id.as_mut() {
+        Some(id) => {
+            ui.label("TODO: mirror display ? [x]"); // TODO
+        }
+        None => {
+            ui.label("TODO: Add mirror");
+        }
+    }
+
+    match s.view.spectrogram.as_mut() {
+        Some(spect) => {
+            ui.label("TODO: spectrogram settings [x]");
+        }
+        None => {
+            ui.label("TODO: Add Spectrogram");
+        }
+    }
+
+    match s.view.fog_heights.as_mut() {
+        Some(heights) => {
+            ui.label("TODO: fog height editor");
+        }
+        None => {
+            ui.label("TODO: Add Fog Heights");
+        }
+    }
+
+    if s.view.session.is_some()
         && ui
-            .add_sized([w, 20.], egui::Button::new("Close All"))
+            .add_sized([w, 20.], egui::Button::new("Close Environment"))
             .clicked()
     {
         let meshes = std::mem::take(&mut s.view.meshes);
-        for vm in meshes {
-            vm.destroy(gl);
+        for (_, vm) in meshes {
+            if let Some(vm) = vm {
+                vm.destroy(gl);
+            }
         }
         s.view.session = None;
+        s.view.env_path = None;
+        s.view.mirror_id = None;
+        s.view.mirror_path = None;
+        s.view.spectrogram = None;
+        s.view.fog_heights = None;
     }
 }
 
@@ -1335,18 +1365,18 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let rd = RefDuper;
     let s2 = unsafe { rd.detach_mut_ref(s) };
     let s3 = unsafe { rd.detach_mut_ref(s) };
-    if let Some(sel) = s.state.ui.view_mesh
-        && let Some(mesh) = s.view.meshes.get_mut(sel)
+    if let Some(sel) = s.state.ui.view_mesh.as_deref()
+        && let Some(Some(mesh)) = s.view.meshes.get_mut(sel)
     {
         let rd2 = RefDuper;
         let mesh2 = unsafe { rd2.detach_mut_ref(mesh) };
         if ui.button("+ Add Placement").clicked() {
             mesh.view_placements.push(ViewPlacement::default());
-            s.state.ui.collapsed.entry(sel).or_default().push(false);
+            s.state.ui.collapsed.entry(sel.to_string()).or_default().push(false);
             s.state
                 .ui
                 .view_rotation_modes
-                .entry(sel)
+                .entry(sel.to_string())
                 .or_default()
                 .push(Default::default());
             s2.rebuild_meshes(gl);
@@ -1354,7 +1384,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         let mut to_remove = None;
         for (i, placement) in mesh.view_placements.iter_mut().enumerate() {
-            let collapsed = s.state.ui.collapsed.entry(sel).or_default();
+            let collapsed = s.state.ui.collapsed.entry(sel.to_string()).or_default();
             if collapsed.len() <= i {
                 collapsed.push(false);
             }
@@ -1372,12 +1402,12 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 let w2 = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
                 let w3 = (ui.available_width() - ui.spacing().item_spacing.x * 2.0) / 3.0;
 
-                let modes = s.state.ui.view_rotation_modes.entry(sel).or_default();
+                let modes = s.state.ui.view_rotation_modes.entry(sel.to_string()).or_default();
                 if modes.len() <= i {
                     modes.push(Default::default());
                 }
-                let [rot_mode, off_mode] =
-                    &mut s.state.ui.view_rotation_modes.get_mut(&sel).unwrap()[i];
+                let [ori_mode, rot_mode, ori_off_mode, off_mode] =
+                    &mut s.state.ui.view_rotation_modes.get_mut(sel).unwrap()[i];
 
                 ui.label("Position");
                 vec3_row(
@@ -1388,7 +1418,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     |t| {
                         s2.add_history(editor::HistoryEntry::ViewPlacement(
                             editor::ViewPlacementsSnapshot {
-                                idx: sel,
+                                id: sel.to_string(),
                                 placements: t,
                             },
                         ))
@@ -1396,7 +1426,41 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     || s3.rebuild_meshes(gl),
                 );
 
-                ui.label("Rotation");
+                ui.horizontal(|ui| {
+                    ui.label("Orientation");
+
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new("?").small().color(ui.visuals().weak_text_color())
+                        )
+                    ).on_hover_text("Orientation applies before lightshow rotation events");
+                });
+                quat_row(
+                    ui,
+                    &mut placement.orientation,
+                    ori_mode,
+                    (w2, w3),
+                    || mesh2.view_placements.clone(),
+                    |t| {
+                        s2.add_history(editor::HistoryEntry::ViewPlacement(
+                            editor::ViewPlacementsSnapshot {
+                                id: sel.to_string(),
+                                placements: t,
+                            },
+                        ))
+                    },
+                    || s3.rebuild_meshes(gl)
+                );
+
+                ui.horizontal(|ui| {
+                    ui.label("Rotation");
+
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new("?").small().color(ui.visuals().weak_text_color())
+                        )
+                    ).on_hover_text("Rotation applies after lightshow rotation events");
+                });
                 quat_row(
                     ui,
                     &mut placement.rotation,
@@ -1406,7 +1470,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     |t| {
                         s2.add_history(editor::HistoryEntry::ViewPlacement(
                             editor::ViewPlacementsSnapshot {
-                                idx: sel,
+                                id: sel.to_string(),
                                 placements: t,
                             },
                         ))
@@ -1433,13 +1497,31 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 ui.label("Offset Position");
                 vec3_row(
                     ui,
-                    &mut placement.offset_pos,
+                    &mut placement.offset,
                     w3,
                     || mesh2.view_placements.clone(),
                     |t| {
                         s2.add_history(editor::HistoryEntry::ViewPlacement(
                             editor::ViewPlacementsSnapshot {
-                                idx: sel,
+                                id: sel.to_string(),
+                                placements: t,
+                            },
+                        ))
+                    },
+                    || s3.rebuild_meshes(gl),
+                );
+
+                ui.label("Offset Orientation");
+                quat_row(
+                    ui,
+                    &mut placement.orientation_offset,
+                    ori_off_mode,
+                    (w2, w3),
+                    || mesh2.view_placements.clone(),
+                    |t| {
+                        s2.add_history(editor::HistoryEntry::ViewPlacement(
+                            editor::ViewPlacementsSnapshot {
+                                id: sel.to_string(),
                                 placements: t,
                             },
                         ))
@@ -1450,20 +1532,26 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 ui.label("Offset Rotation");
                 quat_row(
                     ui,
-                    &mut placement.offset_rot,
+                    &mut placement.rotation_offset,
                     off_mode,
                     (w2, w3),
                     || mesh2.view_placements.clone(),
                     |t| {
                         s2.add_history(editor::HistoryEntry::ViewPlacement(
                             editor::ViewPlacementsSnapshot {
-                                idx: sel,
+                                id: sel.to_string(),
                                 placements: t,
                             },
                         ))
                     },
                     || s3.rebuild_meshes(gl),
                 );
+
+                // TODO:
+                // ids + id-step
+                // Action type data
+                ui.label("TODO: IDs + ID step");
+                ui.label("TODO: EventGroup Settings");
 
                 if ui
                     .add_sized([ui.available_width(), 20.0], egui::Button::new("Delete"))
@@ -1478,10 +1566,10 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         if let Some(rem) = to_remove {
             mesh.view_placements.remove(rem);
-            if let Some(collapsed) = s.state.ui.collapsed.get_mut(&sel) {
+            if let Some(collapsed) = s.state.ui.collapsed.get_mut(sel) {
                 collapsed.remove(rem);
             }
-            if let Some(modes) = s.state.ui.view_rotation_modes.get_mut(&sel) {
+            if let Some(modes) = s.state.ui.view_rotation_modes.get_mut(sel) {
                 modes.remove(rem);
             }
         }
@@ -1490,19 +1578,21 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
 fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32)) {
     let mut calls = Vec::new();
-    for vm in s.view.meshes.iter() {
-        let mut draws = Vec::new();
-        if let Some(mesh) = vm.render_view_placements(&mut draws) {
-            calls.push(MeshDrawCall {
-                mesh,
-                instances: draws,
-                wireframe: s.state.wireframe,
-                cull: vm.data.cull,
-                bloomfog: matches!(vm.data.bloomfog_style, BloomfogStyle::BloomOnly | BloomfogStyle::Everything),
-                bloom: vm.data.do_bloom,
-                solid: vm.data.do_solid,
-                mirror: vm.data.do_mirroring,
-            })
+    for (_id, vm) in s.view.meshes.iter() {
+        if let Some(vm) = vm {
+            let mut draws = Vec::new();
+            if let Some(mesh) = vm.render_view_placements(&mut draws) {
+                calls.push(MeshDrawCall {
+                    mesh,
+                    instances: draws,
+                    wireframe: s.state.wireframe,
+                    cull: vm.data.cull,
+                    bloomfog: matches!(vm.data.bloomfog_style, BloomfogStyle::BloomOnly | BloomfogStyle::Everything),
+                    bloom: vm.data.do_bloom,
+                    solid: vm.data.do_solid,
+                    mirror: vm.data.do_mirroring,
+                })
+            }
         }
     }
     match s.state.view_style {
@@ -1593,7 +1683,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         |t| {
                             self3.add_history(editor::HistoryEntry::MeshPlacement(
                                 light_mesh::LightMeshPlacementSnapshot {
-                                    view_idx: self3.get_current_mesh_id().unwrap(),
+                                    view_id: self3.get_current_mesh_id().unwrap().to_string(),
                                     placements: t,
                                 },
                             ))
@@ -1617,7 +1707,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         |t| {
                             self3.add_history(editor::HistoryEntry::MeshPlacement(
                                 light_mesh::LightMeshPlacementSnapshot {
-                                    view_idx: self3.get_current_mesh_id().unwrap(),
+                                    view_id: self3.get_current_mesh_id().unwrap().to_string(),
                                     placements: t,
                                 },
                             ))
@@ -1646,7 +1736,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         |t| {
                             self3.add_history(editor::HistoryEntry::MeshPlacement(
                                 light_mesh::LightMeshPlacementSnapshot {
-                                    view_idx: self3.get_current_mesh_id().unwrap(),
+                                    view_id: self3.get_current_mesh_id().unwrap().to_string(),
                                     placements: t,
                                 },
                             ))
@@ -1700,7 +1790,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 && let Some(first) = part_names.first()
             {
                 self3.add_history(editor::HistoryEntry::Mesh(light_mesh::LightMeshSnapshot {
-                    idx: self3.get_current_mesh_id().unwrap(),
+                    id: self3.get_current_mesh_id().unwrap().to_string(),
                     mesh: Box::new(mesh.data.clone()),
                 }));
                 mesh.data.placements.push(light_mesh::Placement {
@@ -1791,7 +1881,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         let mat_label = format!("Material {}", entry.material);
                         if ui.button(mat_label).clicked() {
                             self3.add_history(editor::HistoryEntry::MeshMeta(
-                                mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap())
+                                mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
                             ));
                             entry.material = (entry.material + 1) % 3;
                             self3.rebuild_meshes(gl);
@@ -1806,7 +1896,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             });
                         if current != entry.color {
                             self3.add_history(editor::HistoryEntry::MeshMeta(
-                                mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap())
+                                mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
                             ));
                             entry.color = current;
                             self3.rebuild_meshes(gl);
@@ -1823,7 +1913,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         );
                         if resp.changed() {
                             self3.add_history(editor::HistoryEntry::MeshMeta(
-                                mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap())
+                                mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
                             ));
                             entry.texture = current;
                             self3.rebuild_meshes(gl);
@@ -1836,7 +1926,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
             if let Some(key) = data_to_remove {
                 self3.add_history(editor::HistoryEntry::MeshMeta(
-                    mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap())
+                    mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
                 ));
                 mesh.data.data.shift_remove(&key);
                 self3.rebuild_meshes(gl);
@@ -1998,7 +2088,7 @@ fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     ui.add_sized([w - 24., 20.], TextInput::new(name, &mut new_name));
                     if let Some(new_name) = new_name {
                         let _ = s2.rename(editor::Rename::Part {
-                            view_idx: s2.get_current_mesh_id().unwrap(),
+                            view_id: s2.get_current_mesh_id().unwrap().to_string(),
                             swap: editor::DataSwap {
                                 from: name.clone(),
                                 to: new_name,
@@ -2008,7 +2098,7 @@ fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     }
                     if ui.small_button(SMALL_X).clicked() {
                         s2.add_history(editor::HistoryEntry::Mesh(light_mesh::LightMeshSnapshot {
-                            idx: s2.get_current_mesh_id().unwrap(),
+                            id: s2.get_current_mesh_id().unwrap().to_string(),
                             mesh: Box::new(mesh2.data.clone()),
                         }));
                         let _ = mesh2.data.parts.shift_remove(name);
@@ -2027,7 +2117,7 @@ fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         ui.add_sized([w, 20.], TextInput::new("+ Part", &mut new_part));
         if let Some(name) = new_part {
             s2.add_history(editor::HistoryEntry::Mesh(light_mesh::LightMeshSnapshot {
-                idx: s2.get_current_mesh_id().unwrap(),
+                id: s2.get_current_mesh_id().unwrap().to_string(),
                 mesh: Box::new(mesh2.data.clone()),
             }));
             mesh.data.parts.insert(name, Part::default());
@@ -2038,8 +2128,8 @@ fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
 fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32)) {
     let vp = proj * view;
-    if let Some(sel) = s.editor.mesh
-        && let Some(vm) = s.view.meshes.get(sel)
+    if let Some(sel) = s.editor.mesh.as_deref()
+        && let Some(Some(vm)) = s.view.meshes.get(sel)
     {
         let mut instances = Vec::new();
         if let Some(mesh) = vm.render_assembly(&mut instances) {
@@ -2150,7 +2240,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     |t| {
                         self3.add_history(editor::HistoryEntry::MeshPart(
                             light_mesh::LightMeshPartSnapshot {
-                                idx: self3.get_current_mesh_id().unwrap(),
+                                id: self3.get_current_mesh_id().unwrap().to_string(),
                                 name: self3.get_current_part_name().unwrap().to_string(),
                                 part: Box::new(t),
                             },
@@ -2189,7 +2279,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 {
                     let _ = self3.rename(editor::Rename::Vertex {
                         part: editor::PartId {
-                            view_idx: self3.get_current_mesh_id().unwrap(),
+                            view_id: self3.get_current_mesh_id().unwrap().to_string(),
                             name: self3.get_current_part_name().unwrap().to_string(),
                         },
                         swap: editor::DataSwap {
@@ -2214,7 +2304,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     |t| {
                         self3.add_history(editor::HistoryEntry::MeshPart(
                             light_mesh::LightMeshPartSnapshot {
-                                idx: self3.get_current_mesh_id().unwrap(),
+                                id: self3.get_current_mesh_id().unwrap().to_string(),
                                 name: self3.get_current_part_name().unwrap().to_string(),
                                 part: Box::new(t),
                             },
@@ -2253,7 +2343,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 {
                     let _ = self3.rename(editor::Rename::Vertex {
                         part: editor::PartId {
-                            view_idx: self3.get_current_mesh_id().unwrap(),
+                            view_id: self3.get_current_mesh_id().unwrap().to_string(),
                             name: self3.get_current_part_name().unwrap().to_string(),
                         },
                         swap: editor::DataSwap {
@@ -2293,7 +2383,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             if ui.small_button(SMALL_X).clicked() {
                                 self3.add_history(editor::HistoryEntry::MeshPart(
                                     light_mesh::LightMeshPartSnapshot {
-                                        idx: self3.get_current_mesh_id().unwrap(),
+                                        id: self3.get_current_mesh_id().unwrap().to_string(),
                                         name: self3.get_current_part_name().unwrap().to_string(),
                                         part: Box::new(part2.clone()),
                                     },
@@ -2318,7 +2408,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     |t| {
                         self3.add_history(editor::HistoryEntry::MeshPart(
                             light_mesh::LightMeshPartSnapshot {
-                                idx: self3.get_current_mesh_id().unwrap(),
+                                id: self3.get_current_mesh_id().unwrap().to_string(),
                                 name: self3.get_current_part_name().unwrap().to_string(),
                                 part: Box::new(t),
                             },
@@ -2331,7 +2421,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.button("+ UV").clicked() {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
-                        idx: self3.get_current_mesh_id().unwrap(),
+                        id: self3.get_current_mesh_id().unwrap().to_string(),
                         name: self3.get_current_part_name().unwrap().to_string(),
                         part: Box::new(part.clone()),
                     },
@@ -2370,7 +2460,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         {
                             let _ = self3.rename(editor::Rename::Uv {
                                 part: editor::PartId {
-                                    view_idx: self3.get_current_mesh_id().unwrap(),
+                                    view_id: self3.get_current_mesh_id().unwrap().to_string(),
                                     name: self3.get_current_part_name().unwrap().to_string(),
                                 },
                                 swap: editor::DataSwap {
@@ -2384,7 +2474,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         if ui.small_button(SMALL_X).clicked() {
                             self3.add_history(editor::HistoryEntry::MeshPart(
                                 light_mesh::LightMeshPartSnapshot {
-                                    idx: self3.get_current_mesh_id().unwrap(),
+                                    id: self3.get_current_mesh_id().unwrap().to_string(),
                                     name: self3.get_current_part_name().unwrap().to_string(),
                                     part: Box::new(part2.clone()),
                                 },
@@ -2413,7 +2503,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     |t| {
                         self3.add_history(editor::HistoryEntry::MeshPart(
                             light_mesh::LightMeshPartSnapshot {
-                                idx: self3.get_current_mesh_id().unwrap(),
+                                id: self3.get_current_mesh_id().unwrap().to_string(),
                                 name: self3.get_current_part_name().unwrap().to_string(),
                                 part: Box::new(t),
                             },
@@ -2428,7 +2518,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if let Some(name) = new_uv {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
-                        idx: self3.get_current_mesh_id().unwrap(),
+                        id: self3.get_current_mesh_id().unwrap().to_string(),
                         name: self3.get_current_part_name().unwrap().to_string(),
                         part: Box::new(part.clone()),
                     },
@@ -2456,7 +2546,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             if ui.small_button(SMALL_X).clicked() {
                                 self3.add_history(editor::HistoryEntry::MeshPart(
                                     light_mesh::LightMeshPartSnapshot {
-                                        idx: self3.get_current_mesh_id().unwrap(),
+                                        id: self3.get_current_mesh_id().unwrap().to_string(),
                                         name: self3.get_current_part_name().unwrap().to_string(),
                                         part: Box::new(part2.clone()),
                                     },
@@ -2481,7 +2571,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     |t| {
                         self3.add_history(editor::HistoryEntry::MeshPart(
                             light_mesh::LightMeshPartSnapshot {
-                                idx: self3.get_current_mesh_id().unwrap(),
+                                id: self3.get_current_mesh_id().unwrap().to_string(),
                                 name: self3.get_current_part_name().unwrap().to_string(),
                                 part: Box::new(t),
                             },
@@ -2494,7 +2584,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.button("+ Normal").clicked() {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
-                        idx: self3.get_current_mesh_id().unwrap(),
+                        id: self3.get_current_mesh_id().unwrap().to_string(),
                         name: self3.get_current_part_name().unwrap().to_string(),
                         part: Box::new(part.clone()),
                     },
@@ -2533,7 +2623,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         {
                             let _ = self3.rename(editor::Rename::Normal {
                                 part: editor::PartId {
-                                    view_idx: self3.get_current_mesh_id().unwrap(),
+                                    view_id: self3.get_current_mesh_id().unwrap().to_string(),
                                     name: self3.get_current_part_name().unwrap().to_string(),
                                 },
                                 swap: editor::DataSwap {
@@ -2547,7 +2637,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         if ui.small_button(SMALL_X).clicked() {
                             self3.add_history(editor::HistoryEntry::MeshPart(
                                 light_mesh::LightMeshPartSnapshot {
-                                    idx: self3.get_current_mesh_id().unwrap(),
+                                    id: self3.get_current_mesh_id().unwrap().to_string(),
                                     name: self3.get_current_part_name().unwrap().to_string(),
                                     part: Box::new(part2.clone()),
                                 },
@@ -2575,7 +2665,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     |t| {
                         self3.add_history(editor::HistoryEntry::MeshPart(
                             light_mesh::LightMeshPartSnapshot {
-                                idx: self3.get_current_mesh_id().unwrap(),
+                                id: self3.get_current_mesh_id().unwrap().to_string(),
                                 name: self3.get_current_part_name().unwrap().to_string(),
                                 part: Box::new(t),
                             },
@@ -2589,7 +2679,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if let Some(name) = new_norm {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
-                        idx: self3.get_current_mesh_id().unwrap(),
+                        id: self3.get_current_mesh_id().unwrap().to_string(),
                         name: self3.get_current_part_name().unwrap().to_string(),
                         part: Box::new(part.clone()),
                     },
@@ -2628,7 +2718,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         {
                             let _ = self3.rename(editor::Rename::Normal {
                                 part: editor::PartId {
-                                    view_idx: self3.get_current_mesh_id().unwrap(),
+                                    view_id: self3.get_current_mesh_id().unwrap().to_string(),
                                     name: self3.get_current_part_name().unwrap().to_string(),
                                 },
                                 swap: editor::DataSwap {
@@ -2642,7 +2732,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         if ui.small_button(SMALL_X).clicked() {
                             self3.add_history(editor::HistoryEntry::MeshPart(
                                 light_mesh::LightMeshPartSnapshot {
-                                    idx: self3.get_current_mesh_id().unwrap(),
+                                    id: self3.get_current_mesh_id().unwrap().to_string(),
                                     name: self3.get_current_part_name().unwrap().to_string(),
                                     part: Box::new(part2.clone()),
                                 },
@@ -2687,7 +2777,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         if *id != check {
                             self3.add_history(editor::HistoryEntry::MeshPart(
                                 light_mesh::LightMeshPartSnapshot {
-                                    idx: self3.get_current_mesh_id().unwrap(),
+                                    id: self3.get_current_mesh_id().unwrap().to_string(),
                                     name: self3.get_current_part_name().unwrap().to_string(),
                                     part: Box::new(part2.clone()),
                                 },
@@ -2720,7 +2810,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         );
         if let Some(rename) = rename {
             let _ = s.rename(editor::Rename::Part {
-                view_idx: s.get_current_mesh_id().unwrap(),
+                view_id: s.get_current_mesh_id().unwrap().to_string(),
                 swap: editor::DataSwap {
                     from: current.to_string(),
                     to: rename,
@@ -2749,7 +2839,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             |t| {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
-                        idx: self3.get_current_mesh_id().unwrap(),
+                        id: self3.get_current_mesh_id().unwrap().to_string(),
                         name: self3.get_current_part_name().unwrap().to_string(),
                         part: Box::new(t),
                     },
@@ -2790,7 +2880,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         |t| {
                             self3.add_history(editor::HistoryEntry::MeshPart(
                                 light_mesh::LightMeshPartSnapshot {
-                                    idx: self3.get_current_mesh_id().unwrap(),
+                                    id: self3.get_current_mesh_id().unwrap().to_string(),
                                     name: self3.get_current_part_name().unwrap().to_string(),
                                     part: Box::new(t),
                                 },
@@ -2817,7 +2907,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if let Some(name) = comp_name {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
-                        idx: self3.get_current_mesh_id().unwrap(),
+                        id: self3.get_current_mesh_id().unwrap().to_string(),
                         name: self3.get_current_part_name().unwrap().to_string(),
                         part: Box::new(part2.clone()),
                     },
@@ -2873,7 +2963,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if let Some(name) = comp_name {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
-                        idx: self3.get_current_mesh_id().unwrap(),
+                        id: self3.get_current_mesh_id().unwrap().to_string(),
                         name: self3.get_current_part_name().unwrap().to_string(),
                         part: Box::new(part2.clone()),
                     },
@@ -2908,7 +2998,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     if normal != NormalId::Named(String::new()) {
                         self3.add_history(editor::HistoryEntry::MeshPart(
                             light_mesh::LightMeshPartSnapshot {
-                                idx: self3.get_current_mesh_id().unwrap(),
+                                id: self3.get_current_mesh_id().unwrap().to_string(),
                                 name: self3.get_current_part_name().unwrap().to_string(),
                                 part: Box::new(part.clone()),
                             },
@@ -2940,7 +3030,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     if uv != UvId::Named(String::new()) {
                         self3.add_history(editor::HistoryEntry::MeshPart(
                             light_mesh::LightMeshPartSnapshot {
-                                idx: self3.get_current_mesh_id().unwrap(),
+                                id: self3.get_current_mesh_id().unwrap().to_string(),
                                 name: self3.get_current_part_name().unwrap().to_string(),
                                 part: Box::new(part.clone()),
                             },
@@ -2965,7 +3055,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 if !mat.is_empty() {
                     self3.add_history(editor::HistoryEntry::MeshPart(
                         light_mesh::LightMeshPartSnapshot {
-                            idx: self3.get_current_mesh_id().unwrap(),
+                            id: self3.get_current_mesh_id().unwrap().to_string(),
                             name: self3.get_current_part_name().unwrap().to_string(),
                             part: Box::new(part.clone()),
                         },
@@ -2986,7 +3076,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         && ui.add_sized([w, 20.], egui::Button::new("Dedupe Vertices")).clicked() {
             self3.add_history(editor::HistoryEntry::MeshPart(
                 light_mesh::LightMeshPartSnapshot {
-                    idx: self3.get_current_mesh_id().unwrap(),
+                    id: self3.get_current_mesh_id().unwrap().to_string(),
                     name: self3.get_current_part_name().unwrap().to_string(),
                     part: Box::new(part.clone()),
                 },
@@ -3000,8 +3090,8 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32)) {
     let vp = proj * view;
     if let Some((_, name, _part)) = s.get_current_part()
-        && let Some(sel) = s.editor.mesh
-        && let Some(vm) = s.view.meshes.get(sel)
+        && let Some(sel) = s.editor.mesh.as_deref()
+        && let Some(Some(vm)) = s.view.meshes.get(sel)
         && let Some(mesh) = vm.gpu_bufs.0.get(name)
     {
         let calls = vec![MeshDrawCall {
@@ -3120,7 +3210,8 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
 
     if let Selection::Vertices(verts) = &mut s2.selection
         && let Some(sel) = s.get_current_mesh_id()
-        && let Some(v_mesh) = s2.view.meshes.get_mut(sel)
+        && let Some(Some(v_mesh)) = s2.view.meshes.get_mut(sel)
+        && let sel = sel.to_string()
         && let Some(part) = s3.get_current_part_mut()
         && let part2 = unsafe { rd.detach_mut_ref(part) }
         && let tris = part2.filter_triangles(verts).collect::<Vec<_>>()
@@ -3333,7 +3424,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
             s.state.ui.dragging_uv = prev_hovered;
             s.add_history(editor::HistoryEntry::MeshPart(
                 light_mesh::LightMeshPartSnapshot {
-                    idx: sel,
+                    id: sel.to_string(),
                     name: s.get_current_part_name().unwrap().to_string(),
                     part: Box::new(part.clone()),
                 },
@@ -3477,7 +3568,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                                         {
                                             s.add_history(editor::HistoryEntry::MeshPart(
                                                 light_mesh::LightMeshPartSnapshot {
-                                                    idx: sel,
+                                                    id: sel.to_string(),
                                                     name: s
                                                         .get_current_part_name()
                                                         .unwrap()
@@ -3505,7 +3596,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                                         {
                                             s.add_history(editor::HistoryEntry::MeshPart(
                                                 light_mesh::LightMeshPartSnapshot {
-                                                    idx: sel,
+                                                    id: sel.to_string(),
                                                     name: s
                                                         .get_current_part_name()
                                                         .unwrap()
@@ -3542,7 +3633,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                                 if *current != old {
                                     s.add_history(editor::HistoryEntry::MeshPart(
                                         light_mesh::LightMeshPartSnapshot {
-                                            idx: sel,
+                                            id: sel.to_string(),
                                             name: s.get_current_part_name().unwrap().to_string(),
                                             part: Box::new(part.clone()),
                                         },

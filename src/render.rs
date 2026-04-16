@@ -59,6 +59,7 @@ pub struct HandleDrawCall<'a> {
     pub instances: Vec<InstanceData>,
 }
 
+#[derive(Debug)]
 pub struct GpuMesh {
     pub vao: glow::NativeVertexArray,
     pub vbos: [glow::NativeBuffer; 3],

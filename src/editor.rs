@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 
 use crate::RefDuper;
 use crate::data::{
-    EnvData, EnvMeshData, EnvPlacementData, IdList, LightMeshData, NormalId, SessionData, UvId, VertexId
+    EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightMeshData, NormalId, SessionData, SpectrogramData, TypeData, UvId, VertexId
 };
 use crate::light_mesh::{
     LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot,
@@ -112,6 +112,7 @@ pub enum InstanceHandleType {
     ZScale,
 }
 
+#[derive(Debug)]
 pub struct ViewMesh {
     pub path: PathBuf,
     pub data: LightMesh,
@@ -145,6 +146,35 @@ pub enum ActionType {
         start: Option<[f32; 4]>,
     },
     Static,
+}
+
+impl ActionType {
+    pub fn get_type(&self) -> EventGroup {
+        match self {
+            Self::Spinning { side: SpinSide::Left, .. } => EventGroup::LeftSpinning,
+            Self::Spinning { side: SpinSide::Right, .. } => EventGroup::RightSpinning,
+            Self::Ring { layer: RingType::Inner, .. } => EventGroup::InnerRing,
+            Self::Ring { layer: RingType::Outer, .. } => EventGroup::OuterRing,
+            _ => EventGroup::None,
+        }
+    }
+    pub fn to_data(&self) -> TypeData {
+        match self {
+            Self::Spinning {
+                side: _, axis
+            } => TypeData::Spinning {
+                axis: (*axis).unwrap_or(Vec3::ZERO)
+            },
+            Self::Ring {
+                layer: _, angles, deltas, start
+            } => TypeData::Rings {
+                angles: angles.clone(),
+                deltas: deltas.clone(),
+                starts: *start
+            },
+            Self::Static => TypeData::None
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -341,9 +371,14 @@ pub struct ClickCycle {
 }
 
 pub struct View {
-    pub meshes: IndexMap<String, ViewMesh>,
+    pub meshes: IndexMap<String, Option<ViewMesh>>,
     pub session: Option<PathBuf>,
     pub camera: Camera,
+    pub env_path: Option<PathBuf>,
+    pub mirror_path: Option<PathBuf>,
+    pub mirror_id: Option<String>,
+    pub fog_heights: Option<[f32; 2]>,
+    pub spectrogram: Option<SpectrogramData>,
 }
 
 pub struct Assembly {
@@ -545,10 +580,12 @@ pub enum PopupResponse {
     OpenNew(Box<dyn Fn(&egui::Ui) -> Self>),
 }
 
+type PopupCallback = Box<dyn Fn(&egui::Ui) -> PopupResponse>;
+
 #[derive(Default)]
 pub struct UiState {
     /// Currently displayed view mesh settings
-    pub view_mesh: Option<usize>,
+    pub view_mesh: Option<String>,
     /// mpsc channel for opening meshes
     pub open_mesh_channel: Option<mpsc::Receiver<Vec<PathBuf>>>,
     /// mpsc channel for opening a session
@@ -560,11 +597,11 @@ pub struct UiState {
     /// mpsc channel for linking image paths
     pub select_image_channel: Option<(String, mpsc::Receiver<PathBuf>)>,
     /// callback for custom popup window logic
-    pub custom_popup: Vec<Box<dyn Fn(&egui::Ui) -> PopupResponse>>,
+    pub custom_popup: Vec<PopupCallback>,
     /// Map<viewmesh id, Vec<view placement collapse state>>
-    pub collapsed: HashMap<usize, Vec<bool>>,
+    pub collapsed: HashMap<String, Vec<bool>>,
     /// Map<viewmesh id, Vec<rotation display modes>>
-    pub view_rotation_modes: HashMap<usize, Vec<[RotationDisplayMode; 2]>>,
+    pub view_rotation_modes: HashMap<String, Vec<[RotationDisplayMode; 4]>>,
     /// Map<Mesh file, part collapse states>
     pub assembly_collapsed: HashMap<PathBuf, PartCollapseToggles>,
     /// global vertices/uvs/normals section collapse states
@@ -679,7 +716,6 @@ pub enum HistoryCycleDir {
 
 impl History {
     pub fn add_history(&mut self, entry: HistoryEntry) {
-        // println!("Saving history: {:?}", entry);
         self.history.push_back(entry);
         self.future.clear();
         if self.history.len() > self.limit {
@@ -695,13 +731,13 @@ impl History {
     ) -> HistoryEntry {
         match entry {
             HistoryEntry::Mesh(LightMeshSnapshot { id, mut mesh }) => {
-                let m = editor.view.meshes.get_mut(&id).unwrap();
+                let m = editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap();
                 std::mem::swap(&mut m.data, &mut *mesh);
                 // Rebuild atlas and pass maps for UV remapping.
                 editor.render.renderer.rebuild_atlases(gl);
                 let texture_paths = editor.render.renderer.texture_paths.clone();
                 let atlas_map = editor.render.renderer.atlas_map.clone();
-                editor.view.meshes.get_mut(&id).unwrap().rebuild_with_maps(
+                editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap().rebuild_with_maps(
                     gl,
                     &texture_paths,
                     &atlas_map,
@@ -709,12 +745,12 @@ impl History {
                 HistoryEntry::Mesh(LightMeshSnapshot { id, mesh })
             }
             HistoryEntry::MeshPart(LightMeshPartSnapshot { id, name, part }) => {
-                let m = editor.view.meshes.get_mut(&id).unwrap();
+                let m = editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap();
                 let current = m.data.parts.insert(name.clone(), *part).unwrap();
                 editor.render.renderer.rebuild_atlases(gl);
                 let texture_paths = editor.render.renderer.texture_paths.clone();
                 let atlas_map = editor.render.renderer.atlas_map.clone();
-                editor.view.meshes.get_mut(&id).unwrap().rebuild_with_maps(
+                editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap().rebuild_with_maps(
                     gl,
                     &texture_paths,
                     &atlas_map,
@@ -733,7 +769,7 @@ impl History {
                 mut data,
                 mut cull,
             }) => {
-                let m = editor.view.meshes.get_mut(&id).unwrap();
+                let m = editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap();
                 mem::swap(&mut credits, &mut m.data.credits);
                 mem::swap(&mut textures, &mut m.data.textures);
                 mem::swap(&mut data, &mut m.data.data);
@@ -742,7 +778,7 @@ impl History {
                 editor.render.renderer.rebuild_atlases(gl);
                 let texture_paths = editor.render.renderer.texture_paths.clone();
                 let atlas_map = editor.render.renderer.atlas_map.clone();
-                editor.view.meshes.get_mut(&id).unwrap().rebuild_with_maps(
+                editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap().rebuild_with_maps(
                     gl,
                     &texture_paths,
                     &atlas_map,
@@ -760,7 +796,7 @@ impl History {
                 view_id,
                 mut placements,
             }) => {
-                let m = editor.view.meshes.get_mut(&view_id).unwrap();
+                let m = editor.view.meshes.get_mut(&view_id).unwrap().as_mut().unwrap();
                 mem::swap(&mut placements, &mut m.data.placements);
                 editor.render.renderer.rebuild_atlases(gl);
                 let texture_paths = editor.render.renderer.texture_paths.clone();
@@ -769,7 +805,7 @@ impl History {
                     .view
                     .meshes
                     .get_mut(&view_id)
-                    .unwrap()
+                    .unwrap().as_mut().unwrap()
                     .rebuild_with_maps(gl, &texture_paths, &atlas_map);
                 editor.upload_selection_points(gl);
                 HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
@@ -781,12 +817,12 @@ impl History {
                 id,
                 mut placements,
             }) => {
-                let m = editor.view.meshes.get_mut(&id).unwrap();
+                let m = editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap();
                 mem::swap(&mut placements, &mut m.view_placements);
                 editor.render.renderer.rebuild_atlases(gl);
                 let texture_paths = editor.render.renderer.texture_paths.clone();
                 let atlas_map = editor.render.renderer.atlas_map.clone();
-                editor.view.meshes.get_mut(&id).unwrap().rebuild_with_maps(
+                editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap().rebuild_with_maps(
                     gl,
                     &texture_paths,
                     &atlas_map,
@@ -818,7 +854,6 @@ impl History {
         };
 
         let save = if let Some(restore) = front.pop_back() {
-            // println!("Restoring {:?}", restore);
             self.process_history(editor, gl, restore)
         } else {
             return;
@@ -927,6 +962,11 @@ impl App {
                 meshes: IndexMap::new(),
                 session: None,
                 camera: Camera::default(),
+                env_path: None,
+                mirror_path: None,
+                mirror_id: None,
+                fog_heights: None,
+                spectrogram: None,
             },
             state: State {
                 title_content: None,
@@ -972,7 +1012,7 @@ impl App {
     pub fn get_unique_mesh_id(&self) -> String {
         let base = "beatcraft:new_mesh_".to_string();
         let mut i = 0;
-        while !self.view.meshes.contains_key(&format!("{base}{i}")) {
+        while self.view.meshes.contains_key(&format!("{base}{i}")) {
             i += 1;
         }
         format!("{base}{i}")
@@ -982,10 +1022,10 @@ impl App {
         paths: IndexMap<String, PathBuf>,
         gl: &Context,
         renderer: &Renderer,
-    ) -> anyhow::Result<IndexMap<String, ViewMesh>> {
+    ) -> anyhow::Result<IndexMap<String, Option<ViewMesh>>> {
         let mut out = IndexMap::new();
         for (k, path) in paths.into_iter() {
-            out.insert(k, LightMesh::load(&path)?.into_view_mesh(path, gl, renderer));
+            out.insert(k, Some(LightMesh::load(&path)?.into_view_mesh(path, gl, renderer)));
         }
         Ok(out)
     }
@@ -996,7 +1036,12 @@ impl App {
         self.view.meshes.retain(|id, view_mesh| {
             !meshes
                 .iter()
-                .any(|(id2, new_mesh)| new_mesh.path == view_mesh.path || id == id2)
+                .any(
+                    |(id2, new_mesh)| {
+                        (new_mesh.is_some() && view_mesh.is_some() && new_mesh.as_ref().unwrap().path == view_mesh.as_ref().unwrap().path)
+                        || id == id2
+                    }
+                )
         });
         self.view.meshes.append(&mut meshes);
         Ok(())
@@ -1015,7 +1060,9 @@ impl App {
         let texture_paths = self.render.renderer.texture_paths.clone();
         let atlas_map = self.render.renderer.atlas_map.clone();
         for (_id, view_mesh) in self.view.meshes.iter_mut() {
-            view_mesh.rebuild_with_maps(gl, &texture_paths, &atlas_map);
+            if let Some(vm) = view_mesh.as_mut() {
+                vm.rebuild_with_maps(gl, &texture_paths, &atlas_map);
+            }
         }
         self.upload_selection_points(gl);
     }
@@ -1028,54 +1075,9 @@ impl App {
         || !self.state.ui.custom_popup.is_empty()
     }
 
-    fn save_session(&mut self) -> anyhow::Result<()> {
-        let mut meshes = Vec::new();
-
-        for view in self.view.meshes.iter() {
-            let mut placements = Vec::new();
-
-            for place in view.view_placements.iter() {
-                placements.push((*place).into());
-            }
-
-            meshes.push(EnvMeshData {
-                path: view.path.clone(),
-                placements,
-            });
-        }
-
-        let data = SessionData {
-            meshes,
-            camera: self.view.camera.into(),
-            texture_paths: self.render.renderer.texture_paths.clone(),
-        };
-
-        let json = serde_json::to_string(&data)?;
-
-        if let Some(path) = self.view.session.as_deref() {
-            fs::write(path, &json)?;
-        } else {
-            let (sx, rx) = mpsc::channel();
-            self.state.ui.save_session_channel = Some(rx);
-
-            std::thread::spawn(move || {
-                if let Some(dest) = rfd::FileDialog::new()
-                    .set_title("Save Session")
-                    .add_filter("json", &["json"])
-                    .set_file_name("session.json")
-                    .save_file()
-                {
-                    let _ = sx.send(dest);
-                }
-            });
-        }
-
-        Ok(())
-    }
-
     fn save_current_mesh(&mut self) -> anyhow::Result<()> {
         if let Some(sel) = self.editor.mesh.as_deref()
-            && let Some(mesh) = self.view.meshes.get(sel)
+            && let Some(Some(mesh)) = self.view.meshes.get(sel)
         {
             let json: LightMeshData = mesh.data.clone().into();
             let json = serde_json::to_string(&json)?;
@@ -1174,7 +1176,7 @@ impl App {
                     self.mode = EditorMode::Edit;
                     if self.editor.part.is_none()
                         && let Some(sel) = self.editor.mesh.as_deref()
-                        && let Some(mesh) = self.view.meshes.get(sel)
+                        && let Some(Some(mesh)) = self.view.meshes.get(sel)
                         && !mesh.data.parts.is_empty()
                     {
                         self.editor.part = Some(0);
@@ -1190,7 +1192,7 @@ impl App {
                 }
                 if input.key_pressed(Key::A)
                     && let Some(sel) = self.editor.mesh.as_deref()
-                    && let Some(mesh) = self.view.meshes.get(sel)
+                    && let Some(Some(mesh)) = self.view.meshes.get(sel)
                 {
                     if mesh.data.part_names.is_empty() {
                         self.editor.part = None;
@@ -1204,7 +1206,7 @@ impl App {
                 }
                 if input.key_pressed(Key::D)
                     && let Some(sel) = self.editor.mesh.as_deref()
-                    && let Some(mesh) = self.view.meshes.get(sel)
+                    && let Some(Some(mesh)) = self.view.meshes.get(sel)
                 {
                     if mesh.data.part_names.is_empty() {
                         self.editor.part = None;
@@ -1418,7 +1420,7 @@ impl App {
                     }
 
                     if let Some(sel) = self.editor.mesh.as_deref()
-                        && let Some(mesh) = self.view.meshes.get_mut(sel)
+                        && let Some(Some(mesh)) = self.view.meshes.get_mut(sel)
                     {
                         mesh.rebuild(gl, &self.render.renderer);
                         self.upload_selection_points(gl);
@@ -1469,7 +1471,7 @@ impl App {
                     }
 
                     if let Some(sel) = self.editor.mesh.as_deref()
-                        && let Some(mesh) = self.view.meshes.get_mut(sel)
+                        && let Some(Some(mesh)) = self.view.meshes.get_mut(sel)
                     {
                         mesh.rebuild(gl, &self.render.renderer);
                         self.upload_selection_points(gl);
@@ -1585,11 +1587,11 @@ impl App {
     }
 
     pub fn get_current_view_mesh(&self) -> Option<&ViewMesh> {
-        self.view.meshes.get(self.editor.mesh.as_deref()?)
+        self.view.meshes.get(self.editor.mesh.as_deref().unwrap()).unwrap().as_ref()
     }
 
     pub fn get_current_view_mesh_mut(&mut self) -> Option<&mut ViewMesh> {
-        self.view.meshes.get_mut(self.editor.mesh.as_deref()?)
+        self.view.meshes.get_mut(self.editor.mesh.as_deref()?).unwrap().as_mut()
     }
 
     pub fn get_current_mesh_id(&self) -> Option<&str> {
@@ -1598,7 +1600,7 @@ impl App {
 
     pub fn get_current_part_name(&self) -> Option<&str> {
         let sel = self.editor.mesh.as_deref()?;
-        let mesh = self.view.meshes.get(sel)?;
+        let mesh = self.view.meshes.get(sel)?.as_ref()?;
         mesh.data
             .part_names
             .get(self.editor.part?)
@@ -1609,7 +1611,7 @@ impl App {
         let id = self.get_current_mesh_id()?;
         let name = self.get_current_part_name()?;
 
-        Some((id, name, self.view.meshes.get(id)?.data.parts.get(name)?))
+        Some((id, name, self.view.meshes.get(id)?.as_ref()?.data.parts.get(name)?))
     }
 
     pub fn get_current_part_mut(&mut self) -> Option<&mut Part> {
@@ -1622,7 +1624,7 @@ impl App {
         let id2 = unsafe { &*(id as *const _) };
         let name = unsafe { &*(name as *const _) };
 
-        self.view.meshes.get_mut(id2)?.data.parts.get_mut(name)
+        self.view.meshes.get_mut(id2)?.as_mut()?.data.parts.get_mut(name)
     }
 
     pub fn add_history(&mut self, entry: HistoryEntry) {
@@ -1633,12 +1635,12 @@ impl App {
     pub fn rename(&mut self, rename: Rename) -> anyhow::Result<()> {
         match &rename {
             Rename::DataTag { view_id, swap } => {
-                if let Some(vm) = self.view.meshes.get_mut(view_id) {
+                if let Some(Some(vm)) = self.view.meshes.get_mut(view_id) {
                     vm.data.rename_data(swap);
                 }
             }
             Rename::Part { view_id, swap } => {
-                if let Some(vm) = self.view.meshes.get_mut(view_id) {
+                if let Some(Some(vm)) = self.view.meshes.get_mut(view_id) {
                     vm.data.rename_part(swap);
                     if let Some(s) = vm.gpu_bufs.0.remove(&swap.from) {
                         vm.gpu_bufs.0.insert(swap.to.clone(), s);
@@ -1646,17 +1648,17 @@ impl App {
                 }
             }
             Rename::Vertex { part, swap } => {
-                if let Some(vm) = self.view.meshes.get_mut(&part.view_id) {
+                if let Some(Some(vm)) = self.view.meshes.get_mut(&part.view_id) {
                     vm.data.rename_vertex(part.name.as_str(), swap)?
                 }
             }
             Rename::Uv { part, swap } => {
-                if let Some(vm) = self.view.meshes.get_mut(&part.view_id) {
+                if let Some(Some(vm)) = self.view.meshes.get_mut(&part.view_id) {
                     vm.data.rename_uv(part.name.as_str(), swap)?
                 }
             }
             Rename::Normal { part, swap } => {
-                if let Some(vm) = self.view.meshes.get_mut(&part.view_id) {
+                if let Some(Some(vm)) = self.view.meshes.get_mut(&part.view_id) {
                     vm.data.rename_normal(part.name.as_str(), swap)?
                 }
             }
@@ -2090,8 +2092,10 @@ impl App {
                     self.state.ui.open_mesh_channel = None;
                 }
                 Ok(meshes) => {
-                    if let Err(e) = self.load_meshes(meshes, gl) {
-                        eprintln!("Error loading meshes: {e}");
+                    for m in meshes.into_iter() {
+                        if let Err(e) = self.load_meshes({ let mut m2 = IndexMap::new(); m2.insert(self.get_unique_mesh_id(), m); m2 }, gl) {
+                            eprintln!("Error loading meshes: {e}");
+                        }
                     }
                 }
             }
@@ -2128,7 +2132,7 @@ impl App {
                         serde_json::to_string(&LightMeshData::default()).unwrap(),
                     ) {
                         eprintln!("Failed to write mesh file\n{e}");
-                    } else if let Err(e) = self.load_meshes(vec![dest], gl) {
+                    } else if let Err(e) = self.load_meshes({ let mut m = IndexMap::new(); m.insert(self.get_unique_mesh_id(), dest); m }, gl) {
                         eprintln!("Failed to load mesh\n{e}");
                     }
                 }
@@ -2148,6 +2152,65 @@ impl App {
         }
     }
 
+
+    fn save_session(&mut self) -> anyhow::Result<()> {
+        let mut meshes = IndexMap::new();
+
+        for (id, view) in self.view.meshes.iter().filter_map(|(i, x)| x.as_ref().map(|v| (i, v))) {
+            let mut placements = Vec::<EnvPlacementData>::new();
+
+            for place in view.view_placements.iter() {
+                placements.push(place.into());
+            }
+
+            meshes.insert(id.clone(), EnvMeshData::from(placements));
+        }
+
+        if let Some(env_path) = self.view.env_path.as_deref() {
+            let env = EnvData {
+                layout: meshes,
+                mirror: self.view.mirror_id.clone(),
+                fog_heights: self.view.fog_heights,
+                spectrogram: self.view.spectrogram.clone(),
+            };
+            let json = serde_json::to_string(&env)?;
+            fs::write(env_path, json)?;
+        }
+
+        let data = SessionData {
+            camera: self.view.camera.into(),
+            texture_paths: self.render.renderer.texture_paths.clone(),
+            env_path: self.view.env_path.clone(),
+            mesh_paths: self.view.meshes.iter().filter_map(
+                |(key, val)| val.as_ref().map(|v| (key.clone(), v.path.clone()))
+            ).collect(),
+            env: None,
+            mirror_path: self.view.mirror_path.clone(),
+        };
+
+        let json = serde_json::to_string(&data)?;
+
+        if let Some(path) = self.view.session.as_deref() {
+            fs::write(path, &json)?;
+        } else {
+            let (sx, rx) = mpsc::channel();
+            self.state.ui.save_session_channel = Some(rx);
+
+            std::thread::spawn(move || {
+                if let Some(dest) = rfd::FileDialog::new()
+                    .set_title("Save Session")
+                    .add_filter("json", &["json"])
+                    .set_file_name("session.json")
+                    .save_file()
+                {
+                    let _ = sx.send(dest);
+                }
+            });
+        }
+
+        Ok(())
+    }
+
     pub fn load_session(&mut self, path: &Path, gl: &Context) -> anyhow::Result<()> {
         let raw = fs::read_to_string(path)?;
         let mut session: SessionData = serde_json::from_str(&raw)?;
@@ -2157,21 +2220,55 @@ impl App {
 
         let mut vms = IndexMap::new();
 
-        // open env file
-        // load meshes
+        if let Some(env_path) = session.env_path.as_deref() {
+            let raw_env = fs::read_to_string(env_path)?;
+            let env: EnvData = serde_json::from_str(&raw_env)?;
+            self.view.env_path = Some(env_path.to_path_buf());
 
-        let raw_env = fs::read_to_string(&session.env_path)?;
-        let env: EnvData = serde_json::from_str(&raw_env)?;
+            for (id, data) in env.layout.iter() {
+                let mesh = if let Some(mesh) = session.mesh_paths.get(id).map(|path| -> anyhow::Result<(&Path, LightMesh)> {
+                    let mesh = LightMesh::load(path)?;
 
-        env.
+                    Ok((path, mesh))
+                }) {
+                    let (path, mesh) = mesh?;
+                    let mut m = mesh.into_view_mesh(path.to_path_buf(), gl, &self.render.renderer);
 
-        session.env = Some(env);
+                    let mut add_placement = |data: &EnvPlacementData| {
+                        m.view_placements.push(data.to_view(Some(id.clone()), Some(path.to_path_buf())));
+                    };
+
+                    match data {
+                        EnvMeshData::MultiPlacement { placements } => {
+                            for place in placements {
+                                add_placement(place);
+                            }
+                        },
+                        EnvMeshData::SinglePlacement(env_placement_data) => add_placement(env_placement_data),
+                        EnvMeshData::None => {},
+                    }
+
+                    Some(m)
+                } else {
+                    None
+                };
+
+                vms.insert(id.clone(), mesh);
+            }
+
+            self.view.mirror_id = env.mirror.clone();
+            self.view.spectrogram = env.spectrogram.clone();
+            self.view.fog_heights = env.fog_heights;
+
+            session.env = Some(env);
+        }
 
         mem::swap(&mut self.view.meshes, &mut vms);
-
-        for (_id, vm) in vms {
+        for (_id, vm) in vms.into_iter().filter_map(|(i, v)| v.map(|v| (i, v))) {
             vm.destroy(gl);
         }
+
+        self.view.mirror_path = session.mirror_path.clone();
 
         self.render.renderer.texture_paths = session.texture_paths;
 

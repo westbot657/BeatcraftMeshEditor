@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::easing::Easing;
-use crate::editor::{Camera, ViewPlacement};
+use crate::editor::{ActionType, Camera, ViewPlacement};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
 #[serde(untagged)]
@@ -236,8 +236,7 @@ impl EventGroup {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(untagged)]
+#[derive(Debug, Default, Clone)]
 pub enum TypeData {
     Spinning {
         axis: Vec3,
@@ -278,7 +277,8 @@ pub enum LightGroup {
     RingLights,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct EnvPlacementData {
     #[serde(rename="type", skip_serializing_if="EventGroup::is_none")]
     pub typ: EventGroup,
@@ -286,6 +286,7 @@ pub struct EnvPlacementData {
     pub position: Vec3,
     pub offset: Vec3,
     pub count: u32,
+    #[serde(default, skip_serializing_if = "is_quat_identity")]
     pub rotation: Quat,
     #[serde(rename="rotation-offset")]
     pub rotation_offset: Quat,
@@ -298,11 +299,110 @@ pub struct EnvPlacementData {
     pub type_data: TypeData,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(untagged)]
+impl Default for EnvPlacementData {
+    fn default() -> Self {
+        Self {
+            typ: Default::default(),
+            ids: Default::default(),
+            position: Default::default(),
+            offset: Default::default(),
+            count: 1,
+            rotation: Default::default(),
+            rotation_offset: Default::default(),
+            orientation: Default::default(),
+            orientation_offset: Default::default(),
+            id_step: Default::default(),
+            type_data: Default::default(),
+        }
+    }
+}
+
+impl From<&ViewPlacement> for EnvPlacementData {
+    fn from(value: &ViewPlacement) -> Self {
+        Self {
+            typ: value.action_type.get_type(),
+            ids: value.ids.clone(),
+            position: value.position,
+            offset: value.offset,
+            count: value.count,
+            rotation: value.rotation,
+            rotation_offset: value.rotation_offset,
+            orientation: value.orientation,
+            orientation_offset: value.orientation_offset,
+            id_step: value.id_step.clone(),
+            type_data: value.action_type.to_data(),
+        }
+    }
+}
+
+impl EnvPlacementData {
+    pub fn to_view(&self, resource_location: Option<String>, path: Option<PathBuf>) -> ViewPlacement {
+        ViewPlacement {
+            ids: self.ids.clone(),
+            id_step: self.id_step.clone(),
+            position: self.position,
+            offset: self.offset,
+            count: self.count,
+            rotation: self.rotation,
+            rotation_offset: self.rotation_offset,
+            orientation: self.orientation,
+            orientation_offset: self.orientation_offset,
+            action_type: match (&self.typ, &self.type_data) {
+                (EventGroup::None, TypeData::None) => ActionType::Static,
+                (EventGroup::OuterRing, TypeData::Rings { angles, deltas, starts }) => ActionType::Ring {
+                    layer: crate::editor::RingType::Outer,
+                    angles: angles.clone(),
+                    deltas: deltas.clone(),
+                    start: *starts,
+                },
+                (EventGroup::InnerRing, TypeData::Rings { angles, deltas, starts }) => ActionType::Ring {
+                    layer: crate::editor::RingType::Inner,
+                    angles: angles.clone(),
+                    deltas: deltas.clone(),
+                    start: *starts,
+                },
+                (EventGroup::LeftSpinning, TypeData::Spinning { axis }) => ActionType::Spinning {
+                    side: crate::editor::SpinSide::Left,
+                    axis: Some(*axis)
+                },
+                (EventGroup::RightSpinning, TypeData::Spinning { axis }) => ActionType::Spinning {
+                    side: crate::editor::SpinSide::Right,
+                    axis: Some(*axis)
+                },
+                (EventGroup::LeftSpinning, TypeData::None) => ActionType::Spinning {
+                    side: crate::editor::SpinSide::Left,
+                    axis: None
+                },
+                (EventGroup::RightSpinning, TypeData::None) => ActionType::Spinning {
+                    side: crate::editor::SpinSide::Right,
+                    axis: None
+                },
+                _ => ActionType::Static
+            },
+            resource_location,
+            path,
+            visible: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum EnvMeshData {
     MultiPlacement { placements: Vec<EnvPlacementData> },
-    SinglePlacement(EnvPlacementData)
+    SinglePlacement(EnvPlacementData),
+    None,
+}
+
+impl From<Vec<EnvPlacementData>> for EnvMeshData {
+    fn from(mut value: Vec<EnvPlacementData>) -> Self {
+        match value.len() {
+            0 => Self::None,
+            1 => Self::SinglePlacement(value.pop().unwrap()),
+            _ => Self::MultiPlacement {
+                placements: value
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Copy, Clone)]
@@ -344,6 +444,7 @@ pub enum TowerStyle {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct SpectrogramData {
     #[serde(skip_serializing_if = "is_vec_zero")]
     pub position: Vec3,
@@ -355,6 +456,19 @@ pub struct SpectrogramData {
     pub style: TowerStyle,
     #[serde(rename="half-split", default = "b_true")]
     pub half_split: bool,
+}
+
+impl Default for SpectrogramData {
+    fn default() -> Self {
+        Self {
+            position: Default::default(),
+            rotation: Default::default(),
+            offset: Default::default(),
+            count: 1,
+            style: TowerStyle::Cuboid,
+            half_split: true,
+        }
+    }
 }
 
 const fn b_true() -> bool {
@@ -382,7 +496,7 @@ pub struct EnvData {
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SessionData {
-    pub env_path: PathBuf,
+    pub env_path: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub mesh_paths: HashMap<String, PathBuf>,
     pub camera: CameraData,
@@ -393,6 +507,104 @@ pub struct SessionData {
     pub env: Option<EnvData>,
     #[serde(default, skip)]
     pub mirror_path: Option<PathBuf>,
+}
+
+
+impl Serialize for EnvMeshData {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        match self {
+            EnvMeshData::None => {
+                // Serialize as empty object {}
+                let map = serializer.serialize_map(Some(0))?;
+                map.end()
+            }
+            EnvMeshData::MultiPlacement { placements } => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("placements", placements)?;
+                map.end()
+            }
+            EnvMeshData::SinglePlacement(data) => data.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for EnvMeshData {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let map = serde_json::Value::deserialize(deserializer)?;
+
+        match &map {
+            serde_json::Value::Object(obj) if obj.is_empty() => Ok(EnvMeshData::None),
+            serde_json::Value::Object(obj) if obj.contains_key("placements") => {
+                let placements = obj["placements"]
+                    .as_array()
+                    .ok_or_else(|| serde::de::Error::custom("placements must be an array"))?
+                    .iter()
+                    .map(|v| EnvPlacementData::deserialize(v).map_err(serde::de::Error::custom))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(EnvMeshData::MultiPlacement { placements })
+            }
+            serde_json::Value::Object(_) => {
+                let data = EnvPlacementData::deserialize(map)
+                    .map_err(serde::de::Error::custom)?;
+                Ok(EnvMeshData::SinglePlacement(data))
+            }
+            _ => Err(serde::de::Error::custom("expected an object")),
+        }
+    }
+}
+
+impl Serialize for TypeData {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        match self {
+            TypeData::None => {
+                let map = serializer.serialize_map(Some(0))?;
+                map.end()
+            }
+            TypeData::Spinning { axis } => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("axis", axis)?;
+                map.end()
+            }
+            TypeData::Rings { angles, deltas, starts } => {
+                let len = if starts.is_some() { 3 } else { 2 };
+                let mut map = serializer.serialize_map(Some(len))?;
+                map.serialize_entry("angles", angles)?;
+                map.serialize_entry("deltas", deltas)?;
+                if let Some(s) = starts {
+                    map.serialize_entry("starts", s)?;
+                }
+                map.end()
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TypeData {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let map = serde_json::Value::deserialize(deserializer)?;
+
+        match &map {
+            serde_json::Value::Object(obj) if obj.is_empty() => Ok(TypeData::None),
+            serde_json::Value::Object(obj) if obj.contains_key("axis") => {
+                let axis = Vec3::deserialize(&obj["axis"])
+                    .map_err(serde::de::Error::custom)?;
+                Ok(TypeData::Spinning { axis })
+            }
+            serde_json::Value::Object(obj) if obj.contains_key("angles") || obj.contains_key("deltas") => {
+                let angles = Vec::<f32>::deserialize(&obj["angles"])
+                    .map_err(serde::de::Error::custom)?;
+                let deltas = Vec::<f32>::deserialize(&obj["deltas"])
+                    .map_err(serde::de::Error::custom)?;
+                let starts = obj.get("starts")
+                    .map(|v| <[f32; 4]>::deserialize(v).map_err(serde::de::Error::custom))
+                    .transpose()?;
+                Ok(TypeData::Rings { angles, deltas, starts })
+            }
+            _ => Err(serde::de::Error::custom("expected an object")),
+        }
+    }
 }
 
 mod triangle_data_serde {
@@ -554,7 +766,7 @@ mod data_tests {
 
     #[test]
     fn test_deserialize() -> anyhow::Result<()> {
-        let _setup: Value = serde_json::from_str(include_str!("../local/test_mesh.json"))?;
+        let _setup: Value = serde_json::from_str(include_str!("../local/old/test_mesh.json"))?;
 
         let data = serde_json::to_string(&_setup)?;
 
