@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::f32;
 use std::path::{Path, PathBuf};
 
-use eframe::glow::{self, HasContext, NativeTexture};
+use eframe::glow::{self, HasContext};
 use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 

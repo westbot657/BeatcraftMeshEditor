@@ -379,6 +379,7 @@ pub struct View {
     pub env_path: Option<PathBuf>,
     pub mirror_path: Option<PathBuf>,
     pub mirror_id: Option<String>,
+    pub mirror_geometry: Vec<Vec2>,
     pub fog_heights: Option<[f32; 2]>,
     pub spectrogram: Option<SpectrogramData>,
 }
@@ -584,6 +585,28 @@ pub enum PopupResponse {
 
 type PopupCallback = Box<dyn Fn(&mut App, &egui::Ui) -> PopupResponse>;
 
+pub struct MirrorEditorState {
+    pub selected: Vec<(usize, usize)>, // (tri_index, vertex_index_within_tri)
+    pub active_tri: usize,
+    pub pan: Vec2,
+    pub zoom: f32,
+    pub dragging_vertex: Option<(usize, usize)>,
+    pub drag_start_pos: Option<egui::Pos2>,
+}
+
+impl Default for MirrorEditorState {
+    fn default() -> Self {
+        Self {
+            selected: Vec::new(),
+            active_tri: 0,
+            pan: Vec2::ZERO,
+            zoom: 1.,
+            dragging_vertex: None,
+            drag_start_pos: None,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct UiState {
     /// Currently displayed view mesh settings
@@ -624,6 +647,8 @@ pub struct UiState {
     pub spectrogram_mode: RotationDisplayMode,
     pub spectrogram_collapse: bool,
     pub meshes_collapse: bool,
+    pub show_mirror_window: bool,
+    pub mirror_editor: MirrorEditorState,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -974,6 +999,7 @@ impl App {
                 env_path: None,
                 mirror_path: None,
                 mirror_id: None,
+                mirror_geometry: Vec::new(),
                 fog_heights: None,
                 spectrogram: None,
             },
@@ -1083,6 +1109,8 @@ impl App {
             let vm = self.render.spectrogram.get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[]) );
             data.generate(gl, vm);
         }
+        let geo = std::mem::take(&mut self.view.mirror_geometry);
+        self.load_mirror_geo(gl, geo);
         self.upload_selection_points(gl);
     }
 
@@ -1108,13 +1136,13 @@ impl App {
         Ok(())
     }
 
-    pub fn handle_keys(&mut self, ctx: &egui::Context, gl: &Context) {
+    pub fn handle_keys(&mut self, ctx: &egui::Context, gl: &Context) -> (bool, bool) {
         if self.block_input() {
-            return;
+            return (false, false);
         }
 
         if ctx.wants_keyboard_input() {
-            return;
+            return (false, false);
         }
 
         let input = ctx.input(|i| i.clone());
@@ -1293,6 +1321,7 @@ impl App {
                 }
             }
         }
+        (shift, ctrl)
     }
 
     pub fn handle_3d_input(&mut self, resp: &Response, ctx: &egui::Context, gl: &Context) {
@@ -2189,11 +2218,11 @@ impl App {
         }
     }
 
-    fn load_mirror(&mut self, path: &Path, gl: &Context) -> anyhow::Result<()> {
-        let raw = fs::read_to_string(path)?;
-        let geo: Vec<Vec3> = serde_json::from_str(&raw)?;
+    fn load_mirror_geo(&mut self, gl: &Context, mut geo: Vec<Vec2>) {
+        self.view.mirror_geometry = geo.clone();
+        geo.truncate((geo.len() / 3) * 3);
 
-        let geo: Vec<_> = geo.into_iter().map(|v| v.extend(0.)).collect();
+        let geo: Vec<_> = geo.into_iter().map(|v| Vec3::new(v.x, 0., v.y).extend(0.)).collect();
         let normv = vec![Vec4::ZERO; geo.len()];
         let mats = vec![IVec3::ZERO; geo.len()];
 
@@ -2202,6 +2231,12 @@ impl App {
 
         mesh.rebuild(gl, &geo, &normv, &mats, &[]);
 
+    }
+
+    fn load_mirror(&mut self, path: &Path, gl: &Context) -> anyhow::Result<()> {
+        let raw = fs::read_to_string(path)?;
+        let geo: Vec<Vec2> = serde_json::from_str(&raw)?;
+        self.load_mirror_geo(gl, geo);
         Ok(())
     }
 
@@ -2216,6 +2251,11 @@ impl App {
             }
 
             meshes.insert(id.clone(), EnvMeshData::from(placements));
+        }
+
+        if let Some(mirror_path) = self.view.mirror_path.as_deref() {
+            let data = serde_json::to_string(&self.view.mirror_geometry)?;
+            fs::write(mirror_path, data)?;
         }
 
         if let Some(env_path) = self.view.env_path.as_deref() {

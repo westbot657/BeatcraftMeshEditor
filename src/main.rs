@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 
 use eframe::glow::{self, HasContext};
-use egui::{Align2, Frame, Layout, Sense, Ui};
+use egui::{Align2, Frame, Layout, Pos2, Sense, Ui};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
@@ -953,7 +953,7 @@ impl eframe::App for App {
             self.rebuild_meshes(gl);
         }
 
-        self.handle_keys(ctx, gl);
+        let (shift, ctrl) = self.handle_keys(ctx, gl);
 
         let dt = ctx.input(|i| i.unstable_dt);
         if self.state.status_timer > 0. {
@@ -1242,9 +1242,20 @@ impl eframe::App for App {
                 .id(egui::Id::new("uv_editor"))
                 .min_size([200., 200.])
                 .pivot(Align2::CENTER_CENTER)
-                .default_pos([200., 800.])
+                .default_pos([800., 800.])
                 .show(ctx, |ui| {
                     draw_uv_view(self, ui, ctx, gl);
+                });
+        }
+
+        if self.mode == editor::EditorMode::View && self.state.ui.show_mirror_window {
+            egui::Window::new("Mirror Geometry Editor")
+                .id(egui::Id::new("mirror_editor"))
+                .min_size([200., 200.])
+                .pivot(Align2::CENTER_CENTER)
+                .default_pos([200., 800.])
+                .show(ctx, |ui| {
+                    draw_mirror_view(self, ui, ctx, gl, shift, ctrl);
                 });
         }
     }
@@ -1328,7 +1339,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
 
         if ui
-            .add_sized([w, 20.], egui::Button::new("+ Mesh"))
+            .add_sized([w, 20.], egui::Button::new("Create mesh"))
             .clicked()
         {
             let (sx, rx) = mpsc::channel();
@@ -1348,15 +1359,31 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
     ui.separator();
 
+    let mut remove_spect = false;
     match s.view.spectrogram.as_mut() {
         Some(spect) => {
 
             ui.horizontal(|ui| {
-                let icon = if s2.state.ui.spectrogram_collapse { R_ARROW } else { D_ARROW };
-                if ui.small_button(icon).clicked() {
-                    s2.state.ui.spectrogram_collapse = !s2.state.ui.spectrogram_collapse;
-                }
-                ui.label("Spectrogram");
+                ui.allocate_ui_with_layout(
+                    [w, 20.].into(),
+                    Layout::right_to_left(egui::Align::Min),
+                    |ui| {
+                        if ui.small_button(SMALL_X).clicked() {
+                            remove_spect = true;
+                        }
+                        ui.allocate_ui_with_layout(
+                            [w - 25., 20.].into(),
+                            Layout::left_to_right(egui::Align::Min),
+                            |ui| {
+                                let icon = if s2.state.ui.spectrogram_collapse { R_ARROW } else { D_ARROW };
+                                if ui.small_button(icon).clicked() {
+                                    s2.state.ui.spectrogram_collapse = !s2.state.ui.spectrogram_collapse;
+                                }
+                                ui.label("Spectrogram");
+                        }
+                        );
+                    }
+                );
             });
 
             if !s2.state.ui.spectrogram_collapse {
@@ -1591,7 +1618,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
         }
         None => {
-            if ui.add_sized([w, 20.], egui::Button::new("Add Spectrogram")).clicked() {
+            if ui.add_sized([w, 20.], egui::Button::new("Add spectrogram")).clicked() {
                 s.view.spectrogram = Some(SpectrogramData::default())
             }
         }
@@ -1602,7 +1629,27 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let mut remove_mirror = false;
     match s.view.mirror_id.as_mut() {
         Some(id) => {
-            ui.label("Mirror");
+            ui.horizontal(|ui| {
+                ui.allocate_ui_with_layout(
+                    [w, 20.].into(),
+                    Layout::right_to_left(egui::Align::Min),
+                    |ui| {
+                        if ui.add_sized(
+                            [w2, 20.],
+                            egui::Button::new("Edit").selected(s2.state.ui.show_mirror_window)
+                        ).clicked() {
+                            s2.state.ui.show_mirror_window = !s2.state.ui.show_mirror_window;
+                        }
+                        ui.allocate_ui_with_layout(
+                            [w2, 20.].into(),
+                            Layout::left_to_right(egui::Align::Min),
+                            |ui| {
+                                ui.label("Mirror");
+                            }
+                        );
+                    }
+                );
+            });
             ui.horizontal(|ui| {
                 ui.add_sized([w - 55., 20.], egui::TextEdit::singleline(id));
                 if ui
@@ -1625,7 +1672,9 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             });
         }
         None => {
-            ui.label("TODO: Add mirror");
+            if ui.add_sized([w, 20.], egui::Button::new("Add mirror")).clicked() {
+                s.view.mirror_id = Some("env:mirror".to_string());
+            }
         }
     }
     if remove_mirror {
@@ -1662,7 +1711,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             });
         }
         None => {
-            if ui.add_sized([w, 20.], egui::Button::new("Add Fog Heights")).clicked() {
+            if ui.add_sized([w, 20.], egui::Button::new("Add fog heights")).clicked() {
                 s.view.fog_heights = Some([-50., -30.])
             }
         }
@@ -1675,7 +1724,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
     if s.view.session.is_some()
         && ui
-            .add_sized([w, 20.], egui::Button::new("Close Environment"))
+            .add_sized([w, 20.], egui::Button::new("Close environment"))
             .clicked()
     {
         let meshes = std::mem::take(&mut s.view.meshes);
@@ -4039,6 +4088,248 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
             egui::Label::new("Select triangles to edit UVs"),
         );
     }
+}
+
+pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Context, shift: bool, ctrl: bool) {
+
+    let rd = RefDuper;
+    let s2 = unsafe { rd.detach_mut_ref(s) };
+
+    let total_verts = s.view.mirror_geometry.len();
+    let num_tris = total_verts.div_ceil(3);
+
+    let available = ui.available_size();
+    let panel_height = available.y - 60.0;
+
+    ui.horizontal(|ui| {
+        let visual_width = available.x * 0.6;
+        let (visual_rect, visual_response) = ui.allocate_exact_size(
+            (visual_width, panel_height).into(),
+            egui::Sense::click_and_drag(),
+        );
+
+        let painter = ui.painter_at(visual_rect);
+        painter.rect_filled(visual_rect, 0.0, egui::Color32::from_rgb(30, 30, 30));
+
+        let me = &mut s.state.ui.mirror_editor;
+        let zoom = me.zoom;
+        let pan = me.pan;
+
+        let to_screen = |p: Vec2| -> Pos2 {
+            let cx = visual_rect.center().x;
+            let cy = visual_rect.center().y;
+            Pos2::new(
+                cx + (-p.x + pan.x) * zoom,
+                cy + (-p.y + pan.y) * zoom,
+            )
+        };
+
+        let from_screen = |p: Pos2| -> Vec2 {
+            let cx = visual_rect.center().x;
+            let cy = visual_rect.center().y;
+            Vec2::new(
+                -((p.x - cx) / zoom - pan.x),
+                -((p.y - cy) / zoom - pan.y),
+            )
+        };
+
+        if visual_response.dragged_by(egui::PointerButton::Middle)
+            || visual_response.dragged_by(egui::PointerButton::Secondary)
+        {
+            let delta = visual_response.drag_delta();
+            let me = &mut s.state.ui.mirror_editor;
+            me.pan += Vec2::new(delta.x, delta.y) / me.zoom;
+        }
+
+        if visual_response.hovered() {
+            let scroll = ctx.input(|i| i.smooth_scroll_delta.y);
+            if scroll != 0.0 {
+                let me = &mut s.state.ui.mirror_editor;
+                me.zoom = (me.zoom * (1.0 + scroll * 0.001)).clamp(0.01, 500.0);
+            }
+        }
+
+        let pointer_pos = ctx.input(|i| i.pointer.interact_pos());
+        let primary_down = ctx.input(|i| i.pointer.primary_down());
+        let primary_released = ctx.input(|i| i.pointer.primary_released());
+
+        {
+            let me = &mut s.state.ui.mirror_editor;
+
+            if primary_released
+            && let Some((ti, vi)) = me.dragging_vertex {
+                let idx = ti * 3 + vi;
+                if idx < s.view.mirror_geometry.len() {
+                    let v = s.view.mirror_geometry[idx];
+                    s.view.mirror_geometry[idx] = Vec2::new(
+                        (v.x / 0.25).round() * 0.25,
+                        (v.y / 0.25).round() * 0.25,
+                    );
+                    s2.rebuild_meshes(gl);
+                }
+                me.dragging_vertex = None;
+                me.drag_start_pos = None;
+            }
+        }
+
+        if primary_down {
+            let me = &mut s.state.ui.mirror_editor;
+            if let Some(drag_vert) = me.dragging_vertex && let Some(pp) = pointer_pos && visual_rect.contains(pp) {
+                let world_pos = from_screen(pp);
+                let idx = drag_vert.0 * 3 + drag_vert.1;
+                if idx < s.view.mirror_geometry.len() {
+                    s.view.mirror_geometry[idx] = world_pos;
+                }
+                s.rebuild_meshes(gl);
+            }
+        }
+
+        if (visual_response.clicked() || visual_response.drag_started())
+        && let Some(pp) = pointer_pos {
+            let world_pos = from_screen(pp);
+            let hit_radius = 8.0 / zoom;
+
+            let mut hit: Option<(usize, usize)> = None;
+            'outer: for ti in 0..num_tris {
+                let start = ti * 3;
+                let end = (start + 3).min(total_verts);
+                for vi in 0..( end - start) {
+                    let v = s.view.mirror_geometry[start + vi];
+                    if (v - world_pos).length() < hit_radius {
+                        hit = Some((ti, vi));
+                        break 'outer;
+                    }
+                }
+            }
+
+            let me = &mut s.state.ui.mirror_editor;
+
+            if let Some(h) = hit {
+                if visual_response.drag_started() {
+                    me.dragging_vertex = Some(h);
+                }
+                if shift && ctrl {
+                    if let Some(pos) = me.selected.iter().position(|&x| x == h) {
+                        me.selected.remove(pos);
+                    } else {
+                        me.selected.push(h);
+                    }
+                } else if shift {
+                    if !me.selected.contains(&h) {
+                        me.selected.push(h);
+                    }
+                } else {
+                    me.selected = vec![h];
+                }
+            } else if !shift && !ctrl {
+                me.selected.clear();
+            }
+        }
+
+        let active_tri = s.state.ui.mirror_editor.active_tri;
+        let selected = s.state.ui.mirror_editor.selected.clone();
+
+        for ti in 0..num_tris {
+            let start = ti * 3;
+            let end = (start + 3).min(total_verts);
+            let verts: Vec<Vec2> = s.view.mirror_geometry[start..end].to_vec();
+
+            let is_active = ti == active_tri;
+            let alpha = if is_active { 255 } else { 80 };
+            let fill = egui::Color32::from_rgba_unmultiplied(51, 76, 204, alpha);
+            let stroke_color = egui::Color32::from_rgba_unmultiplied(100, 140, 255, alpha);
+
+            if verts.len() == 3 {
+                let pts = vec![
+                    to_screen(verts[2]),
+                    to_screen(verts[1]),
+                    to_screen(verts[0]),
+                ];
+                painter.add(egui::Shape::Path(egui::epaint::PathShape {
+                    points: pts,
+                    closed: true,
+                    fill,
+                    stroke: egui::epaint::PathStroke::new(1.0, stroke_color),
+                }));
+            } else {
+                for i in 0..verts.len().saturating_sub(1) {
+                    painter.line_segment(
+                        [to_screen(verts[i]), to_screen(verts[i + 1])],
+                        egui::Stroke::new(1.0, stroke_color),
+                    );
+                }
+            }
+
+            for vi in 0..(end - start) {
+                let v = s.view.mirror_geometry[start + vi];
+                let sp = to_screen(v);
+                let is_selected = selected.contains(&(ti, vi));
+                let color = if is_selected {
+                    egui::Color32::YELLOW
+                } else if is_active {
+                    egui::Color32::WHITE
+                } else {
+                    egui::Color32::from_rgba_unmultiplied(180, 180, 180, alpha)
+                };
+                painter.circle_filled(sp, 4.0, color);
+            }
+        }
+
+        ui.allocate_rect(visual_rect, egui::Sense::hover());
+
+        ui.vertical(|ui| {
+            let w = available.x * 0.4 - 8.0;
+            let w2 = w / 2. - 5.;
+            ui.set_min_size((w, panel_height).into());
+            for vert in s.view.mirror_geometry.iter_mut() {
+                vec2_row(ui, vert, w2,
+                    || (),
+                    |_| {},
+                    || s2.rebuild_meshes(gl)
+                );
+            }
+        });
+    });
+
+    ui.horizontal(|ui| {
+        for ti in 0..num_tris {
+            let start = ti * 3;
+            let end = (start + 3).min(total_verts);
+            let count = end - start;
+            let label = if count == 3 {
+                format!("Tri {ti}")
+            } else {
+                format!("Tri {ti} ({count}v)")
+            };
+            let active = s.state.ui.mirror_editor.active_tri == ti;
+            if ui.selectable_label(active, label).clicked() {
+                s.state.ui.mirror_editor.active_tri = ti;
+            }
+        }
+    });
+
+    ui.horizontal(|ui| {
+        if ui.button("Add Tri").clicked() {
+            let me = &s.state.ui.mirror_editor;
+            let cx = me.pan.x;
+            let cy = me.pan.y;
+            let size = 50.0 / me.zoom;
+            s.view.mirror_geometry.push(Vec2::new(cx,          cy + size));
+            s.view.mirror_geometry.push(Vec2::new(cx - size,   cy - size));
+            s.view.mirror_geometry.push(Vec2::new(cx + size,   cy - size));
+            let new_tri = (s.view.mirror_geometry.len() - 1) / 3;
+            s.state.ui.mirror_editor.active_tri = new_tri;
+            s.rebuild_meshes(gl);
+        }
+
+        if ui.button("Add Vert").clicked() {
+            let me = &s.state.ui.mirror_editor;
+            let cx = me.pan.x;
+            let cy = me.pan.y;
+            s.view.mirror_geometry.push(Vec2::new(cx, cy));
+            s.rebuild_meshes(gl);
+        }
+    });
 }
 
 pub fn main() -> Result<(), eframe::Error> {
