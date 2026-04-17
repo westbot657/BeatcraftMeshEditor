@@ -3,10 +3,10 @@ use std::f32;
 use std::path::{Path, PathBuf};
 
 use eframe::glow::{self, HasContext, NativeTexture};
-use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4};
+use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 
-use crate::RefDuper;
+use crate::{RefDuper, data};
 use crate::data::MaterialData;
 use crate::light_mesh::{LightMesh, Part, Triangle, Vertex};
 
@@ -569,6 +569,105 @@ impl GpuMesh {
     }
 }
 
+
+impl data::SpectrogramData {
+    pub fn generate(&self, gl: &glow::Context, vm: &mut GpuMesh) {
+        // NOTE: update to a match block when more styles get added.
+
+        let v = [
+            self.rotation * Vec3::new(-0.5, 0., -0.5),
+            self.rotation * Vec3::new(-0.5, 0.,  0.5),
+            self.rotation * Vec3::new( 0.5, 0.,  0.5),
+            self.rotation * Vec3::new( 0.5, 0., -0.5),
+
+            self.rotation * Vec3::new(-0.5, self.base_height, -0.5),
+            self.rotation * Vec3::new(-0.5, self.base_height,  0.5),
+            self.rotation * Vec3::new( 0.5, self.base_height,  0.5),
+            self.rotation * Vec3::new( 0.5, self.base_height, -0.5),
+        ];
+
+        let tris = [
+            v[7], v[5], v[6], v[7], v[4], v[5],
+            v[1], v[2], v[6], v[1], v[6], v[5],
+            v[3], v[0], v[4], v[3], v[4], v[7],
+            v[0], v[1], v[5], v[0], v[5], v[4],
+            v[2], v[3], v[7], v[2], v[7], v[6],
+        ];
+
+        let normals = [
+            Vec3::Y, Vec3::Y, Vec3::Y, Vec3::Y, Vec3::Y, Vec3::Y,
+            Vec3::Z, Vec3::Z, Vec3::Z, Vec3::Z, Vec3::Z, Vec3::Z,
+            Vec3::NEG_Z,Vec3::NEG_Z,Vec3::NEG_Z,Vec3::NEG_Z,Vec3::NEG_Z,Vec3::NEG_Z,
+            Vec3::NEG_X,Vec3::NEG_X,Vec3::NEG_X,Vec3::NEG_X,Vec3::NEG_X,Vec3::NEG_X,
+            Vec3::X, Vec3::X, Vec3::X, Vec3::X, Vec3::X, Vec3::X,
+        ].map(|n| self.rotation * n);
+
+
+        let offset = self.rotation * self.offset;
+
+        let mut geo = Vec::new();
+        let mut norms = Vec::new();
+
+        for i in 0..self.count {
+            let tower: Vec<Vec3> = tris.iter().map(|v| v + self.position + offset * (i as f32)).collect();
+            geo.extend_from_slice(&tower);
+            norms.extend_from_slice(&normals);
+        }
+
+        if let Some(plane) = self.mirror {
+            let mn = plane.xyz().normalize();
+            let d = plane.w;
+
+            let mirror = |point: Vec3| -> Vec3 {
+                point - 2. * (mn.dot(point) + d) * mn
+            };
+
+            let mut mirror_tris = [
+                v[6], v[5], v[7], v[5], v[4], v[7],
+                v[2], v[1], v[6], v[6], v[1], v[5],
+                v[0], v[3], v[4], v[4], v[3], v[7],
+                v[1], v[0], v[5], v[5], v[0], v[4],
+                v[3], v[2], v[7], v[7], v[2], v[6],
+            ];
+            let mirror_normals: Vec<Vec3> = normals.iter().map(|v| v - 2. * mn.dot(*v) * mn).collect();
+            mirror_tris.iter_mut().for_each(|v| *v = mirror(*v));
+
+            let offset = offset - 2. * mn.dot(offset) * mn;
+            let pos = mirror(self.position);
+
+            for i in 0..self.count {
+                let tower: Vec<Vec3> = mirror_tris.iter().map(|v| v + pos + offset * (i as f32)).collect();
+                geo.extend_from_slice(&tower);
+                norms.extend_from_slice(&mirror_normals);
+            }
+
+        }
+
+        let mats = vec![IVec3::new(0, 0, 1 << 31); geo.len()];
+
+        let mut i = 0;
+        let mut next_uv = || -> Vec2 {
+            let res = match i {
+                0 => Vec2::ZERO,
+                1 => Vec2::new(0.5, 0.),
+                _ => Vec2::new(0., 0.5)
+            };
+            i = (i + 1) % 3;
+            res
+        };
+        let (geo, norms) = geo
+            .into_iter()
+            .zip(norms)
+            .map(|(pos, norm)| {
+                let uv = next_uv();
+                (pos.extend(uv.x), norm.extend(uv.y))
+            })
+            .collect::<(Vec<Vec4>, Vec<Vec4>)>();
+
+        vm.rebuild(gl, &geo, &norms, &mats, &[]);
+    }
+}
+
 pub struct Renderer {
     pub mesh: glow::NativeProgram,
     pub mirror: glow::NativeProgram,
@@ -954,12 +1053,13 @@ impl Renderer {
         draw_grid: bool,
         mirror_mesh: Option<&GpuMesh>,
         wireframe: bool,
+        fog_heights: [f32; 2],
     ) {
         let rd = RefDuper;
         let self2 = unsafe { rd.detach_mut_ref(self) };
         self.bloomfog.draw_meshes(
             self2, gl, view, proj, calls, window, draw_grid,
-            None, mirror_mesh, wireframe,
+            None, mirror_mesh, wireframe, fog_heights
         );
     }
 
@@ -978,7 +1078,7 @@ impl Renderer {
             if let Some(mirror_mesh) = mirror_mesh {
                 self.bloomfog.draw_mirror(
                     self2, gl, view, proj, calls, mirror_mesh,
-                    1, wireframe
+                    1, wireframe, [-50., -30.]
                 );
             }
         }
@@ -1336,6 +1436,7 @@ impl BloomfogRenderer {
         mirror: &GpuMesh,
         render_mode: i32,
         wireframe: bool,
+        fog_heights: [f32; 2],
     ) {
         unsafe {
 
@@ -1364,6 +1465,7 @@ impl BloomfogRenderer {
             if render_mode == 0 {
                 self.render_solid(
                     renderer, gl, &view_f, proj, &mirrored,
+                    fog_heights
                 );
             } else {
                 renderer.draw_meshes_internal(gl, &view_f, proj, &mirrored);
@@ -1411,6 +1513,7 @@ impl BloomfogRenderer {
         main_target: Option<&RenderTarget>,
         mirror_mesh: Option<&GpuMesh>,
         wireframe: bool,
+        fog_heights: [f32; 2],
     ) {
         unsafe {
             // pre-render beatmaps
@@ -1426,7 +1529,7 @@ impl BloomfogRenderer {
 
             self.framebuffer.bind(gl);
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
-            self.render_bloomfog(renderer, gl, view, proj, calls);
+            self.render_bloomfog(renderer, gl, view, proj, calls, fog_heights);
             gl.depth_mask(false);
 
             self.apply_pyramid_blur(renderer, gl, window);
@@ -1448,13 +1551,13 @@ impl BloomfogRenderer {
             if let Some(mirror_mesh) = mirror_mesh {
                 self.draw_mirror(
                     renderer, gl, view, proj, calls, mirror_mesh,
-                    0, wireframe
+                    0, wireframe, fog_heights,
                 );
             }
             //   draw maps
             //     bloomfogPosCol
             //     envLights
-            self.render_solid(renderer, gl, view, proj, calls);
+            self.render_solid(renderer, gl, view, proj, calls, fog_heights);
             //     floor1
             //     floorLights
             //     obstacles
@@ -1463,7 +1566,11 @@ impl BloomfogRenderer {
             // render sabers
             // render smoke
             // render bloom
-            self.render_bloom(renderer, gl, view, proj, calls, window, saved_vp, main_target, mirror_mesh);
+            self.render_bloom(
+                renderer, gl, view, proj, calls, window,
+                saved_vp, main_target, mirror_mesh,
+                fog_heights
+            );
             gl.enable(glow::SCISSOR_TEST);
             gl.enable(glow::DEPTH_TEST);
         }
@@ -1476,6 +1583,7 @@ impl BloomfogRenderer {
         view: &Mat4,
         proj: &Mat4,
         calls: &[MeshDrawCall<'_>],
+        fog_heights: [f32; 2],
     ) {
         unsafe {
             let cam_pos = view.inverse().transform_point3(Vec3::ZERO);
@@ -1493,7 +1601,7 @@ impl BloomfogRenderer {
             renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
             renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.extra_buffer.color), 1);
             renderer.set_int(gl, renderer.mesh, "passType", 2);
-            renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(-50., -30.));
+            renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
 
             let mut world_transform = Mat4::from_translation(cam_pos);
             world_transform *= Mat4::from_quat(cam_rot.conjugate());
@@ -1525,6 +1633,7 @@ impl BloomfogRenderer {
         view: &Mat4,
         proj: &Mat4,
         calls: &[MeshDrawCall<'_>],
+        fog_heights: [f32; 2],
     ) {
         unsafe {
             let cam_pos = view.inverse().transform_point3(Vec3::ZERO);
@@ -1543,7 +1652,7 @@ impl BloomfogRenderer {
             renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
             renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.blurred_buffer.color), 1);
             renderer.set_int(gl, renderer.mesh, "passType", 0);
-            renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(-50., -30.));
+            renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
 
             let mut world_transform = Mat4::from_translation(cam_pos);
             world_transform *= Mat4::from_quat(cam_rot.conjugate());
@@ -1596,6 +1705,7 @@ impl BloomfogRenderer {
         saved_vp: [i32; 4],
         main_target: Option<&RenderTarget>,
         mirror_mesh: Option<&GpuMesh>,
+        fog_heights: [f32; 2],
     ) {
         unsafe {
             self.light_depth.bind(gl);
@@ -1608,7 +1718,7 @@ impl BloomfogRenderer {
             let tex = renderer.atlas.or(Some(renderer.missing_texture));
             renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
             renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.blurred_buffer.color), 1);
-            renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(-50., -30.));
+            renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
             renderer.set_sampler(gl, renderer.mesh, "u_depth", Some(self.light_depth.depth), 2);
             renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
             renderer.set_int(gl, renderer.mesh, "passType", 0);

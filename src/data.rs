@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ops::Not;
 use std::path::PathBuf;
 
-use glam::{Quat, Vec2, Vec3};
+use glam::{Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
@@ -443,6 +443,12 @@ pub enum TowerStyle {
     Cuboid,
 }
 
+impl TowerStyle {
+    pub fn name(&self) -> &'static str {
+        "cuboid"
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct SpectrogramData {
@@ -452,10 +458,31 @@ pub struct SpectrogramData {
     pub rotation: Quat,
     #[serde(skip_serializing_if = "is_vec_zero")]
     pub offset: Vec3,
+    #[serde(skip_serializing_if = "i_is_127")]
     pub count: u32,
     pub style: TowerStyle,
-    #[serde(rename="half-split", default = "b_true")]
+    #[serde(rename="half-split", skip_serializing_if="Clone::clone")]
     pub half_split: bool,
+    #[serde(rename="level-modifier", skip_serializing_if="f_is_1")]
+    pub level_modifier: f32,
+    #[serde(rename="base-height", skip_serializing_if="f_is_0")]
+    pub base_height: f32,
+    #[serde(skip_serializing_if = "Easing::is_default")]
+    pub easing: Easing,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mirror: Option<Vec4>,
+}
+#[inline]
+fn i_is_127(v: &u32) -> bool {
+    *v == 127
+}
+#[inline]
+fn f_is_1(v: &f32) -> bool {
+    *v == 1.
+}
+#[inline]
+fn f_is_0(v: &f32) -> bool {
+    *v == 0.
 }
 
 impl Default for SpectrogramData {
@@ -464,15 +491,15 @@ impl Default for SpectrogramData {
             position: Default::default(),
             rotation: Default::default(),
             offset: Default::default(),
-            count: 1,
+            count: 127,
             style: TowerStyle::Cuboid,
             half_split: true,
+            level_modifier: 1.,
+            base_height: 1.,
+            easing: Easing::easeLinear,
+            mirror: None,
         }
     }
-}
-
-const fn b_true() -> bool {
-    true
 }
 
 fn is_vec_zero(v: &Vec3) -> bool {

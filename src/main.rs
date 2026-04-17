@@ -25,12 +25,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 
 use eframe::glow::{self, HasContext};
-use egui::{Align2, Frame, Sense, Ui};
-use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
+use egui::{Align2, Frame, Layout, Sense, Ui};
+use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 
-use self::data::{NormalId, UvId, VertexId};
+use self::data::{NormalId, SpectrogramData, UvId, VertexId};
 use self::easing::Easing;
 use self::editor::{App, RotationDisplayMode, Selection, ViewPlacement, ViewStyle, WorkingRenameKey};
 use self::light_mesh::{BloomfogStyle, ComputeNormal, ComputeVertex, Part, Triangle};
@@ -997,7 +997,7 @@ impl eframe::App for App {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     // Open Session...
-                    if ui.button("Open Session\u{2026}  \u{2502}").clicked() && !self.block_input()
+                    if ui.button("Open Environment\u{2026} \u{2502}").clicked() && !self.block_input()
                     {
                         let (sx, rx) = mpsc::channel();
                         self.state.ui.open_session_channel = Some(rx);
@@ -1012,7 +1012,7 @@ impl eframe::App for App {
                         });
                     }
                     // Open...
-                    if ui.button("Open\u{2026}          \u{2502}").clicked() && !self.block_input()
+                    if ui.button("Open\u{2026}             \u{2502}").clicked() && !self.block_input()
                     {
                         let (sx, rx) = mpsc::channel();
                         self.state.ui.open_mesh_channel = Some(rx);
@@ -1026,7 +1026,7 @@ impl eframe::App for App {
                             }
                         });
                     }
-                    if ui.button("Save           \u{2502} [Ctrl+S]").clicked() {
+                    if ui.button("Save              \u{2502} [Ctrl+S]").clicked() {
                         match self.mode {
                             editor::EditorMode::View => {}
                             editor::EditorMode::Assembly | editor::EditorMode::Edit => {}
@@ -1253,90 +1253,358 @@ impl eframe::App for App {
 fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let mut to_remove = None;
     let w = ui.available_width();
+    let w2 = (w - ui.spacing().item_spacing.x) / 2.0;
+    let w3 = (w - ui.spacing().item_spacing.x * 2.0) / 3.0;
     let rd = RefDuper;
     let s2 = unsafe { rd.detach_mut_ref(s) };
+    let s3 = unsafe { rd.detach_mut_ref(s) };
 
-    for (id, mesh) in s.view.meshes.iter_mut().filter_map(|(i, v)| v.as_mut().map(|v| (i, v))) {
+    ui.horizontal(|ui| {
+        let icon = if s2.state.ui.meshes_collapse { R_ARROW } else { D_ARROW };
+        if ui.small_button(icon).clicked() {
+            s2.state.ui.meshes_collapse = !s2.state.ui.meshes_collapse;
+        }
+        ui.label("Meshes");
+    });
 
-        ui.add_space(2.0);
-        let selected = s.state.ui.view_mesh == Some(id.clone());
-        let available = ui.available_size_before_wrap();
-        if ui
-            .add_sized(
-                egui::Vec2::new(available.x, 20.0),
-                egui::Button::selectable(selected, id.as_str()),
-            )
-            .clicked()
-        {
-            s.state.ui.view_mesh = if selected { None } else { Some(id.clone()) };
-        };
-        ui.add_space(2.0);
+    if !s2.state.ui.meshes_collapse {
+        for (id, mesh) in s.view.meshes.iter_mut().filter_map(|(i, v)| v.as_mut().map(|v| (i, v))) {
 
-        if ui
-            .horizontal(|ui| {
-                ui.checkbox(&mut mesh.visible, "");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Close").clicked() {
-                        to_remove = Some(id.clone());
-                    }
-                    if ui.button("Edit").clicked() {
-                        s.editor.mesh = Some(id.clone());
-                        s.last_mode = s.mode;
-                        s.mode = editor::EditorMode::Assembly;
-                        s2.rebuild_meshes(gl);
-                        return true;
-                    }
-                    false
+            ui.add_space(2.0);
+            let selected = s.state.ui.view_mesh == Some(id.clone());
+            let available = ui.available_size_before_wrap();
+            if ui
+                .add_sized(
+                    egui::Vec2::new(available.x, 20.0),
+                    egui::Button::selectable(selected, id.as_str()),
+                )
+                .clicked()
+            {
+                s.state.ui.view_mesh = if selected { None } else { Some(id.clone()) };
+            };
+            ui.add_space(2.0);
+
+            if ui
+                .horizontal(|ui| {
+                    ui.checkbox(&mut mesh.visible, "");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Close").clicked() {
+                            to_remove = Some(id.clone());
+                        }
+                        if ui.button("Edit").clicked() {
+                            s.editor.mesh = Some(id.clone());
+                            s.last_mode = s.mode;
+                            s.mode = editor::EditorMode::Assembly;
+                            s2.rebuild_meshes(gl);
+                            return true;
+                        }
+                        false
+                    })
+                    .inner
                 })
                 .inner
-            })
-            .inner
-        {
-            return;
-        };
-
-        ui.separator();
-    }
-    if let Some(i) = to_remove {
-        s.view.meshes.shift_remove(&i);
-        if let Some(sel) = s.state.ui.view_mesh.as_ref() {
-            if *sel == i {
-                s.state.ui.view_mesh = None;
-            } else if !s.view.meshes.is_empty() {
-                s.state.ui.view_mesh = Some(s.view.meshes.keys().next().unwrap().clone());
-            }
-        }
-        if let Some(sel) = s.editor.mesh.as_ref() {
-            if *sel == i {
-                s.editor.mesh = None;
-            } else if !s.view.meshes.is_empty() {
-                s.editor.mesh = Some(s.view.meshes.keys().next().unwrap().clone());
-            }
-        }
-    }
-
-    if ui
-        .add_sized([w, 20.], egui::Button::new("+ Mesh"))
-        .clicked()
-    {
-        let (sx, rx) = mpsc::channel();
-        s.state.ui.create_mesh_channel = Some(rx);
-        std::thread::spawn(move || {
-            if let Some(file) = rfd::FileDialog::new()
-                .set_title("Create new mesh")
-                .set_file_name("new_mesh")
-                .add_filter("json", &["json"])
-                .save_file()
             {
-                let _ = sx.send(file);
+                return;
+            };
+
+            ui.separator();
+        }
+        if let Some(i) = to_remove {
+            s.view.meshes.shift_remove(&i);
+            if let Some(sel) = s.state.ui.view_mesh.as_ref() {
+                if *sel == i {
+                    s.state.ui.view_mesh = None;
+                } else if !s.view.meshes.is_empty() {
+                    s.state.ui.view_mesh = Some(s.view.meshes.keys().next().unwrap().clone());
+                }
             }
-        });
+            if let Some(sel) = s.editor.mesh.as_ref() {
+                if *sel == i {
+                    s.editor.mesh = None;
+                } else if !s.view.meshes.is_empty() {
+                    s.editor.mesh = Some(s.view.meshes.keys().next().unwrap().clone());
+                }
+            }
+        }
+
+        if ui
+            .add_sized([w, 20.], egui::Button::new("+ Mesh"))
+            .clicked()
+        {
+            let (sx, rx) = mpsc::channel();
+            s.state.ui.create_mesh_channel = Some(rx);
+            std::thread::spawn(move || {
+                if let Some(file) = rfd::FileDialog::new()
+                    .set_title("Create new mesh")
+                    .set_file_name("new_mesh")
+                    .add_filter("json", &["json"])
+                    .save_file()
+                {
+                    let _ = sx.send(file);
+                }
+            });
+        }
     }
 
+    ui.separator();
+
+    match s.view.spectrogram.as_mut() {
+        Some(spect) => {
+
+            ui.horizontal(|ui| {
+                let icon = if s2.state.ui.spectrogram_collapse { R_ARROW } else { D_ARROW };
+                if ui.small_button(icon).clicked() {
+                    s2.state.ui.spectrogram_collapse = !s2.state.ui.spectrogram_collapse;
+                }
+                ui.label("Spectrogram");
+            });
+
+            if !s2.state.ui.spectrogram_collapse {
+                ui.label("Position");
+                vec3_row(ui, &mut spect.position, w3,
+                    || (),
+                    |_| {}, // TODO
+                    || s2.rebuild_meshes(gl)
+                );
+                ui.label("Offset");
+                vec3_row(ui, &mut spect.offset, w3,
+                    || (),
+                    |_| {}, // TODO
+                    || s2.rebuild_meshes(gl)
+                );
+                ui.label("Rotation");
+                quat_row(ui, &mut spect.rotation, &mut s2.state.ui.spectrogram_mode, (w2, w3),
+                    || (),
+                    |_| {}, // TODO
+                    || s3.rebuild_meshes(gl)
+                );
+                ui.horizontal(|ui| {
+                    ui.allocate_ui_with_layout(
+                        [w2, 45.].into(),
+                        Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            ui.label("Count");
+                            let mut v2 = spect.count as f32;
+                            ui.add_sized(
+                                [w2, 20.],
+                                egui::DragValue::new(&mut v2)
+                                    .speed(1.)
+                                    .range(1..=500)
+                            );
+                            if spect.count != v2 as u32 {
+                                s2.rebuild_meshes(gl);
+                            }
+                            spect.count = v2 as u32;
+                        }
+                    );
+                    ui.allocate_ui_with_layout(
+                        [w2, 45.].into(),
+                        Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            ui.label("Style");
+                            let old = spect.style;
+                            ui.allocate_ui_with_layout(
+                                [w2, 20.].into(),
+                                Layout::left_to_right(egui::Align::Max),
+                                |ui| egui::ComboBox::from_id_salt("spect-style")
+                                    .selected_text(spect.style.name())
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut spect.style, data::TowerStyle::Cuboid, "cuboid");
+                                    })
+                            );
+                            if old != spect.style {
+                                s2.rebuild_meshes(gl);
+                            }
+                        }
+                    );
+                });
+                ui.horizontal(|ui| {
+                    if ui.allocate_ui_with_layout(
+                        [w2, 45.].into(),
+                        Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            ui.label("Half split");
+                            ui.add_sized(
+                                [w2, 20.],
+                                egui::Button::new(if spect.half_split { "ENABLED" } else { "DISABLED" })
+                            )
+                        }
+                    ).inner.clicked() {
+                        spect.half_split = !spect.half_split;
+                        s2.rebuild_meshes(gl);
+                    }
+                    ui.allocate_ui_with_layout(
+                        [w2, 45.].into(),
+                        Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            ui.label("Level modifier");
+                            if ui.add_sized(
+                                [w2, 20.],
+                                egui::DragValue::new(&mut spect.level_modifier)
+                                    .speed(0.01)
+                                    .range(0..=5)
+                            ).changed() {
+                                s2.rebuild_meshes(gl);
+                            }
+                        }
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.allocate_ui_with_layout(
+                        [w3, 45.].into(),
+                        Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            ui.label("Height");
+                            if ui.add_sized(
+                                [w3 + 5., 20.],
+                                egui::DragValue::new(&mut spect.base_height)
+                                    .speed(1.)
+                                    .range(0..=800)
+                            ).changed() {
+                                s2.rebuild_meshes(gl);
+                            }
+                        }
+                    );
+                    ui.allocate_ui_with_layout(
+                        [w2, 45.].into(),
+                        Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            ui.label("Easing");
+                            let old = spect.easing;
+                            ui.allocate_ui_with_layout(
+                                [w2, 20.].into(),
+                                Layout::left_to_right(egui::Align::Max),
+                                |ui| egui::ComboBox::from_id_salt("spectrogram-easing")
+                                    .selected_text(spect.easing.display_name())
+                                    .width(w3)
+                                    .show_ui(ui, |ui| {
+                                        for (name, easing) in Easing::iter_all() {
+                                            ui.selectable_value(&mut spect.easing, easing, name);
+                                        }
+                                    })
+                            );
+                            if old != spect.easing {
+                                s2.rebuild_meshes(gl);
+                            }
+                        }
+                    );
+                });
+                let mut add_plane = false;
+                let mut remove_plane = false;
+                match spect.mirror.as_mut() {
+                    Some(v4) => {
+                        remove_plane = ui.with_layout(Layout::right_to_left(egui::Align::Min), |ui| {
+                            let clicked = ui.small_button(SMALL_X).clicked();
+                            ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
+                                ui.label("Mirror plane");
+                            });
+                            clicked
+                        }).inner;
+                        ui.horizontal(|ui| {
+                            ui.allocate_ui_with_layout(
+                                [w2, 45.].into(),
+                                Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    ui.label("X");
+                                    if ui.add_sized(
+                                        [w2, 20.],
+                                        egui::DragValue::new(&mut v4.x)
+                                            .speed(0.001)
+                                            .range(-1..=1)
+                                    ).changed() {
+                                        s2.rebuild_meshes(gl);
+                                    }
+                                }
+                            );
+                            ui.allocate_ui_with_layout(
+                                [w2, 45.].into(),
+                                Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    ui.label("Y");
+                                    if ui.add_sized(
+                                        [w2, 20.],
+                                        egui::DragValue::new(&mut v4.y)
+                                            .speed(0.001)
+                                            .range(-1..=1)
+                                    ).changed() {
+                                        s2.rebuild_meshes(gl);
+                                    }
+                                }
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.allocate_ui_with_layout(
+                                [w2, 45.].into(),
+                                Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    ui.label("Z");
+                                    if ui.add_sized(
+                                        [w2, 20.],
+                                        egui::DragValue::new(&mut v4.z)
+                                            .speed(0.001)
+                                            .range(-1..=1)
+                                    ).changed() {
+                                        s2.rebuild_meshes(gl);
+                                    }
+                                }
+                            );
+                            ui.allocate_ui_with_layout(
+                                [w2, 45.].into(),
+                                Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    ui.label("Offset");
+                                    if ui.add_sized(
+                                        [w2, 20.],
+                                        egui::DragValue::new(&mut v4.w)
+                                            .speed(0.001)
+                                            .range(-1..=1)
+                                    ).changed() {
+                                        s2.rebuild_meshes(gl);
+                                    }
+                                }
+                            );
+                        });
+                        if ui.add_sized(
+                            [w, 20.],
+                            egui::Button::new("normalize")
+                        ).clicked() {
+                            *v4 = v4.xyz().normalize().extend(v4.w);
+                            s2.rebuild_meshes(gl);
+                        }
+                    }
+                    None => {
+                        add_plane = ui.add_sized(
+                            [w, 20.],
+                            egui::Button::new("Add mirror plane")
+                        ).clicked();
+                    }
+                }
+                if remove_plane {
+                    spect.mirror = None;
+                    s2.rebuild_meshes(gl);
+                }
+                if add_plane {
+                    spect.mirror = Some(Vec4::new(1., 0., 0., 0.));
+                    s2.rebuild_meshes(gl);
+                }
+
+            }
+        }
+        None => {
+            if ui.add_sized([w, 20.], egui::Button::new("Add Spectrogram")).clicked() {
+                s.view.spectrogram = Some(SpectrogramData::default())
+            }
+        }
+    }
+
+    ui.separator();
+
+    let mut remove_mirror = false;
     match s.view.mirror_id.as_mut() {
         Some(id) => {
+            ui.label("Mirror");
             ui.horizontal(|ui| {
-                ui.add_sized([w - 60., 20.], egui::TextEdit::singleline(id));
+                ui.add_sized([w - 55., 20.], egui::TextEdit::singleline(id));
                 if ui
                     .small_button(if s2.view.mirror_path.is_some() {"R"} else {"?"})
                     .clicked()
@@ -1353,31 +1621,57 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         }
                     });
                 }
+                remove_mirror = ui.small_button(SMALL_X).clicked();
             });
-            ui.label("TODO: mirror display ? [x]"); // TODO
         }
         None => {
             ui.label("TODO: Add mirror");
         }
     }
-
-    match s.view.spectrogram.as_mut() {
-        Some(spect) => {
-            ui.label("TODO: spectrogram settings [x]");
+    if remove_mirror {
+        s.view.mirror_id = None;
+        s.view.mirror_path = None;
+        if let Some(mesh) = s.render.mirror.take() {
+            mesh.destroy(gl);
         }
-        None => {
-            ui.label("TODO: Add Spectrogram");
-        }
+        return;
     }
 
+    ui.separator();
+
+    let mut remove_heights = false;
     match s.view.fog_heights.as_mut() {
         Some(heights) => {
-            ui.label("TODO: fog height editor");
+            ui.label("Fog Heights");
+            ui.horizontal(|ui| {
+                let [low, high] = *heights;
+                ui.add_sized(
+                    [w2 - 12.5, 20.],
+                    egui::DragValue::new(&mut heights[0])
+                        .range(-500f32..=high)
+                        .speed(1.)
+                );
+                ui.add_sized(
+                    [w2 - 12.5, 20.],
+                    egui::DragValue::new(&mut heights[1])
+                        .range(low..=500f32)
+                        .speed(1.)
+                );
+                remove_heights = ui.small_button(SMALL_X).clicked();
+
+            });
         }
         None => {
-            ui.label("TODO: Add Fog Heights");
+            if ui.add_sized([w, 20.], egui::Button::new("Add Fog Heights")).clicked() {
+                s.view.fog_heights = Some([-50., -30.])
+            }
         }
     }
+    if remove_heights {
+        s.view.fog_heights = None;
+    }
+
+    ui.separator();
 
     if s.view.session.is_some()
         && ui
@@ -1409,9 +1703,30 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     if let Some(sel) = s.state.ui.view_mesh.as_deref()
         && let Some(Some(mesh)) = s.view.meshes.get_mut(sel)
     {
+
+        let w = ui.available_width();
+
+        ui.add_space(5.);
+
+        let mut renamed = None;
+        ui.add_sized([w, 20.], TextInput::new(&format!("Rename {}", sel), &mut renamed));
+        if let Some(new_name) = renamed {
+            let mut meshes = std::mem::take(&mut s2.view.meshes);
+            for (id, _) in meshes.iter_mut2() {
+                if *id == sel {
+                    *id = new_name.clone();
+                }
+            }
+            s2.view.meshes = rehash(meshes);
+            s.state.ui.view_mesh = Some(new_name);
+            return;
+        }
+
+        ui.add_space(5.);
+
         let rd2 = RefDuper;
         let mesh2 = unsafe { rd2.detach_mut_ref(mesh) };
-        if ui.button("+ Add Placement").clicked() {
+        if ui.add_sized([w, 20.], egui::Button::new("+ Add Placement")).clicked() {
             mesh.view_placements.push(ViewPlacement::default());
             s.state.ui.collapsed.entry(sel.to_string()).or_default().push(false);
             s.state
@@ -1636,6 +1951,18 @@ fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
             }
         }
     }
+    if let Some(towers) = s.render.spectrogram.as_ref() {
+        calls.push(MeshDrawCall {
+            mesh: towers,
+            instances: vec![InstanceData::new(Vec4::ZERO, Mat4::IDENTITY, LIGHT_COLORS)],
+            wireframe: s.state.wireframe,
+            cull: true,
+            bloomfog: false,
+            solid: true,
+            bloom: false,
+            mirror: true,
+        })
+    }
     match s.state.view_style {
         editor::ViewStyle::Edit => {
             s.ref_mut().render.renderer.draw_meshes(
@@ -1647,7 +1974,8 @@ fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
             s.ref_mut().render.renderer.draw_meshes_fancy(
                 gl, view, proj, &calls,
                 window, s.state.show_grid,
-                s.render.mirror.as_ref(), s.state.wireframe
+                s.render.mirror.as_ref(), s.state.wireframe,
+                s.view.fog_heights.unwrap_or([-50., -30.])
             );
         }
     }
@@ -2215,7 +2543,8 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                         }],
                         window,
                         s.state.show_grid,
-                        s.render.mirror.as_ref(), s.state.wireframe
+                        s.render.mirror.as_ref(), s.state.wireframe,
+                        s.view.fog_heights.unwrap_or([-50., -30.])
                     );
                 }
             }
@@ -3170,7 +3499,8 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
                 s.ref_mut().render.renderer.draw_meshes_fancy(
                     gl, view, proj, &calls,
                     window, s.state.show_grid,
-                    s.render.mirror.as_ref(), s.state.wireframe
+                    s.render.mirror.as_ref(), s.state.wireframe,
+                    s.view.fog_heights.unwrap_or([-50., -30.])
                 );
             }
         }

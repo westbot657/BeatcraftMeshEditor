@@ -31,6 +31,7 @@ out vec4 v_color;
 out vec3 v_pos;
 out vec3 v_normal;
 flat out int v_material;
+flat out int v_flags;
 out vec3 screenUV;
 
 const vec3 COLORS[8] = vec3[8](
@@ -44,6 +45,7 @@ void main() {
     vec3 in_position = in_position_u.xyz;
     vec3 in_normal = in_normal_v.xyz;
     vec2 in_uv = vec2(in_position_u.w, in_normal_v.w);
+    v_flags = in_colorLayer_materialLayer_flags.z;
 
     if (in_colorLayer_materialLayer_flags.y == 1 || in_colorLayer_materialLayer_flags.y == 2) {
         if (u_render_mode == 0) {

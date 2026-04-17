@@ -5,6 +5,7 @@ in vec4 v_color;
 in vec3 v_pos;
 in vec3 v_normal;
 flat in int v_material; // 0 = solid, 1 = light/solid, 2 = light/nothing
+flat in int v_flags;
 in vec3 screenUV;
 
 uniform int passType; // 0 = normal, 1 = bloom, 2 = bloomfog, 3 = late lights
@@ -67,12 +68,19 @@ void main() {
         float diff = max(dot(N, LIGHT), 0.0) * 0.2 + 0.8;
         vec4 base = vColor;
         if (gl_FrontFacing) {
-            base = base * texture(u_texture, v_uv);
+            if (v_flags == 2147483648) {
+                base = vec4(vec3(0.0), 1.0);
+            } else {
+                base = base * texture(u_texture, v_uv);
+            }
         }
         fragColor = base;
     } else {
         if (passType == 0 /* Normal */ && v_material != 2 /* Not Light/Nothing */) {
             vec4 tex = texture(u_texture, v_uv) * v_color;
+            if (v_flags == 2147483648) { // 1 << 31
+                tex = vec4(vec3(0.0), 1.0);
+            }
             if (v_material == 1 /* Light/Solid */) {
                 tex = vec4(tex.rgb, 1.0);
             }

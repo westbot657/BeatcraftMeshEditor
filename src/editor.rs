@@ -329,6 +329,7 @@ pub struct Render {
     pub sel_points: Option<GpuMesh>,
     pub inst_points: Option<GpuMesh>,
     pub mirror: Option<GpuMesh>,
+    pub spectrogram: Option<GpuMesh>,
 }
 
 pub struct Editor {
@@ -620,6 +621,9 @@ pub struct UiState {
     pub hovered_uv: Option<(usize, usize)>,
     pub dragging_uv: Option<(usize, usize)>,
     pub texture_cache: HashMap<String, egui::TextureHandle>,
+    pub spectrogram_mode: RotationDisplayMode,
+    pub spectrogram_collapse: bool,
+    pub meshes_collapse: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -935,6 +939,7 @@ impl App {
                 sel_points: None,
                 inst_points: None,
                 mirror: None,
+                spectrogram: None,
             },
             editor: Editor {
                 mesh: None,
@@ -1067,6 +1072,16 @@ impl App {
             if let Some(vm) = view_mesh.as_mut() {
                 vm.rebuild_with_maps(gl, &texture_paths, &atlas_map);
             }
+        }
+        let rd = RefDuper;
+        let s2 = unsafe { rd.detach_ref(self) };
+        if self.view.spectrogram.is_none()
+        && let Some(vm) = self.render.spectrogram.take() {
+            vm.destroy(gl);
+        }
+        if let Some(data) = s2.view.spectrogram.as_ref() {
+            let vm = self.render.spectrogram.get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[]) );
+            data.generate(gl, vm);
         }
         self.upload_selection_points(gl);
     }
