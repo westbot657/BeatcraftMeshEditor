@@ -441,6 +441,11 @@ impl Default for EnvPlacementData {
 
 impl From<&ViewPlacement> for EnvPlacementData {
     fn from(value: &ViewPlacement) -> Self {
+        let mut step = Vec::new();
+        for s in value.id_step.iter() {
+            if *s == 0 { break; }
+            step.push(*s);
+        }
         Self {
             typ: value.action_type.get_type(),
             ids: value.ids.clone(),
@@ -451,7 +456,7 @@ impl From<&ViewPlacement> for EnvPlacementData {
             rotation_offset: value.rotation_offset,
             orientation: value.orientation,
             orientation_offset: value.orientation_offset,
-            id_step: value.id_step.clone(),
+            id_step: step,
             type_data: value.action_type.to_data(),
         }
     }
@@ -459,9 +464,13 @@ impl From<&ViewPlacement> for EnvPlacementData {
 
 impl EnvPlacementData {
     pub fn to_view(&self, resource_location: Option<String>, path: Option<PathBuf>) -> ViewPlacement {
+        let mut id_step = [0; 8];
+        for (i, s) in self.id_step.iter().enumerate() {
+            id_step[i] = *s;
+        }
         ViewPlacement {
             ids: self.ids.clone(),
-            id_step: self.id_step.clone(),
+            id_step,
             position: self.position,
             offset: self.offset,
             count: self.count,
@@ -915,7 +924,7 @@ mod data_tests {
 
     #[test]
     fn test_deserialize() -> anyhow::Result<()> {
-        let _setup: Value = serde_json::from_str(include_str!("../local/old/test_mesh.json"))?;
+        let _setup: Value = serde_json::from_str(include_str!("../../local/old/test_mesh.json"))?;
 
         let data = serde_json::to_string(&_setup)?;
 

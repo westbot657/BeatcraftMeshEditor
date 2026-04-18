@@ -2020,18 +2020,24 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 );
 
                 ui.label("IDs");
+                ui.horizontal(|ui| {
+                    let layout = Layout::left_to_right(egui::Align::Min);
+                    ui.allocate_ui_with_layout([w2, 20.].into(), layout, |ui| { ui.set_width(w2); ui.label("ID group") });
+                    ui.allocate_ui_with_layout([w2 / 2. - 15., 20.].into(), layout, |ui| { ui.set_width(w2 / 2. - 15.); ui.label("ID") });
+                    ui.allocate_ui_with_layout([w2 / 2. - 15., 20.].into(), layout, |ui| { ui.set_width(w2 / 2. - 15.); ui.label("Step") });
+                });
                 let mut first_none = true;
                 let mut add_entry = false;
                 let mut pop_entry = false;
                 let ids_len = placement.ids.len();
-                for (idx, entry) in placement.ids.list_mut().iter_mut().enumerate() {
+                for (idx, (entry, step)) in placement.ids.list_mut().iter_mut().zip(placement.id_step.iter_mut()).enumerate() {
                     match (first_none, entry) {
                         (_, Some((group, id))) => {
                             ui.horizontal(|ui| {
                                 let mut g2 = *group;
                                 egui::ComboBox::from_id_salt(format!("{sel}-ids-{idx}-{p_i}"))
                                     .selected_text(g2.name())
-                                    .width(w - w3 - 7.5)
+                                    .width(w2)
                                     .show_ui(ui, |ui| {
                                         for g in LightGroup::iter_all() {
                                             ui.selectable_value(&mut g2, g, g.name());
@@ -2045,19 +2051,29 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                         }
                                     ));
                                 }
+                                let mut id2 = *id;
+                                let mut step2 = *step;
                                 let resp = ui.add_sized(
-                                    [w3 - 25., 20.],
-                                    egui::DragValue::new(id)
+                                    [(w2/2.) - 15., 20.],
+                                    egui::DragValue::new(&mut id2)
                                         .speed(0.25)
                                         .range(1..=500)
                                 );
-                                trigger_history(ui, &[resp],
+                                let resp2 = ui.add_sized(
+                                    [(w2/2.) - 15., 20.],
+                                    egui::DragValue::new(&mut step2)
+                                        .speed(0.25)
+                                        .range(-500..=500)
+                                );
+                                trigger_history(ui, &[resp, resp2],
                                     || mesh2.view_placements.clone(),
                                     |x| s2.add_history(editor::HistoryEntry::ViewPlacement(
                                         editor::ViewPlacementsSnapshot { id: sel.to_string(), placements: x }
                                     )),
                                     || s3.rebuild_meshes(gl)
                                 );
+                                *id = id2;
+                                *step = step2;
                                 if ids_len - 1 == idx {
                                     pop_entry = ui.small_button(SMALL_X).clicked();
                                 }
@@ -2144,7 +2160,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                         ui.add_space(5.);
 
-                        if ui.add_sized([w, 20.], egui::Button::new("Remove")).clicked() {
+                        if ui.add_sized([w, 20.], egui::Button::new("Remove action")).clicked() {
                             repl = Some(ActionType::Static);
                         }
                     },
@@ -2361,7 +2377,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                         ui.add_space(5.);
 
-                        if ui.add_sized([w, 20.], egui::Button::new("Remove")).clicked() {
+                        if ui.add_sized([w, 20.], egui::Button::new("Remove action")).clicked() {
                             repl = Some(ActionType::Static);
                         }
                     },

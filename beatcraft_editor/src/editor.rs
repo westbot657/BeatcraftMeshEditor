@@ -198,7 +198,7 @@ impl ActionType {
 #[derive(Debug, Clone)]
 pub struct ViewPlacement {
     pub ids: IdList,
-    pub id_step: Vec<i32>,
+    pub id_step: [i32; 8],
     pub position: Vec3,
     pub offset: Vec3,
     pub count: u32,
@@ -223,7 +223,7 @@ impl Default for ViewPlacement {
     fn default() -> Self {
         Self {
             ids: IdList::default(),
-            id_step: Vec::new(),
+            id_step: [0; 8],
             position: Vec3::ZERO,
             offset: Vec3::ZERO,
             count: 1,
