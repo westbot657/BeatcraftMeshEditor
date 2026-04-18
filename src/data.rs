@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use glam::{Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 use crate::easing::Easing;
 use crate::editor::{ActionType, Camera, ViewPlacement};
@@ -215,7 +215,7 @@ fn is_zero(v: &u8) -> bool {
     *v == 0
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub enum EventGroup {
     #[default]
     #[serde(skip_serializing)]
@@ -250,20 +250,119 @@ pub enum TypeData {
     None
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Default)]
 pub struct IdList {
-    list: Vec<LightIdElement>
+    pub ids: [Option<(LightGroup, usize)>; 8],
+    length: usize,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+impl IdList {
+
+    pub fn push(&mut self, group: LightGroup, id: usize) -> Option<()> {
+        if self.length == 8 {
+            None
+        } else {
+            self.ids[self.length] = Some((group, id));
+            self.length += 1;
+            Some(())
+        }
+    }
+
+    pub fn pop(&mut self) -> Option<(LightGroup, usize)> {
+        if self.length == 0 {
+            None
+        } else {
+            let out = self.ids[self.length].take();
+            self.length -= 1;
+            out
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
+    }
+
+    pub fn get(&self, i: usize) -> Option<(LightGroup, usize)> {
+        if i > 7 {
+            None
+        } else {
+            self.ids[i]
+        }
+    }
+
+    pub fn get_mut(&mut self, i: usize) -> Option<(&mut LightGroup, &mut usize)> {
+        if i > 7 {
+            None
+        } else {
+            self.ids[i].as_mut().map(|g| (&mut g.0, &mut g.1))
+        }
+    }
+
+    pub fn list(&self) -> &[Option<(LightGroup, usize)>; 8] {
+        &self.ids
+    }
+
+    pub fn list_mut(&mut self) -> &mut [Option<(LightGroup, usize)>; 8] {
+        &mut self.ids
+    }
+
+}
+
+impl<'de> Deserialize<'de> for IdList {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let elements = Vec::<LightIdElement>::deserialize(deserializer)?;
+        let mut ids = [const { None }; 8];
+        let mut current_group: Option<LightGroup> = None;
+        let mut length = 0;
+
+        for elem in elements {
+            match elem {
+                LightIdElement::GroupName(g) => current_group = Some(g),
+                LightIdElement::Id(id) => {
+                    let group = current_group
+                        .ok_or_else(|| de::Error::custom("id before any group name"))?;
+                    if length >= 8 {
+                        return Err(de::Error::custom("more than 8 ids"));
+                    }
+                    ids[length] = Some((group, id as usize));
+                    length += 1;
+                }
+            }
+        }
+
+        Ok(IdList { ids, length })
+    }
+}
+
+impl Serialize for IdList {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut elements: Vec<LightIdElement> = Vec::new();
+        let mut last_group: Option<&LightGroup> = None;
+
+        for (group, id) in self.ids.iter().filter_map(|x| x.as_ref()) {
+            if last_group.is_none_or(|g| g != group) {
+                elements.push(LightIdElement::GroupName(*group));
+                last_group = Some(group);
+            }
+            elements.push(LightIdElement::Id(*id as u32));
+        }
+
+        elements.serialize(serializer)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum LightIdElement {
     GroupName(LightGroup),
     Id(u32)
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LightGroup {
     #[serde(rename="left-lasers", alias="left-lights")]
     LeftLasers,
@@ -275,6 +374,29 @@ pub enum LightGroup {
     BackLasers,
     #[serde(rename="ring-lights", alias="ring-laseers")]
     RingLights,
+}
+
+impl LightGroup {
+    pub fn name(&self) -> &'static str {
+        match self {
+            LightGroup::LeftLasers => "left-lights",
+            LightGroup::RightLasers => "right-lights",
+            LightGroup::CenterLasers => "center-lights",
+            LightGroup::BackLasers => "back-lights",
+            LightGroup::RingLights => "ring-lights",
+        }
+    }
+
+    pub fn iter_all() -> impl Iterator<Item = Self> {
+        [
+            Self::LeftLasers,
+            Self::RightLasers,
+            Self::CenterLasers,
+            Self::BackLasers,
+            Self::RingLights
+        ].into_iter()
+    }
+
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -389,7 +511,7 @@ impl EnvPlacementData {
 #[derive(Debug, Clone)]
 pub enum EnvMeshData {
     MultiPlacement { placements: Vec<EnvPlacementData> },
-    SinglePlacement(EnvPlacementData),
+    SinglePlacement(Box<EnvPlacementData>),
     None,
 }
 
@@ -397,7 +519,7 @@ impl From<Vec<EnvPlacementData>> for EnvMeshData {
     fn from(mut value: Vec<EnvPlacementData>) -> Self {
         match value.len() {
             0 => Self::None,
-            1 => Self::SinglePlacement(value.pop().unwrap()),
+            1 => Self::SinglePlacement(Box::new(value.pop().unwrap())),
             _ => Self::MultiPlacement {
                 placements: value
             }
@@ -574,7 +696,7 @@ impl<'de> Deserialize<'de> for EnvMeshData {
             serde_json::Value::Object(_) => {
                 let data = EnvPlacementData::deserialize(map)
                     .map_err(serde::de::Error::custom)?;
-                Ok(EnvMeshData::SinglePlacement(data))
+                Ok(EnvMeshData::SinglePlacement(Box::new(data)))
             }
             _ => Err(serde::de::Error::custom("expected an object")),
         }

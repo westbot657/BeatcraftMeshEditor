@@ -121,16 +121,34 @@ pub struct ViewMesh {
     pub view_placements: Vec<ViewPlacement>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpinSide {
     Left,
     Right,
 }
 
-#[derive(Debug, Clone, Copy)]
+impl SpinSide {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Left => "Left",
+            Self::Right => "Right",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RingType {
     Inner,
     Outer,
+}
+
+impl RingType {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Inner => "Inner",
+            Self::Outer => "Outer",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1227,6 +1245,7 @@ impl App {
 
         if input.key_pressed(Key::Escape) {
             self.selection = Selection::None;
+            self.state.ui.mirror_editor.selected.clear();
             self.upload_selection_points(gl);
         }
 
