@@ -22,9 +22,3 @@ anyhow = "1"
 pathdiff = "0.2.3"
 image = "0.25.10"
 
-[dev-dependencies]
-anyhow = "1"
-
-[profile.release]
-opt-level = 3
-
