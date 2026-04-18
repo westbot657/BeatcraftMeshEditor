@@ -1231,7 +1231,17 @@ impl App {
         }
 
         match self.mode {
-            EditorMode::View => {}
+            EditorMode::View => {
+                if input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace) {
+                    let mut to_remove = std::mem::take(&mut self.state.ui.mirror_editor.selected);
+                    to_remove.sort();
+                    to_remove.reverse();
+                    for r in to_remove {
+                        self.view.mirror_geometry.remove(r.0 * 3 + r.1);
+                    }
+                }
+
+            }
             EditorMode::Assembly => {
                 if input.key_pressed(Key::E) {
                     self.last_mode = self.mode;

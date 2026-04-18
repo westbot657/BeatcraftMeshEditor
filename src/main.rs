@@ -4308,17 +4308,11 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
             let stroke_color = egui::Color32::from_rgba_unmultiplied(100, 140, 255, alpha);
 
             if verts.len() == 3 {
-                let pts = vec![
-                    to_screen(verts[2]),
-                    to_screen(verts[1]),
-                    to_screen(verts[0]),
-                ];
-                painter.add(egui::Shape::Path(egui::epaint::PathShape {
-                    points: pts,
-                    closed: true,
-                    fill,
-                    stroke: egui::epaint::PathStroke::new(1.0, stroke_color),
-                }));
+                let pts = [to_screen(verts[0]), to_screen(verts[1]), to_screen(verts[2])];
+                painter.add(egui::Shape::convex_polygon(pts.to_vec(), fill, egui::Stroke::NONE));
+                painter.line_segment([pts[0], pts[1]], egui::Stroke::new(1.0, stroke_color));
+                painter.line_segment([pts[1], pts[2]], egui::Stroke::new(1.0, stroke_color));
+                painter.line_segment([pts[2], pts[0]], egui::Stroke::new(1.0, stroke_color));
             } else {
                 for i in 0..verts.len().saturating_sub(1) {
                     painter.line_segment(
