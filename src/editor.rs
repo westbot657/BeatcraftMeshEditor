@@ -732,6 +732,9 @@ pub enum HistoryEntry {
     ViewPlacement(ViewPlacementsSnapshot),
     Rename(Rename),
     MutliStep(Vec<HistoryEntry>),
+    Mirror(Option<String>, Option<PathBuf>, Vec<Vec2>),
+    Spectrogram(Option<SpectrogramData>),
+    FogHeights(Option<[f32; 2]>),
 }
 
 pub struct History {
@@ -876,6 +879,20 @@ impl History {
                 }
                 HistoryEntry::MutliStep(out)
             }
+            HistoryEntry::Mirror(mut id, mut path, mut vec2s) => {
+                std::mem::swap(&mut id, &mut editor.view.mirror_id);
+                std::mem::swap(&mut path, &mut editor.view.mirror_path);
+                std::mem::swap(&mut vec2s, &mut editor.view.mirror_geometry);
+                HistoryEntry::Mirror(id, path, vec2s)
+            },
+            HistoryEntry::Spectrogram(mut spectrogram_data) => {
+                std::mem::swap(&mut spectrogram_data, &mut editor.view.spectrogram);
+                HistoryEntry::Spectrogram(spectrogram_data)
+            },
+            HistoryEntry::FogHeights(mut heights) => {
+                std::mem::swap(&mut heights, &mut editor.view.fog_heights);
+                HistoryEntry::FogHeights(heights)
+            },
         }
     }
 

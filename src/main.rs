@@ -101,6 +101,37 @@ impl RefDuper {
     }
 }
 
+fn trigger_history<T: 'static + Clone + Send + Sync>(
+    ui: &mut egui::Ui,
+    resp: &[egui::Response],
+    snapshot_provider: impl Fn() -> T,
+    mut history_pusher: impl FnMut(T),
+    mut on_change: impl FnMut(),
+) {
+    let mut changed = false;
+    for resp in resp {
+        let id = ui.next_auto_id();
+        if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
+            ui.memory_mut(|m| {
+                m.data.insert_temp(id, snapshot_provider());
+            });
+            changed = true;
+        }
+        if (resp.drag_stopped() || (resp.lost_focus() && !resp.dragged()))
+            && let Some(t) = ui.memory_mut(|m| {
+                let t = m.data.get_temp::<T>(id)?;
+                Some(t)
+            })
+        {
+            changed = true;
+            history_pusher(t);
+        }
+    }
+    if changed {
+        on_change();
+    }
+}
+
 fn vec3_row<T: 'static + Clone + Send + Sync>(
     ui: &mut egui::Ui,
     v: &mut Vec3,
@@ -997,13 +1028,13 @@ impl eframe::App for App {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     // Open Session...
-                    if ui.button("Open Environment\u{2026} \u{2502}").clicked() && !self.block_input()
+                    if ui.button("Open environment\u{2026} \u{2502}").clicked() && !self.block_input()
                     {
                         let (sx, rx) = mpsc::channel();
                         self.state.ui.open_session_channel = Some(rx);
                         std::thread::spawn(move || {
                             if let Some(session) = rfd::FileDialog::new()
-                                .set_title("Open Session...")
+                                .set_title("Open environment...")
                                 .add_filter("json", &["json"])
                                 .pick_file()
                             {
@@ -1046,9 +1077,9 @@ impl eframe::App for App {
                 });
                 ui.menu_button("View", |ui| {
                     ui.checkbox(&mut self.state.wireframe, "Wireframe     \u{2502} [W]");
-                    ui.checkbox(&mut self.state.show_grid, "Show Grid     \u{2502} [G]");
+                    ui.checkbox(&mut self.state.show_grid, "Show grid     \u{2502} [G]");
                     ui.checkbox(&mut self.state.show_verts, "Vertices      \u{2502} [C]");
-                    if ui.button("Reframe Camera  \u{2502} [F]").clicked() {
+                    if ui.button("Reframe camera  \u{2502} [F]").clicked() {
                         self.frame_to_geometry();
                         ui.close();
                     }
@@ -1136,7 +1167,7 @@ impl eframe::App for App {
                                     MathDragValue::new(&mut target.z, &mut vars).speed(0.01),
                                 );
                             });
-                            ui.label("Camera Pivot");
+                            ui.label("Camera pivot");
                             if h > 45. {
                                 ui.add_space(5.);
                                 ui.allocate_ui_with_layout(
@@ -1146,7 +1177,7 @@ impl eframe::App for App {
                                         if ui
                                             .add_sized(
                                                 ui.available_size(),
-                                                egui::Button::new("Show UV Editor")
+                                                egui::Button::new("Show UV editor")
                                                     .selected(self.state.ui.show_uv_window),
                                             )
                                             .clicked()
@@ -1238,7 +1269,7 @@ impl eframe::App for App {
             });
 
         if self.mode == editor::EditorMode::Edit && self.state.ui.show_uv_window {
-            egui::Window::new("UV Editor")
+            egui::Window::new("UV editor")
                 .id(egui::Id::new("uv_editor"))
                 .min_size([200., 200.])
                 .pivot(Align2::CENTER_CENTER)
@@ -1249,7 +1280,7 @@ impl eframe::App for App {
         }
 
         if self.mode == editor::EditorMode::View && self.state.ui.show_mirror_window {
-            egui::Window::new("Mirror Geometry Editor")
+            egui::Window::new("Mirror geometry editor")
                 .id(egui::Id::new("mirror_editor"))
                 .min_size([200., 200.])
                 .pivot(Align2::CENTER_CENTER)
@@ -1269,6 +1300,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let rd = RefDuper;
     let s2 = unsafe { rd.detach_mut_ref(s) };
     let s3 = unsafe { rd.detach_mut_ref(s) };
+    let s4 = unsafe { rd.detach_mut_ref(s) };
 
     ui.horizontal(|ui| {
         let icon = if s2.state.ui.meshes_collapse { R_ARROW } else { D_ARROW };
@@ -1362,6 +1394,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let mut remove_spect = false;
     match s.view.spectrogram.as_mut() {
         Some(spect) => {
+            let spect2 = unsafe { rd.detach_ref(spect) };
 
             ui.horizontal(|ui| {
                 ui.allocate_ui_with_layout(
@@ -1389,21 +1422,21 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if !s2.state.ui.spectrogram_collapse {
                 ui.label("Position");
                 vec3_row(ui, &mut spect.position, w3,
-                    || (),
-                    |_| {}, // TODO
+                    || Some(spect2.clone()),
+                    |s| s3.add_history(editor::HistoryEntry::Spectrogram(s)),
                     || s2.rebuild_meshes(gl)
                 );
                 ui.label("Offset");
                 vec3_row(ui, &mut spect.offset, w3,
-                    || (),
-                    |_| {}, // TODO
-                    || s2.rebuild_meshes(gl)
+                    || Some(spect2.clone()),
+                    |s| s3.add_history(editor::HistoryEntry::Spectrogram(s)),
+                    || s2.rebuild_meshes(gl),
                 );
                 ui.label("Rotation");
                 quat_row(ui, &mut spect.rotation, &mut s2.state.ui.spectrogram_mode, (w2, w3),
-                    || (),
-                    |_| {}, // TODO
-                    || s3.rebuild_meshes(gl)
+                    || Some(spect2.clone()),
+                    |s| s3.add_history(editor::HistoryEntry::Spectrogram(s)),
+                    || s4.rebuild_meshes(gl)
                 );
                 ui.horizontal(|ui| {
                     ui.allocate_ui_with_layout(
@@ -1412,15 +1445,17 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         |ui| {
                             ui.label("Count");
                             let mut v2 = spect.count as f32;
-                            ui.add_sized(
+                            let resp = ui.add_sized(
                                 [w2, 20.],
                                 egui::DragValue::new(&mut v2)
                                     .speed(1.)
                                     .range(1..=500)
                             );
-                            if spect.count != v2 as u32 {
-                                s2.rebuild_meshes(gl);
-                            }
+                            trigger_history(ui, &[resp],
+                                || spect2.clone(),
+                                |x| s2.add_history(editor::HistoryEntry::Spectrogram(Some(x))),
+                                || s3.rebuild_meshes(gl)
+                            );
                             spect.count = v2 as u32;
                         }
                     );
@@ -1440,6 +1475,9 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                     })
                             );
                             if old != spect.style {
+                                let mut old_s = spect.clone();
+                                old_s.style = old;
+                                s2.add_history(editor::HistoryEntry::Spectrogram(Some(old_s)));
                                 s2.rebuild_meshes(gl);
                             }
                         }
@@ -1457,6 +1495,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             )
                         }
                     ).inner.clicked() {
+                        s2.add_history(editor::HistoryEntry::Spectrogram(Some(spect.clone())));
                         spect.half_split = !spect.half_split;
                         s2.rebuild_meshes(gl);
                     }
@@ -1465,14 +1504,17 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         Layout::top_down(egui::Align::Min),
                         |ui| {
                             ui.label("Level modifier");
-                            if ui.add_sized(
+                            let resp = ui.add_sized(
                                 [w2, 20.],
                                 egui::DragValue::new(&mut spect.level_modifier)
                                     .speed(0.01)
                                     .range(0..=5)
-                            ).changed() {
-                                s2.rebuild_meshes(gl);
-                            }
+                            );
+                            trigger_history(ui, &[resp],
+                                || spect2.clone(),
+                                |x| s2.add_history(editor::HistoryEntry::Spectrogram(Some(x))),
+                                || s3.rebuild_meshes(gl)
+                            );
                         }
                     );
                 });
@@ -1482,14 +1524,17 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         Layout::top_down(egui::Align::Min),
                         |ui| {
                             ui.label("Height");
-                            if ui.add_sized(
+                            let resp = ui.add_sized(
                                 [w3 + 5., 20.],
                                 egui::DragValue::new(&mut spect.base_height)
                                     .speed(1.)
                                     .range(0..=800)
-                            ).changed() {
-                                s2.rebuild_meshes(gl);
-                            }
+                            );
+                            trigger_history(ui, &[resp],
+                                || spect2.clone(),
+                                |x| s2.add_history(editor::HistoryEntry::Spectrogram(Some(x))),
+                                || s3.rebuild_meshes(gl)
+                            );
                         }
                     );
                     ui.allocate_ui_with_layout(
@@ -1511,11 +1556,16 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                     })
                             );
                             if old != spect.easing {
+                                let mut old_s = spect.clone();
+                                old_s.easing = old;
+                                s2.add_history(editor::HistoryEntry::Spectrogram(Some(old_s)));
                                 s2.rebuild_meshes(gl);
                             }
                         }
                     );
                 });
+
+
                 let mut add_plane = false;
                 let mut remove_plane = false;
                 match spect.mirror.as_mut() {
@@ -1527,74 +1577,76 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             });
                             clicked
                         }).inner;
-                        ui.horizontal(|ui| {
-                            ui.allocate_ui_with_layout(
+                         let (a, b) = ui.horizontal(|ui| {
+                            let a = ui.allocate_ui_with_layout(
                                 [w2, 45.].into(),
                                 Layout::top_down(egui::Align::Min),
                                 |ui| {
                                     ui.label("X");
-                                    if ui.add_sized(
+                                    ui.add_sized(
                                         [w2, 20.],
                                         egui::DragValue::new(&mut v4.x)
                                             .speed(0.001)
                                             .range(-1..=1)
-                                    ).changed() {
-                                        s2.rebuild_meshes(gl);
-                                    }
+                                    )
                                 }
-                            );
-                            ui.allocate_ui_with_layout(
+                            ).inner;
+                            let b = ui.allocate_ui_with_layout(
                                 [w2, 45.].into(),
                                 Layout::top_down(egui::Align::Min),
                                 |ui| {
                                     ui.label("Y");
-                                    if ui.add_sized(
+                                    ui.add_sized(
                                         [w2, 20.],
                                         egui::DragValue::new(&mut v4.y)
                                             .speed(0.001)
                                             .range(-1..=1)
-                                    ).changed() {
-                                        s2.rebuild_meshes(gl);
-                                    }
+                                    )
                                 }
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            ui.allocate_ui_with_layout(
+                            ).inner;
+                            (a, b)
+                        }).inner;
+                        let (c, d) = ui.horizontal(|ui| {
+                            let c = ui.allocate_ui_with_layout(
                                 [w2, 45.].into(),
                                 Layout::top_down(egui::Align::Min),
                                 |ui| {
                                     ui.label("Z");
-                                    if ui.add_sized(
+                                    ui.add_sized(
                                         [w2, 20.],
                                         egui::DragValue::new(&mut v4.z)
                                             .speed(0.001)
                                             .range(-1..=1)
-                                    ).changed() {
-                                        s2.rebuild_meshes(gl);
-                                    }
+                                    )
                                 }
-                            );
-                            ui.allocate_ui_with_layout(
+                            ).inner;
+                            let d = ui.allocate_ui_with_layout(
                                 [w2, 45.].into(),
                                 Layout::top_down(egui::Align::Min),
                                 |ui| {
                                     ui.label("Offset");
-                                    if ui.add_sized(
+                                    ui.add_sized(
                                         [w2, 20.],
                                         egui::DragValue::new(&mut v4.w)
                                             .speed(0.001)
                                             .range(-1..=1)
-                                    ).changed() {
-                                        s2.rebuild_meshes(gl);
-                                    }
+                                    )
                                 }
-                            );
-                        });
+                            ).inner;
+                            (c, d)
+                        }).inner;
+
+                        trigger_history(ui, &[a, b, c, d],
+                            || spect2.clone(),
+                            |x| s2.add_history(editor::HistoryEntry::Spectrogram(Some(x))),
+                            || s3.rebuild_meshes(gl)
+                        );
+
                         if ui.add_sized(
                             [w, 20.],
                             egui::Button::new("normalize")
                         ).clicked() {
+                            s2.add_history(editor::HistoryEntry::Spectrogram(Some(spect2.clone())));
                             *v4 = v4.xyz().normalize().extend(v4.w);
                             s2.rebuild_meshes(gl);
                         }
@@ -1607,10 +1659,12 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     }
                 }
                 if remove_plane {
+                    s2.add_history(editor::HistoryEntry::Spectrogram(Some(spect.clone())));
                     spect.mirror = None;
                     s2.rebuild_meshes(gl);
                 }
                 if add_plane {
+                    s2.add_history(editor::HistoryEntry::Spectrogram(Some(spect.clone())));
                     spect.mirror = Some(Vec4::new(1., 0., 0., 0.));
                     s2.rebuild_meshes(gl);
                 }
@@ -1619,9 +1673,14 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
         None => {
             if ui.add_sized([w, 20.], egui::Button::new("Add spectrogram")).clicked() {
+                s.add_history(editor::HistoryEntry::Spectrogram(None));
                 s.view.spectrogram = Some(SpectrogramData::default())
             }
         }
+    }
+    if remove_spect {
+        let spect = s.view.spectrogram.take();
+        s.add_history(editor::HistoryEntry::Spectrogram(spect));
     }
 
     ui.separator();
@@ -1660,7 +1719,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     s2.state.ui.select_mirror_channel = Some(rx);
                     std::thread::spawn(move || {
                         if let Some(path) = rfd::FileDialog::new()
-                            .set_title("Open Mirror File")
+                            .set_title("Open mirror file")
                             .add_filter("json", &["json"])
                             .pick_file()
                         {
@@ -1673,13 +1732,15 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
         None => {
             if ui.add_sized([w, 20.], egui::Button::new("Add mirror")).clicked() {
+                s.add_history(editor::HistoryEntry::Mirror(s.view.mirror_id.clone(), s.view.mirror_path.clone(), s.view.mirror_geometry.clone()));
                 s.view.mirror_id = Some("env:mirror".to_string());
             }
         }
     }
     if remove_mirror {
-        s.view.mirror_id = None;
-        s.view.mirror_path = None;
+        let id = s.view.mirror_id.take();
+        let path = s.view.mirror_path.take();
+        s.add_history(editor::HistoryEntry::Mirror(id, path, s.view.mirror_geometry.clone()));
         if let Some(mesh) = s.render.mirror.take() {
             mesh.destroy(gl);
         }
@@ -1691,20 +1752,25 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let mut remove_heights = false;
     match s.view.fog_heights.as_mut() {
         Some(heights) => {
-            ui.label("Fog Heights");
+            ui.label("Fog heights");
             ui.horizontal(|ui| {
                 let [low, high] = *heights;
-                ui.add_sized(
+                let r0 = ui.add_sized(
                     [w2 - 12.5, 20.],
                     egui::DragValue::new(&mut heights[0])
                         .range(-500f32..=high)
                         .speed(1.)
                 );
-                ui.add_sized(
+                let r1 = ui.add_sized(
                     [w2 - 12.5, 20.],
                     egui::DragValue::new(&mut heights[1])
                         .range(low..=500f32)
                         .speed(1.)
+                );
+                trigger_history(ui, &[r0, r1],
+                    || s2.view.fog_heights,
+                    |x| s3.add_history(editor::HistoryEntry::FogHeights(x)),
+                    || ()
                 );
                 remove_heights = ui.small_button(SMALL_X).clicked();
 
@@ -1712,12 +1778,14 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
         None => {
             if ui.add_sized([w, 20.], egui::Button::new("Add fog heights")).clicked() {
-                s.view.fog_heights = Some([-50., -30.])
+                let h = s.view.fog_heights.replace([-50., -30.]);
+                s.add_history(editor::HistoryEntry::FogHeights(h));
             }
         }
     }
     if remove_heights {
-        s.view.fog_heights = None;
+        let h = s.view.fog_heights.take();
+        s.add_history(editor::HistoryEntry::FogHeights(h));
     }
 
     ui.separator();
@@ -1899,7 +1967,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     ui.label("Count");
                 });
 
-                ui.label("Offset Position");
+                ui.label("Offset position");
                 vec3_row(
                     ui,
                     &mut placement.offset,
@@ -1916,7 +1984,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     || s3.rebuild_meshes(gl),
                 );
 
-                ui.label("Offset Orientation");
+                ui.label("Offset orientation");
                 quat_row(
                     ui,
                     &mut placement.orientation_offset,
@@ -1934,7 +2002,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     || s3.rebuild_meshes(gl),
                 );
 
-                ui.label("Offset Rotation");
+                ui.label("Offset rotation");
                 quat_row(
                     ui,
                     &mut placement.rotation_offset,
@@ -2174,7 +2242,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         if ui.small_button(icon).clicked() {
                             pt_collapsed.0[1] = !pt_collapsed.0[1];
                         }
-                        ui.label("Remap Data");
+                        ui.label("Remap data");
                     });
 
                     if !pt_collapsed.0[1] {
@@ -2397,7 +2465,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         self2.state.ui.select_image_channel = Some((val.clone(), rx));
                         std::thread::spawn(move || {
                             if let Some(path) = rfd::FileDialog::new()
-                                .set_title("Choose Image")
+                                .set_title("Choose image")
                                 .add_filter("png", &["png"])
                                 .pick_file()
                             {
@@ -2422,7 +2490,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 toggles.settings = !toggles.settings;
             }
-            ui.label("Render Settings");
+            ui.label("Render settings");
         });
 
         if !toggles.settings {
@@ -2655,7 +2723,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *verts = !*verts;
             }
-            ui.label("Indexed Vertices");
+            ui.label("Indexed vertices");
         });
 
         if !*verts {
@@ -2686,7 +2754,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *verts = !*verts;
             }
-            ui.label("Named Vertices");
+            ui.label("Named vertices");
         });
 
         if !*verts {
@@ -2750,7 +2818,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *verts = !*verts;
             }
-            ui.label("Compute Vertices");
+            ui.label("Compute vertices");
         });
 
         if !*verts {
@@ -2962,7 +3030,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *norms = !*norms;
             }
-            ui.label("Indexed Normals");
+            ui.label("Indexed normals");
         });
 
         if !*norms {
@@ -3028,7 +3096,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *norms = !*norms;
             }
-            ui.label("Named Normals");
+            ui.label("Named normals");
         });
 
         if !*norms {
@@ -3123,7 +3191,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *norms = !*norms;
             }
-            ui.label("Compute Normals");
+            ui.label("Compute normals");
         });
 
         if !*norms {
@@ -3258,7 +3326,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         let w2 = (w - ui.spacing().item_spacing.x) / 2.;
         let w3 = (w - ui.spacing().item_spacing.x * 2.) / 3.;
 
-        ui.label("Multi-Vertex");
+        ui.label("Multi-vertex");
         multi_vec3_row(
             ui,
             &mut values,
@@ -3299,7 +3367,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 }
             } {
                 VertVal::V3(v3) => {
-                    ui.label("Vertex Position");
+                    ui.label("Vertex position");
                     vec3_row(
                         ui,
                         v3,
@@ -3318,7 +3386,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     );
                 }
                 VertVal::C3(c3) => {
-                    ui.label("Compute Position");
+                    ui.label("Compute position");
                     let VertexId::Named(key) = vert else {
                         unreachable!()
                     };
@@ -3405,7 +3473,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
 
         if !tris.is_empty() {
-            ui.label("Multi-Triangle Data");
+            ui.label("Multi-triangle data");
 
             ui.label("Normals");
             ui.horizontal(|ui| {
@@ -3501,7 +3569,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
 
         if !verts.is_empty()
-        && ui.add_sized([w, 20.], egui::Button::new("Dedupe Vertices")).clicked() {
+        && ui.add_sized([w, 20.], egui::Button::new("Dedupe vertices")).clicked() {
             self3.add_history(editor::HistoryEntry::MeshPart(
                 light_mesh::LightMeshPartSnapshot {
                     id: self3.get_current_mesh_id().unwrap().to_string(),
@@ -4309,7 +4377,7 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
     });
 
     ui.horizontal(|ui| {
-        if ui.button("Add Tri").clicked() {
+        if ui.button("Add tri").clicked() {
             let me = &s.state.ui.mirror_editor;
             let cx = me.pan.x;
             let cy = me.pan.y;
@@ -4322,7 +4390,7 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
             s.rebuild_meshes(gl);
         }
 
-        if ui.button("Add Vert").clicked() {
+        if ui.button("Add vert").clicked() {
             let me = &s.state.ui.mirror_editor;
             let cx = me.pan.x;
             let cy = me.pan.y;
