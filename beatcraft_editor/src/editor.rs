@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 
 use crate::RefDuper;
 use crate::data::{
-    EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightMeshData, NormalId, SessionData, SpectrogramData, TypeData, UvId, VertexId
+    EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData, NormalId, SessionData, SpectrogramData, TypeData, UvId, VertexId
 };
 use crate::light_mesh::{
     LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot,
@@ -197,8 +197,8 @@ impl ActionType {
 
 #[derive(Debug, Clone)]
 pub struct ViewPlacement {
-    pub ids: IdList,
-    pub id_step: [i32; 8],
+    pub ids: IdList<(LightGroup, usize)>,
+    pub id_step: IdList<i32>,
     pub position: Vec3,
     pub offset: Vec3,
     pub count: u32,
@@ -223,7 +223,7 @@ impl Default for ViewPlacement {
     fn default() -> Self {
         Self {
             ids: IdList::default(),
-            id_step: [0; 8],
+            id_step: IdList::default(),
             position: Vec3::ZERO,
             offset: Vec3::ZERO,
             count: 1,

@@ -2,3 +2,4 @@
 members = [
     "beatcraft_editor"
 ]
+resolver = "3"

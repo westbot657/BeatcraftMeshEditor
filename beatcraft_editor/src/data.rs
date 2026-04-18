@@ -250,29 +250,38 @@ pub enum TypeData {
     None
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct IdList {
-    pub ids: [Option<(LightGroup, usize)>; 8],
+#[derive(Debug, Clone)]
+pub struct IdList<T: Copy> {
+    pub ids: [Option<T>; 8],
     length: usize,
 }
 
-impl IdList {
+impl<T: Copy> Default for IdList<T> {
+    fn default() -> Self {
+        Self {
+            ids: [None; 8],
+            length: 0,
+        }
+    }
+}
 
-    pub fn push(&mut self, group: LightGroup, id: usize) -> Option<()> {
+impl<T: Copy> IdList<T> {
+
+    pub fn push(&mut self, t: T) -> Option<()> {
         if self.length == 8 {
             None
         } else {
-            self.ids[self.length] = Some((group, id));
+            self.ids[self.length] = Some(t);
             self.length += 1;
             Some(())
         }
     }
 
-    pub fn pop(&mut self) -> Option<(LightGroup, usize)> {
+    pub fn pop(&mut self) -> Option<T> {
         if self.length == 0 {
             None
         } else {
-            let out = self.ids[self.length].take();
+            let out = self.ids[self.length-1].take();
             self.length -= 1;
             out
         }
@@ -286,7 +295,7 @@ impl IdList {
         self.length == 0
     }
 
-    pub fn get(&self, i: usize) -> Option<(LightGroup, usize)> {
+    pub fn get(&self, i: usize) -> Option<T> {
         if i > 7 {
             None
         } else {
@@ -294,25 +303,25 @@ impl IdList {
         }
     }
 
-    pub fn get_mut(&mut self, i: usize) -> Option<(&mut LightGroup, &mut usize)> {
+    pub fn get_mut(&mut self, i: usize) -> Option<&mut T> {
         if i > 7 {
             None
         } else {
-            self.ids[i].as_mut().map(|g| (&mut g.0, &mut g.1))
+            self.ids[i].as_mut()
         }
     }
 
-    pub fn list(&self) -> &[Option<(LightGroup, usize)>; 8] {
+    pub fn list(&self) -> &[Option<T>; 8] {
         &self.ids
     }
 
-    pub fn list_mut(&mut self) -> &mut [Option<(LightGroup, usize)>; 8] {
+    pub fn list_mut(&mut self) -> &mut [Option<T>; 8] {
         &mut self.ids
     }
 
 }
 
-impl<'de> Deserialize<'de> for IdList {
+impl<'de> Deserialize<'de> for IdList<(LightGroup, usize)> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let elements = Vec::<LightIdElement>::deserialize(deserializer)?;
         let mut ids = [const { None }; 8];
@@ -338,7 +347,7 @@ impl<'de> Deserialize<'de> for IdList {
     }
 }
 
-impl Serialize for IdList {
+impl Serialize for IdList<(LightGroup, usize)> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut elements: Vec<LightIdElement> = Vec::new();
         let mut last_group: Option<&LightGroup> = None;
@@ -404,7 +413,7 @@ impl LightGroup {
 pub struct EnvPlacementData {
     #[serde(rename="type", skip_serializing_if="EventGroup::is_none")]
     pub typ: EventGroup,
-    pub ids: IdList,
+    pub ids: IdList<(LightGroup, usize)>,
     pub position: Vec3,
     pub offset: Vec3,
     pub count: u32,
@@ -442,9 +451,11 @@ impl Default for EnvPlacementData {
 impl From<&ViewPlacement> for EnvPlacementData {
     fn from(value: &ViewPlacement) -> Self {
         let mut step = Vec::new();
-        for s in value.id_step.iter() {
-            if *s == 0 { break; }
-            step.push(*s);
+        for s in value.id_step.list() {
+            match s {
+                Some(s) => step.push(*s),
+                None => break,
+            }
         }
         Self {
             typ: value.action_type.get_type(),
@@ -464,9 +475,9 @@ impl From<&ViewPlacement> for EnvPlacementData {
 
 impl EnvPlacementData {
     pub fn to_view(&self, resource_location: Option<String>, path: Option<PathBuf>) -> ViewPlacement {
-        let mut id_step = [0; 8];
-        for (i, s) in self.id_step.iter().enumerate() {
-            id_step[i] = *s;
+        let mut id_step = IdList::default();
+        for s in self.id_step.iter() {
+            id_step.push(*s);
         }
         ViewPlacement {
             ids: self.ids.clone(),

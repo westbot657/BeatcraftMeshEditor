@@ -2030,7 +2030,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 let mut add_entry = false;
                 let mut pop_entry = false;
                 let ids_len = placement.ids.len();
-                for (idx, (entry, step)) in placement.ids.list_mut().iter_mut().zip(placement.id_step.iter_mut()).enumerate() {
+                for (idx, (entry, step)) in placement.ids.list_mut().iter_mut().zip(placement.id_step.list_mut()).enumerate() {
                     match (first_none, entry) {
                         (_, Some((group, id))) => {
                             ui.horizontal(|ui| {
@@ -2050,22 +2050,42 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                             placements: mesh2.view_placements.clone()
                                         }
                                     ));
+                                    *group = g2;
                                 }
                                 let mut id2 = *id;
-                                let mut step2 = *step;
                                 let resp = ui.add_sized(
                                     [(w2/2.) - 15., 20.],
                                     egui::DragValue::new(&mut id2)
                                         .speed(0.25)
                                         .range(1..=500)
                                 );
-                                let resp2 = ui.add_sized(
-                                    [(w2/2.) - 15., 20.],
-                                    egui::DragValue::new(&mut step2)
-                                        .speed(0.25)
-                                        .range(-500..=500)
-                                );
-                                trigger_history(ui, &[resp, resp2],
+
+                                match step.as_mut() {
+                                    Some(step) if placement.count > 1 => {
+                                        let mut step2 = *step;
+                                        let resp = ui.add_sized(
+                                            [w2 / 2. - 15., 20.],
+                                            egui::DragValue::new(&mut step2)
+                                                .speed(0.25)
+                                                .range(-500..=500)
+                                        );
+                                        trigger_history(ui, &[resp],
+                                            || mesh2.view_placements.clone(),
+                                            |x| s2.add_history(editor::HistoryEntry::ViewPlacement(
+                                                editor::ViewPlacementsSnapshot { id: sel.to_string(), placements: x }
+                                            )),
+                                            || s3.rebuild_meshes(gl)
+                                        );
+                                        *step = step2;
+                                    }
+                                    _ => {
+                                        ui.add_sized(
+                                            [w2/2. - 15., 20.],
+                                            egui::Label::new("--")
+                                        );
+                                    }
+                                }
+                                trigger_history(ui, &[resp],
                                     || mesh2.view_placements.clone(),
                                     |x| s2.add_history(editor::HistoryEntry::ViewPlacement(
                                         editor::ViewPlacementsSnapshot { id: sel.to_string(), placements: x }
@@ -2073,7 +2093,6 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                     || s3.rebuild_meshes(gl)
                                 );
                                 *id = id2;
-                                *step = step2;
                                 if ids_len - 1 == idx {
                                     pop_entry = ui.small_button(SMALL_X).clicked();
                                 }
@@ -2089,10 +2108,12 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     }
                 }
                 if add_entry {
-                    placement.ids.push(data::LightGroup::CenterLasers, 0);
+                    placement.ids.push((data::LightGroup::CenterLasers, 0));
+                    placement.id_step.push(0);
                 }
                 if pop_entry {
                     let _ = placement.ids.pop();
+                    let _ = placement.id_step.pop();
                 }
 
 
