@@ -413,21 +413,30 @@ impl LightGroup {
 pub struct EnvPlacementData {
     #[serde(rename="type", skip_serializing_if="EventGroup::is_none")]
     pub typ: EventGroup,
+    #[serde(skip_serializing_if = "IdList::is_empty")]
     pub ids: IdList<(LightGroup, usize)>,
+    #[serde(skip_serializing_if = "is_vec_zero")]
     pub position: Vec3,
+    #[serde(skip_serializing_if = "is_vec_zero")]
     pub offset: Vec3,
+    #[serde(skip_serializing_if = "u_is_1")]
     pub count: u32,
     #[serde(default, skip_serializing_if = "is_quat_identity")]
     pub rotation: Quat,
-    #[serde(rename="rotation-offset")]
+    #[serde(rename="rotation-offset", skip_serializing_if = "is_quat_identity")]
     pub rotation_offset: Quat,
+    #[serde(skip_serializing_if = "is_quat_identity")]
     pub orientation: Quat,
-    #[serde(rename="orientation-offset")]
+    #[serde(rename="orientation-offset", skip_serializing_if = "is_quat_identity")]
     pub orientation_offset: Quat,
-    #[serde(rename="id-step")]
+    #[serde(rename="id-step", skip_serializing_if = "Vec::is_empty")]
     pub id_step: Vec<i32>,
     #[serde(flatten)]
     pub type_data: TypeData,
+}
+
+fn u_is_1(u: &u32) -> bool {
+    *u == 1
 }
 
 impl Default for EnvPlacementData {
@@ -451,10 +460,12 @@ impl Default for EnvPlacementData {
 impl From<&ViewPlacement> for EnvPlacementData {
     fn from(value: &ViewPlacement) -> Self {
         let mut step = Vec::new();
-        for s in value.id_step.list() {
-            match s {
-                Some(s) => step.push(*s),
-                None => break,
+        if value.count > 1 {
+            for s in value.id_step.list() {
+                match s {
+                    Some(s) => step.push(*s),
+                    None => break,
+                }
             }
         }
         Self {
