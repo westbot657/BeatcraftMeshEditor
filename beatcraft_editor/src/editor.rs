@@ -625,6 +625,13 @@ impl Default for MirrorEditorState {
     }
 }
 
+pub struct CreateEnv {
+    /// Directory to the env.json that beatcraft uses.
+    pub env_path: PathBuf,
+    /// Directory to the sidecar file the editor uses to store data about the env.
+    pub session_path: PathBuf,
+}
+
 #[derive(Default)]
 pub struct UiState {
     /// Currently displayed view mesh settings
@@ -641,6 +648,8 @@ pub struct UiState {
     pub select_image_channel: Option<(String, mpsc::Receiver<PathBuf>)>,
     /// mpsc channel for selecting a mirror geometry file
     pub select_mirror_channel: Option<mpsc::Receiver<PathBuf>>,
+    /// mpsc channel for creating a new environment
+    pub create_environment_channel: Option<mpsc::Receiver<CreateEnv>>,
     /// callback for custom popup window logic
     pub custom_popup: Vec<(String, PopupCallback)>,
     /// Map<viewmesh id, Vec<view placement collapse state>>
@@ -2258,6 +2267,26 @@ impl App {
                     } else {
                         self.view.mirror_path = Some(src);
                         self.rebuild_meshes(gl);
+                    }
+                }
+            }
+        }
+        if let Some(recv) = self.state.ui.create_environment_channel.as_ref() {
+            match recv.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.state.ui.create_environment_channel = None;
+                }
+                Ok(CreateEnv { env_path, session_path }) => {
+                    self.view.env_path = Some(env_path);
+                    self.view.session = Some(session_path);
+                    if let Err(e) = self.save_session() {
+                        eprintln!("Failed to save environment/session: {e}");
+                        self.state.status = "Failed to save environment/session".into();
+                        self.state.status_timer = 2.;
+                    } else {
+                        self.state.status = "Created new environment".into();
+                        self.state.status_timer = 2.;
                     }
                 }
             }

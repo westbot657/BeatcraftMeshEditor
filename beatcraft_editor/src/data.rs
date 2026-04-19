@@ -657,9 +657,11 @@ fn is_quat_identity(q: &Quat) -> bool {
 pub struct EnvData {
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub layout: IndexMap<String, EnvMeshData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mirror: Option<String>,
     #[serde(rename = "fog-heights", skip_serializing_if = "Option::is_none")]
     pub fog_heights: Option<[f32; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spectrogram: Option<SpectrogramData>,
 }
 

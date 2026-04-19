@@ -1054,12 +1054,13 @@ impl Renderer {
         mirror_mesh: Option<&GpuMesh>,
         wireframe: bool,
         fog_heights: [f32; 2],
+        draw_mirror: bool,
     ) {
         let rd = RefDuper;
         let self2 = unsafe { rd.detach_mut_ref(self) };
         self.bloomfog.draw_meshes(
             self2, gl, view, proj, calls, window, draw_grid,
-            None, mirror_mesh, wireframe, fog_heights
+            None, mirror_mesh, wireframe, fog_heights, draw_mirror,
         );
     }
 
@@ -1070,12 +1071,13 @@ impl Renderer {
         calls: &[MeshDrawCall<'_>],
         mirror_mesh: Option<&GpuMesh>,
         wireframe: bool,
+        draw_mirror: bool,
     ) {
         unsafe {
             self.draw_meshes_internal(gl, view, proj, calls);
             let rd = RefDuper;
             let self2 = rd.detach_mut_ref(self);
-            if let Some(mirror_mesh) = mirror_mesh {
+            if draw_mirror && let Some(mirror_mesh) = mirror_mesh {
                 self.bloomfog.draw_mirror(
                     self2, gl, view, proj, calls, mirror_mesh,
                     1, wireframe, [-50., -30.]
@@ -1285,13 +1287,13 @@ impl RenderTarget {
         }
     }
 
-    pub fn destroy(self, gl: &glow::Context) {
-        unsafe {
-            gl.delete_texture(self.color);
-            gl.delete_texture(self.depth);
-            gl.delete_framebuffer(self.fbo);
-        }
-    }
+    // pub fn destroy(self, gl: &glow::Context) {
+    //     unsafe {
+    //         gl.delete_texture(self.color);
+    //         gl.delete_texture(self.depth);
+    //         gl.delete_framebuffer(self.fbo);
+    //     }
+    // }
 }
 
 pub struct BloomfogRenderer {
@@ -1514,6 +1516,7 @@ impl BloomfogRenderer {
         mirror_mesh: Option<&GpuMesh>,
         wireframe: bool,
         fog_heights: [f32; 2],
+        draw_mirror: bool,
     ) {
         unsafe {
             // pre-render beatmaps
@@ -1548,7 +1551,7 @@ impl BloomfogRenderer {
             // render HUD
             // render beatmaps
             //   draw mirrors
-            if let Some(mirror_mesh) = mirror_mesh {
+            if draw_mirror && let Some(mirror_mesh) = mirror_mesh {
                 self.draw_mirror(
                     renderer, gl, view, proj, calls, mirror_mesh,
                     0, wireframe, fog_heights,

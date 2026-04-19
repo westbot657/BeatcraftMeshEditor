@@ -1027,7 +1027,29 @@ impl eframe::App for App {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    // Open Session...
+                    if ui.button("Create new\u{2026}       \u{2502}").clicked() && !self.block_input()
+                    {
+                        let (sx, rx) = mpsc::channel();
+                        self.state.ui.create_environment_channel = Some(rx);
+                        std::thread::spawn(move || {
+                            let Some(env_path) = rfd::FileDialog::new()
+                                .set_title("Create environment file...")
+                                .set_file_name("env")
+                                .add_filter("json", &["json"])
+                                .save_file() else {
+                                    return; // Cancel
+                                };
+                            let Some(session_path) = rfd::FileDialog::new()
+                                .set_title("Create editor data file...")
+                                .set_file_name("my_env")
+                                .add_filter("json", &["json"])
+                                .save_file() else {
+                                    return; // Cancel
+                                };
+
+                            let _ = sx.send(editor::CreateEnv { env_path, session_path });
+                        });
+                    }
                     if ui.button("Open environment\u{2026} \u{2502}").clicked() && !self.block_input()
                     {
                         let (sx, rx) = mpsc::channel();
@@ -1042,7 +1064,6 @@ impl eframe::App for App {
                             }
                         });
                     }
-                    // Open...
                     if ui.button("Open\u{2026}             \u{2502}").clicked() && !self.block_input()
                     {
                         let (sx, rx) = mpsc::channel();
@@ -2491,7 +2512,8 @@ fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
         editor::ViewStyle::Edit => {
             s.ref_mut().render.renderer.draw_meshes(
                 gl, view, proj, &calls,
-                s.render.mirror.as_ref(), s.state.wireframe
+                s.render.mirror.as_ref(), s.state.wireframe,
+                true
             );
         }
         editor::ViewStyle::Beatcraft { .. } => {
@@ -2499,7 +2521,8 @@ fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
                 gl, view, proj, &calls,
                 window, s.state.show_grid,
                 s.render.mirror.as_ref(), s.state.wireframe,
-                s.view.fog_heights.unwrap_or([-50., -30.])
+                s.view.fog_heights.unwrap_or([-50., -30.]),
+                true
             );
         }
     }
@@ -3048,7 +3071,7 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                             solid: vm.data.do_solid,
                             mirror: vm.data.do_mirroring,
                         }],
-                        s.render.mirror.as_ref(), s.state.wireframe
+                        s.render.mirror.as_ref(), s.state.wireframe, false
                     );
                 }
                 editor::ViewStyle::Beatcraft { .. } => {
@@ -3068,7 +3091,7 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                         window,
                         s.state.show_grid,
                         s.render.mirror.as_ref(), s.state.wireframe,
-                        s.view.fog_heights.unwrap_or([-50., -30.])
+                        s.view.fog_heights.unwrap_or([-50., -30.]), false
                     );
                 }
             }
@@ -4016,7 +4039,7 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
             editor::ViewStyle::Edit => {
                 s.ref_mut().render.renderer.draw_meshes(
                     gl, view, proj, &calls,
-                    s.render.mirror.as_ref(), s.state.wireframe
+                    s.render.mirror.as_ref(), s.state.wireframe, false
                 );
             }
             editor::ViewStyle::Beatcraft { .. } => {
@@ -4024,7 +4047,7 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
                     gl, view, proj, &calls,
                     window, s.state.show_grid,
                     s.render.mirror.as_ref(), s.state.wireframe,
-                    s.view.fog_heights.unwrap_or([-50., -30.])
+                    s.view.fog_heights.unwrap_or([-50., -30.]), false
                 );
             }
         }
