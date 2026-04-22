@@ -7,11 +7,12 @@ An app for editing Beatcraft's Mesh format, along with some other useful tools.
 ## Feature roadmap
 
 Beatcraft-specific features
--[X] Environment mesh editing
--[X] Environment layout editing
+
+-[x] Environment mesh editing
+-[x] Environment layout editing
 -[ ] Gameplay object model editing
 -[ ] Custom saber editing
--[X] Accurate graphics preview toggle
+-[x] Accurate graphics preview toggle
 -[ ] V2 lightshow previewing
 
 General features
