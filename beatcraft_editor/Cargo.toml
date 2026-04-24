@@ -21,4 +21,6 @@ regex = "1.12.3"
 anyhow = "1"
 pathdiff = "0.2.3"
 image = "0.25.10"
+#tracks_rs = { path = "../../tracks-rs" }
+num-traits = "0.2.19"
 

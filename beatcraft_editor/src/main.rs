@@ -46,6 +46,7 @@ pub mod math_interp;
 pub mod renaming;
 pub mod render;
 pub mod widgets;
+pub mod beatmap;
 
 pub static SMALL_X: &str = "×";
 pub static R_ARROW: &str = "▶";
