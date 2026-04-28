@@ -136,16 +136,16 @@ impl GpuMesh {
 
         unsafe {
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbos[0]));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, pos_u, glow::DYNAMIC_DRAW);
+            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, pos_u, glow::STATIC_DRAW);
 
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbos[1]));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, norm_v, glow::DYNAMIC_DRAW);
+            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, norm_v, glow::STATIC_DRAW);
 
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbos[2]));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, mats, glow::DYNAMIC_DRAW);
+            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, mats, glow::STATIC_DRAW);
 
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.point_vbo));
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, p_pos, glow::DYNAMIC_DRAW);
+            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, p_pos, glow::STATIC_DRAW);
 
             if !billboard_data.is_empty() {
                 let ssbo = *self.billboard_ssbo.get_or_insert_with(|| {
@@ -155,7 +155,7 @@ impl GpuMesh {
                     ssbo
                 });
                 gl.bind_buffer(glow::SHADER_STORAGE_BUFFER, Some(ssbo));
-                gl.buffer_data_u8_slice(glow::SHADER_STORAGE_BUFFER, bytemuck::cast_slice(billboard_data), glow::DYNAMIC_DRAW);
+                gl.buffer_data_u8_slice(glow::SHADER_STORAGE_BUFFER, bytemuck::cast_slice(billboard_data), glow::STATIC_DRAW);
             }
 
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
@@ -204,7 +204,7 @@ impl GpuMesh {
             } else {
                 let ssbo = gl.create_buffer().unwrap();
                 gl.bind_buffer(glow::SHADER_STORAGE_BUFFER, Some(ssbo));
-                gl.buffer_data_u8_slice(SHADER_STORAGE_BUFFER, bytemuck::cast_slice(billboard_data), glow::DYNAMIC_DRAW);
+                gl.buffer_data_u8_slice(SHADER_STORAGE_BUFFER, bytemuck::cast_slice(billboard_data), glow::STATIC_DRAW);
                 gl.bind_buffer_base(SHADER_STORAGE_BUFFER, 0, Some(ssbo));
                 gl.bind_buffer(SHADER_STORAGE_BUFFER, None);
                 Some(ssbo)
