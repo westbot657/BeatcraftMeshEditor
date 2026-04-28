@@ -131,6 +131,42 @@ pub struct PartData {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BillboardData {
+    pub origin: Vec3,
+    pub axis: Vec3,
+    pub normal: Vec3,
+    #[serde(default, skip_serializing_if = "Not::not")]
+    pub camera_lock: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ShaderStyle {
+    #[serde(skip)]
+    #[default]
+    None,
+    Circle,
+}
+
+impl ShaderStyle {
+    pub fn is_none(&self) -> bool {
+        *self == Self::None
+    }
+    pub fn as_u8(&self) -> u8 {
+        match self {
+            Self::Circle => 0b0001,
+            Self::None => 0,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ShaderSettingsData {
+    #[serde(default, skip_serializing_if = "ShaderStyle::is_none")]
+    pub style: ShaderStyle,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlacementData {
     pub part: String,
     #[serde(default, skip_serializing_if = "is_default_position")]
@@ -139,6 +175,10 @@ pub struct PlacementData {
     pub rotation: Quat,
     #[serde(default = "default_scale", skip_serializing_if = "is_default_scale")]
     pub scale: Vec3,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billboard: Option<BillboardData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shader_settings: Option<ShaderSettingsData>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub remap_data: IndexMap<String, String>,
 }

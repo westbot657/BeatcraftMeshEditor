@@ -1,10 +1,11 @@
-#version 330 core
+#version 450 core
 
 in vec2 v_uv;
 in vec4 v_color;
 in vec3 v_pos;
 in vec3 v_normal;
 flat in int v_material; // 0 = solid, 1 = light/solid, 2 = light/nothing
+flat in int v_style;
 flat in int v_flags;
 in vec3 screenUV;
 
@@ -39,10 +40,17 @@ vec4 lerpColor(vec4 c1, vec4 c2, float t) {
 }
 
 void main() {
+    if (v_style == 1) {
+        if (length(v_uv - 0.5) > 0.5) {
+            discard;
+        }
+    }
     if (u_render_mode == 2) {
         fragColor = vec4(vec3(0.4), 0.4);
         return;
-    } else if (u_render_mode == 1) {
+    }
+
+    if (u_render_mode == 1) {
         float x = gl_FragCoord.x;
         float y = gl_FragCoord.y;
 
@@ -54,7 +62,7 @@ void main() {
         float depth = gl_FragCoord.z / gl_FragCoord.w + (noise - 0.5) * 3.5;
         vec4 vColor = v_color;
         if (!gl_FrontFacing) {
-            if (vColor.r < 0.01 && vColor.g < 0.01 && vColor.b < 0.01) {
+            if (vColor.r > 0.99 && vColor.g > 0.99 && vColor.b > 0.99) {
                 vColor = vec4(0.2, 0.3, 0.8, 1.0);
             }
             float t = 1.0 - clamp(depth / 100.0, 0.0, 1.0);
@@ -68,16 +76,21 @@ void main() {
         float diff = max(dot(N, LIGHT), 0.0) * 0.2 + 0.8;
         vec4 base = vColor;
         if (gl_FrontFacing) {
-            if (v_flags == 2147483648) {
+            if ((v_flags & 2147483648) > 0) {
                 base = vec4(vec3(0.0), 1.0);
-            } else {
+            } else if (v_style == 0) {
                 base = base * texture(u_texture, v_uv);
             }
         }
         fragColor = base;
     } else {
+
+        vec4 tex_sample = ((v_style == 0)
+            ? texture(u_texture, v_uv)
+            : vec4(1.0)) * v_color;
+
         if (passType == 0 /* Normal */ && v_material != 2 /* Not Light/Nothing */) {
-            vec4 tex = texture(u_texture, v_uv) * v_color;
+            vec4 tex = tex_sample;
             if (v_flags == 2147483648) { // 1 << 31
                 tex = vec4(vec3(0.0), 1.0);
             }
@@ -88,7 +101,7 @@ void main() {
             float fadeHeight = clamp((v_pos.y - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0);
             fragColor = lerpColor(tex * fadeHeight, fog, clampF(abs(screenUV.z)));
         } else if (passType == 1 /* Bloom */) {
-            if (v_material == 0 /* Solid */) {
+            if (v_material == 0 /* Solid */ || v_material == 3 /* Tinted */) {
                 discard;
             } else {
                 vec2 uv = (screenUV.xy / (-screenUV.z * 2)) + 0.5;
@@ -96,20 +109,18 @@ void main() {
                 if (sceneDepth < gl_FragCoord.z-0.000001) {
                     discard;
                 }
-                vec4 tex = texture(u_texture, v_uv) * v_color;
                 float fadeHeight = clamp((v_pos.y - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0);
-                fragColor = lerpColor(tex * fadeHeight, vec4(0.0), clampF(abs(screenUV.z)));
+                fragColor = lerpColor(tex_sample * fadeHeight, vec4(0.0), clampF(abs(screenUV.z)));
             }
         } else if (passType == 2 /* Bloomfog */) {
-            if (v_material == 0 /* Solid */) {
+            if (v_material == 0 /* Solid */ || v_material == 3 /* Tinted */) {
                 discard;
             } else {
                 fragColor = v_color;
             }
         } else if (passType == 3 /* Late Lights */ && v_material == 2 /* Light/Nothing */) {
-            vec4 tex = texture(u_texture, v_uv) * v_color;
             float fadeHeight = clamp((v_pos.y - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0);
-            fragColor = lerpColor(tex * fadeHeight, vec4(0.0), clampF(abs(screenUV.z)));
+            fragColor = lerpColor(tex_sample * fadeHeight, vec4(0.0), clampF(abs(screenUV.z)));
         } else {
             discard;
         }

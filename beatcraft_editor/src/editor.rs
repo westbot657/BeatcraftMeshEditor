@@ -282,12 +282,12 @@ impl ViewMesh {
         let full = self
             .gpu_bufs
             .1
-            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[]));
+            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[]));
         full.set_from_full_light_mesh(gl, &self.data, texture_paths, atlas_map);
         let handles = self
             .gpu_bufs
             .2
-            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[]));
+            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[]));
         handles.points_from_light_mesh(gl, &self.data);
     }
 
@@ -1150,7 +1150,7 @@ impl App {
             vm.destroy(gl);
         }
         if let Some(data) = s2.view.spectrogram.as_ref() {
-            let vm = self.render.spectrogram.get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[]) );
+            let vm = self.render.spectrogram.get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[]) );
             data.generate(gl, vm);
         }
         let geo = std::mem::take(&mut self.view.mirror_geometry);
@@ -2129,6 +2129,7 @@ impl App {
                         &[],
                         &[],
                         &selected,
+                        &[],
                     ));
                 }
             }
@@ -2160,6 +2161,7 @@ impl App {
                         &[],
                         &[],
                         &selected,
+                        &[],
                     ));
                 }
             }
@@ -2302,9 +2304,9 @@ impl App {
         let mats = vec![IVec3::ZERO; geo.len()];
 
         let mesh = self.render.mirror
-            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[]));
+            .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[]));
 
-        mesh.rebuild(gl, &geo, &normv, &mats, &[]);
+        mesh.rebuild(gl, &geo, &normv, &mats, &[], &[]);
 
     }
 

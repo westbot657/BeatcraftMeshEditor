@@ -11,12 +11,12 @@ use indexmap::map::MutableKeys;
 
 use crate::RefDuper;
 use crate::data::{
-    ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, NormalId, PartData,
-    PlacementData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId,
+    BillboardData, ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, NormalId, PartData, PlacementData, ShaderSettingsData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId
 };
 use crate::easing::Easing;
 use crate::editor::DataSwap;
 use crate::renaming::light_mesh::rehash;
+use crate::render::BillboardDesc;
 
 #[derive(Debug, Clone)]
 pub struct ComputeVertex {
@@ -1167,7 +1167,7 @@ impl Part {
         let verts: Vec<_> = vertices.as_ref().iter().map(AsRef::as_ref).collect();
         self.triangles
             .0
-            .retain(|tri| tri.vertices.iter().all(|v| !verts.contains(&&v.vertex)))
+            .retain(|tri| !tri.vertices.iter().all(|v| verts.contains(&&v.vertex)))
     }
 
     /// If the given vertices make up any triangles, the triangles are deleted,
@@ -1295,6 +1295,8 @@ pub struct Placement {
     pub position: Vec3,
     pub rotation: Quat,
     pub scale: Vec3,
+    pub billboard: Option<BillboardData>,
+    pub shader_settings: Option<ShaderSettingsData>,
     pub remap_data: IndexMap<String, String>,
 }
 
@@ -1313,6 +1315,8 @@ impl From<PlacementData> for Placement {
             position: value.position,
             rotation: value.rotation,
             scale: value.scale,
+            billboard: value.billboard,
+            shader_settings: value.shader_settings,
             remap_data: value.remap_data,
         }
     }
@@ -1325,6 +1329,8 @@ impl From<Placement> for PlacementData {
             position: value.position,
             rotation: value.rotation,
             scale: value.scale,
+            billboard: value.billboard,
+            shader_settings: value.shader_settings,
             remap_data: value.remap_data,
         }
     }

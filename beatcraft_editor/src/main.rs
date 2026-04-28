@@ -2722,6 +2722,8 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     position: Vec3::ZERO,
                     rotation: Quat::IDENTITY,
                     scale: Vec3::ONE,
+                    billboard: None,
+                    shader_settings: None,
                     remap_data: IndexMap::new(),
                 });
                 self3.rebuild_meshes(gl);
@@ -2807,7 +2809,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             self3.add_history(editor::HistoryEntry::MeshMeta(
                                 mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
                             ));
-                            entry.material = (entry.material + 1) % 3;
+                            entry.material = (entry.material + 1) % 4;
                             self3.rebuild_meshes(gl);
                         }
                         let mut current = entry.color;

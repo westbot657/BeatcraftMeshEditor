@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::f32;
 use std::path::{Path, PathBuf};
 
-use eframe::glow::{self, HasContext};
+use eframe::glow::{self, HasContext, SHADER_STORAGE_BUFFER};
 use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 
 use crate::{RefDuper, data};
-use crate::data::MaterialData;
+use crate::data::{MaterialData, ShaderSettingsData};
 use crate::light_mesh::{LightMesh, Part, Triangle, Vertex};
 
 static MISSING_TEXTURE_BYTES: &[u8] = include_bytes!("./assets/textures/missing.png");
@@ -35,6 +35,14 @@ impl InstanceData {
             colors
         }
     }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct BillboardDesc {
+    pub origin: Vec4,
+    pub axis: Vec4,
+    pub normal_lock: Vec4,
 }
 
 #[derive(Clone)]
@@ -72,6 +80,8 @@ pub struct GpuMesh {
 
     pub vertex_count: usize,
     pub point_count: usize,
+
+    pub billboard_ssbo: Option<glow::NativeBuffer>,
 }
 
 impl GpuMesh {
@@ -112,7 +122,9 @@ impl GpuMesh {
         normal_vs: &[Vec4],
         material_data: &[IVec3],
         point_positions: &[Vec3],
+        billboard_data: &[BillboardDesc],
     ) {
+        assert!(billboard_data.len() < 16, "Billboard data can only have up to 15 elements.");
         self.vertex_count = position_us.len();
         self.point_count = point_positions.len();
 
@@ -134,7 +146,18 @@ impl GpuMesh {
 
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.point_vbo));
             gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, p_pos, glow::DYNAMIC_DRAW);
- 
+
+            if !billboard_data.is_empty() {
+                let ssbo = *self.billboard_ssbo.get_or_insert_with(|| {
+                    let ssbo = gl.create_buffer().unwrap();
+                    gl.bind_buffer(glow::SHADER_STORAGE_BUFFER, Some(ssbo));
+                    gl.bind_buffer_base(glow::SHADER_STORAGE_BUFFER, 0, Some(ssbo));
+                    ssbo
+                });
+                gl.bind_buffer(glow::SHADER_STORAGE_BUFFER, Some(ssbo));
+                gl.buffer_data_u8_slice(glow::SHADER_STORAGE_BUFFER, bytemuck::cast_slice(billboard_data), glow::DYNAMIC_DRAW);
+            }
+
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
         }
     }
@@ -145,7 +168,9 @@ impl GpuMesh {
         normal_vs: &[Vec4],
         material_data: &[IVec3],
         point_positions: &[Vec3],
+        billboard_data: &[BillboardDesc],
     ) -> Self {
+        assert!(billboard_data.len() < 16, "Billboard data can only have up to 15 elements.");
         unsafe {
             let vao = gl.create_vertex_array().unwrap();
             gl.bind_vertex_array(Some(vao));
@@ -173,6 +198,18 @@ impl GpuMesh {
                 },
             ];
             let instance_vbo = Self::setup_instance_attribs(gl);
+
+            let billboard_ssbo = if billboard_data.is_empty() {
+                None
+            } else {
+                let ssbo = gl.create_buffer().unwrap();
+                gl.bind_buffer(glow::SHADER_STORAGE_BUFFER, Some(ssbo));
+                gl.buffer_data_u8_slice(SHADER_STORAGE_BUFFER, bytemuck::cast_slice(billboard_data), glow::DYNAMIC_DRAW);
+                gl.bind_buffer_base(SHADER_STORAGE_BUFFER, 0, Some(ssbo));
+                gl.bind_buffer(SHADER_STORAGE_BUFFER, None);
+                Some(ssbo)
+            };
+
             gl.bind_vertex_array(None);
 
             let point_vao = gl.create_vertex_array().unwrap();
@@ -196,6 +233,7 @@ impl GpuMesh {
                 point_instance_vbo,
                 vertex_count: 0,
                 point_count: 0,
+                billboard_ssbo,
             };
             mesh.rebuild(
                 gl,
@@ -203,6 +241,7 @@ impl GpuMesh {
                 normal_vs,
                 material_data,
                 point_positions,
+                billboard_data,
             );
             mesh
         }
@@ -222,6 +261,7 @@ impl GpuMesh {
             gl.bind_vertex_array(Some(self.vao));
             Self::upload_instances(gl, self.instance_vbo, instances);
             let n = instances.len() as i32;
+            gl.bind_buffer_base(glow::SHADER_STORAGE_BUFFER, 0, self.billboard_ssbo);
             gl.draw_arrays_instanced(glow::TRIANGLES, 0, self.vertex_count as i32, n);
             if wireframe {
                 renderer.set_int(gl, renderer.mesh, "u_render_mode", 2);
@@ -276,7 +316,7 @@ impl GpuMesh {
         for (name, part) in mesh.parts.iter() {
             let mut gpu_mesh = gpu_meshes
                 .remove(name)
-                .unwrap_or_else(|| GpuMesh::new(gl, &[], &[], &[], &[]));
+                .unwrap_or_else(|| GpuMesh::new(gl, &[], &[], &[], &[], &[]));
             gpu_mesh.set_from_light_mesh_part(
                 gl,
                 part,
@@ -315,8 +355,10 @@ impl GpuMesh {
         normal_vs: &mut Vec<Vec4>,
         materials: &mut Vec<IVec3>,
         part: &Part,
+        shader_settings: Option<&ShaderSettingsData>,
         data: &IndexMap<String, MaterialData>,
         transform: &Mat4,
+        bb_idx: Option<u8>,
         remap_data: &IndexMap<String, String>,
         mesh_textures: &IndexMap<String, String>,
         texture_paths: &HashMap<String, PathBuf>,
@@ -325,6 +367,17 @@ impl GpuMesh {
         let mat3 = Mat3::from_mat4(*transform);
         let normal_transform = mat3.inverse().transpose();
         let flip = mat3.determinant() < 0.;
+
+        let mut flags = 0i32;
+        let mut skip_uv_remap = false;
+
+        if let Some(idx) = bb_idx {
+            flags |= idx as i32 & 0xF;
+        }
+        if let Some(sets) = shader_settings {
+            flags |= (sets.style.as_u8() as i32) << 4;
+            skip_uv_remap = true;
+        }
 
         for Triangle {
             vertices:
@@ -377,7 +430,8 @@ impl GpuMesh {
                 .and_then(|asset_key| texture_paths.get(asset_key));
 
             let remap = |uv: Vec2| -> Vec2 {
-                if let Some(path) = tex_path
+                if !skip_uv_remap
+                    && let Some(path) = tex_path
                     && let Some(rect) = atlas_map.get(path)
                 {
                     return Vec2::new(rect.x.lerp(rect.z, uv.x), rect.y.lerp(rect.w, uv.y));
@@ -427,10 +481,10 @@ impl GpuMesh {
             }) = data.get(material.unwrap_or("default"))
                 && *material != 0
             {
-                let mat = IVec3::new(*color as i32, *material as i32, 0);
+                let mat = IVec3::new(*color as i32, *material as i32, flags);
                 materials.extend_from_slice(&[mat; 3]);
             } else {
-                let mat = IVec3::new(8, 0, 0);
+                let mat = IVec3::new(8, 0, flags);
                 materials.extend_from_slice(&[mat; 3]);
             }
         }
@@ -460,17 +514,30 @@ impl GpuMesh {
         let mut vertice_us = Vec::new();
         let mut normal_vs = Vec::new();
         let mut materials = Vec::new();
+        let mut billboards = Vec::new();
 
         for placement in light_mesh.placements.iter() {
             let mat = placement.transform();
             let part = light_mesh.parts.get(&placement.part).unwrap();
+            let bb_idx = placement.billboard.as_ref()
+                .map(|bb| {
+                    let desc = BillboardDesc {
+                        origin: bb.origin.extend(0.),
+                        axis: bb.axis.extend(0.),
+                        normal_lock: bb.normal.extend(if bb.camera_lock {1.} else {0.})
+                    };
+                    billboards.push(desc);
+                    billboards.len() as u8
+                });
             Self::add_triangle_data(
                 &mut vertice_us,
                 &mut normal_vs,
                 &mut materials,
                 part,
+                placement.shader_settings.as_ref(),
                 &light_mesh.data,
                 &mat,
+                bb_idx,
                 &placement.remap_data,
                 &light_mesh.textures,
                 texture_paths,
@@ -478,7 +545,7 @@ impl GpuMesh {
             );
         }
 
-        self.rebuild(gl, &vertice_us, &normal_vs, &materials, &[]);
+        self.rebuild(gl, &vertice_us, &normal_vs, &materials, &[], &billboards);
     }
 
     pub fn points_from_light_mesh(&mut self, gl: &glow::Context, light_mesh: &LightMesh) {
@@ -528,6 +595,7 @@ impl GpuMesh {
             &normal_vs,
             &materials,
             &points,
+            &[],
         );
     }
 
@@ -550,8 +618,10 @@ impl GpuMesh {
             &mut normal_vs,
             &mut materials,
             part,
+            None,
             data,
             &Mat4::IDENTITY,
+            None,
             &IndexMap::default(),
             mesh_textures,
             texture_paths,
@@ -565,6 +635,7 @@ impl GpuMesh {
             &normal_vs,
             &materials,
             &points,
+            &[],
         );
     }
 }
@@ -664,7 +735,7 @@ impl data::SpectrogramData {
             })
             .collect::<(Vec<Vec4>, Vec<Vec4>)>();
 
-        vm.rebuild(gl, &geo, &norms, &mats, &[]);
+        vm.rebuild(gl, &geo, &norms, &mats, &[], &[]);
     }
 }
 
@@ -1064,6 +1135,7 @@ impl Renderer {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_meshes(
         &mut self,
         gl: &glow::Context,
@@ -1093,6 +1165,8 @@ impl Renderer {
         calls: &[MeshDrawCall<'_>],
     ) {
         unsafe {
+            let cam_pos = view.inverse().transform_point3(Vec3::ZERO);
+            let cam_rot = Quat::from_mat4(view);
             gl.use_program(Some(self.mesh));
             self.set_int(gl, self.mesh, "passType", 0);
             self.set_mat4(gl, self.mesh, "u_view", view);
@@ -1100,6 +1174,9 @@ impl Renderer {
             let tex = self.atlas.or(Some(self.missing_texture));
             self.set_sampler(gl, self.mesh, "u_texture", tex, 0);
             self.set_sampler(gl, self.mesh, "u_noise", Some(self.blue_noise), 1);
+            let mut u_camera_pos = Mat4::from_translation(cam_pos);
+            u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());
+            self.set_mat4(gl, self.mesh, "u_camera_pos", &u_camera_pos);
             for call in calls {
                 self.set_int(gl, self.mesh, "u_render_mode", 1);
                 call.mesh
@@ -1606,9 +1683,9 @@ impl BloomfogRenderer {
             renderer.set_int(gl, renderer.mesh, "passType", 2);
             renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
 
-            let mut world_transform = Mat4::from_translation(cam_pos);
-            world_transform *= Mat4::from_quat(cam_rot.conjugate());
-            renderer.set_mat4(gl, renderer.mesh, "world_transform", &world_transform);
+            let mut u_camera_pos = Mat4::from_translation(cam_pos);
+            u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());
+            renderer.set_mat4(gl, renderer.mesh, "u_camera_pos", &u_camera_pos);
             for call in calls.iter() {
                 if !call.bloomfog {
                     continue;
@@ -1657,9 +1734,9 @@ impl BloomfogRenderer {
             renderer.set_int(gl, renderer.mesh, "passType", 0);
             renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
 
-            let mut world_transform = Mat4::from_translation(cam_pos);
-            world_transform *= Mat4::from_quat(cam_rot.conjugate());
-            renderer.set_mat4(gl, renderer.mesh, "world_transform", &world_transform);
+            let mut u_camera_pos = Mat4::from_translation(cam_pos);
+            u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());
+            renderer.set_mat4(gl, renderer.mesh, "u_camera_pos", &u_camera_pos);
             for call in calls.iter() {
                 if !call.solid {
                     continue;
