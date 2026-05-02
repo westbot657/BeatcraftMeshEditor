@@ -30,7 +30,7 @@ use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 
-use self::data::{LightGroup, NormalId, SpectrogramData, UvId, VertexId};
+use self::data::{BillboardData, LightGroup, MaterialType, NormalId, ShaderSettingsData, ShaderStyle, SpectrogramData, UvId, VertexId};
 use self::easing::Easing;
 use self::editor::{ActionType, App, RingType, RotationDisplayMode, Selection, SpinSide, ViewPlacement, ViewStyle, WorkingRenameKey};
 use self::light_mesh::{BloomfogStyle, ComputeNormal, ComputeVertex, Part, Triangle};
@@ -1864,17 +1864,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         let rd2 = RefDuper;
         let mesh2 = unsafe { rd2.detach_mut_ref(mesh) };
-        if ui.add_sized([w, 20.], egui::Button::new("+ Add Placement")).clicked() {
-            mesh.view_placements.push(ViewPlacement::default());
-            s.state.ui.collapsed.entry(sel.to_string()).or_default().push(false);
-            s.state
-                .ui
-                .view_rotation_modes
-                .entry(sel.to_string())
-                .or_default()
-                .push(Default::default());
-            s2.rebuild_meshes(gl);
-        }
+        
 
         let mut to_remove = None;
         for (p_i, placement) in mesh.view_placements.iter_mut().enumerate() {
@@ -2475,6 +2465,18 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 modes.remove(rem);
             }
         }
+
+        if ui.add_sized([w, 20.], egui::Button::new("Add Placement")).clicked() {
+            mesh.view_placements.push(ViewPlacement::default());
+            s.state.ui.collapsed.entry(sel.to_string()).or_default().push(false);
+            s.state
+                .ui
+                .view_rotation_modes
+                .entry(sel.to_string())
+                .or_default()
+                .push(Default::default());
+            s2.rebuild_meshes(gl);
+        }
     }
 }
 
@@ -2668,6 +2670,118 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         || self4.rebuild_meshes(gl),
                     );
 
+                    let mut delete_bb = false;
+                    match placement.billboard.as_mut() {
+                        Some(bb) => {
+                            ui.horizontal(|ui| {
+                                ui.add_sized(
+                                    [w - ui.spacing().item_spacing.x - 24., 20.],
+                                    egui::Label::new("Billboard"),
+                                );
+
+                                delete_bb = ui.small_button(SMALL_X).clicked();
+                            });
+                            ui.label("Origin");
+                            vec3_row(ui, &mut bb.origin, w3,
+                                || mesh2.data.placements.clone(),
+                                |t| {
+                                    self3.add_history(editor::HistoryEntry::MeshPlacement(
+                                        light_mesh::LightMeshPlacementSnapshot {
+                                            view_id: self3.get_current_mesh_id().unwrap().to_string(),
+                                            placements: t,
+                                        },
+                                    ))
+                                },
+                                || self4.rebuild_meshes(gl),
+                            );
+                            ui.label("Axis");
+                            vec3_row(ui, &mut bb.axis, w3,
+                                || mesh2.data.placements.clone(),
+                                |t| {
+                                    self3.add_history(editor::HistoryEntry::MeshPlacement(
+                                        light_mesh::LightMeshPlacementSnapshot {
+                                            view_id: self3.get_current_mesh_id().unwrap().to_string(),
+                                            placements: t,
+                                        },
+                                    ))
+                                },
+                                || self4.rebuild_meshes(gl),
+                            );
+                            ui.label("Normal");
+                            vec3_row(ui, &mut bb.normal, w3,
+                                || mesh2.data.placements.clone(),
+                                |t| {
+                                    self3.add_history(editor::HistoryEntry::MeshPlacement(
+                                        light_mesh::LightMeshPlacementSnapshot {
+                                            view_id: self3.get_current_mesh_id().unwrap().to_string(),
+                                            placements: t,
+                                        },
+                                    ))
+                                },
+                                || self4.rebuild_meshes(gl),
+                            );
+                            if ui.add_sized([w, 20.], egui::Button::new("Camera locked").selected(bb.camera_lock)).clicked() {
+                                self3.add_history(editor::HistoryEntry::MeshPlacement(
+                                    light_mesh::LightMeshPlacementSnapshot {
+                                        view_id: self3.get_current_mesh_id().unwrap().to_string(),
+                                        placements: mesh2.data.placements.clone(),
+                                    },
+                                ));
+                                bb.camera_lock = !bb.camera_lock;
+                                self4.rebuild_meshes(gl);
+                            }
+                        }
+                        None => {
+                            if ui.add_sized([w, 20.], egui::Button::new("Set billboard")).clicked() {
+                                placement.billboard = Some(BillboardData::default());
+                            }
+                        }
+                    }
+                    if delete_bb {
+                        placement.billboard = None;
+                    }
+
+                    let mut remove_settings = false;
+                    match placement.shader_settings.as_mut() {
+                        Some(sets) => {
+                            ui.horizontal(|ui| {
+                                ui.add_sized(
+                                    [w - ui.spacing().item_spacing.x - 24., 20.],
+                                    egui::Label::new("Shader settings"),
+                                );
+
+                                remove_settings = ui.small_button(SMALL_X).clicked();
+                            });
+
+                            let mut current = sets.style;
+                            egui::ComboBox::new(format!("shader-style-{}", pi), "Style")
+                                .selected_text(sets.style.name())
+                                .show_ui(ui, |ui| {
+                                    for style in ShaderStyle::iter_all() {
+                                        ui.selectable_value(&mut current, style, style.name());
+                                    }
+                                });
+
+                            if current != sets.style {
+                                self3.add_history(editor::HistoryEntry::MeshPlacement(
+                                    light_mesh::LightMeshPlacementSnapshot {
+                                        view_id: self3.get_current_mesh_id().unwrap().to_string(),
+                                        placements: mesh2.data.placements.clone(),
+                                    },
+                                ));
+                                sets.style = current;
+                                self4.rebuild_meshes(gl);
+                            }
+
+                        }
+                        None => {
+                            if ui.add_sized([w, 20.], egui::Button::new("Set shader settings")).clicked() {
+                                placement.shader_settings = Some(ShaderSettingsData::default());
+                            }
+                        }
+                    }
+
+
                     ui.horizontal(|ui| {
                         let icon = if pt_collapsed.0[1] { R_ARROW } else { D_ARROW };
                         if ui.small_button(icon).clicked() {
@@ -2709,7 +2823,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 self3.rebuild_meshes(gl);
             }
             if ui
-                .add_sized([w, 20.], egui::Button::new("+ Add Placement"))
+                .add_sized([w, 20.], egui::Button::new("Add Placement"))
                 .clicked()
                 && let Some(first) = part_names.first()
             {
@@ -2739,20 +2853,6 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         });
 
         if !toggles.data {
-            if ui
-                .add_sized([w, 20.], egui::Button::new("+ Add Data"))
-                .clicked()
-            {
-                self3.add_history(editor::HistoryEntry::MeshMeta(
-                    mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
-                ));
-                mesh.data.data.insert(
-                    format!("new_data_{}", mesh.data.data.len()),
-                    Default::default(),
-                );
-                self3.rebuild_meshes(gl);
-            }
-
             let mut data_to_remove = None;
             let data_keys: Vec<String> = mesh.data.data.keys().cloned().collect();
             for (di, key) in data_keys.iter().enumerate() {
@@ -2802,32 +2902,38 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     break;
                 };
 
-                if !*di_collapsed {
-                    ui.horizontal(|ui| {
-                        let mat_label = format!("Material {}", entry.material);
-                        if ui.button(mat_label).clicked() {
-                            self3.add_history(editor::HistoryEntry::MeshMeta(
+                    if !*di_collapsed {
+                    let mat_label = entry.material.name();
+                    let mut current = entry.material;
+                    egui::ComboBox::from_id_salt(egui::Id::new("material_id").with(di))
+                        .selected_text(mat_label)
+                        .show_ui(ui, |ui| {
+                            for v in MaterialType::iter_all() {
+                                ui.selectable_value(&mut current, v, v.name());
+                            }
+                        });
+                    if current != entry.material {
+                        self3.add_history(editor::HistoryEntry::MeshMeta(
                                 mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
-                            ));
-                            entry.material = (entry.material + 1) % 4;
-                            self3.rebuild_meshes(gl);
-                        }
-                        let mut current = entry.color;
-                        egui::ComboBox::from_id_salt(egui::Id::new("data_ch").with(di))
-                            .selected_text(format!("Channel {}", current))
-                            .show_ui(ui, |ui| {
-                                for ch in 0u8..8 {
-                                    ui.selectable_value(&mut current, ch, ch.to_string());
-                                }
-                            });
-                        if current != entry.color {
-                            self3.add_history(editor::HistoryEntry::MeshMeta(
+                        ));
+                        entry.material = current;
+                        self3.rebuild_meshes(gl);
+                    }
+                    let mut current = entry.color;
+                    egui::ComboBox::from_id_salt(egui::Id::new("data_ch").with(di))
+                        .selected_text(format!("Channel {}", current))
+                        .show_ui(ui, |ui| {
+                            for ch in 0u8..8 {
+                                ui.selectable_value(&mut current, ch, ch.to_string());
+                            }
+                        });
+                    if current != entry.color {
+                        self3.add_history(editor::HistoryEntry::MeshMeta(
                                 mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
-                            ));
-                            entry.color = current;
-                            self3.rebuild_meshes(gl);
-                        }
-                    });
+                        ));
+                        entry.color = current;
+                        self3.rebuild_meshes(gl);
+                    }
 
                     ui.horizontal(|ui| {
                         ui.label("Texture");
@@ -2857,6 +2963,20 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 mesh.data.data.shift_remove(&key);
                 self3.rebuild_meshes(gl);
             }
+
+            if ui
+                .add_sized([w, 20.], egui::Button::new("Add Data"))
+                .clicked()
+            {
+                self3.add_history(editor::HistoryEntry::MeshMeta(
+                    mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
+                ));
+                mesh.data.data.insert(
+                    format!("new_data_{}", mesh.data.data.len()),
+                    Default::default(),
+                );
+                self3.rebuild_meshes(gl);
+            }
         }
 
         ui.horizontal(|ui| {
@@ -2868,17 +2988,6 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         });
 
         if !toggles.textures {
-            if ui
-                .add_sized([w, 20.], egui::Button::new("+ Add Texture"))
-                .clicked()
-            {
-                let next_key = (0..)
-                    .map(|i| format!("{}", i))
-                    .find(|k| !mesh.data.textures.contains_key(k))
-                    .unwrap();
-                mesh.data.textures.insert(next_key, String::new());
-            }
-
             let mut tex_to_remove = None;
             let tex_keys: Vec<String> = mesh.data.textures.keys().cloned().collect();
             for key in tex_keys.iter() {
@@ -2916,6 +3025,18 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 mesh.data.textures.shift_remove(&key);
                 self3.rebuild_meshes(gl);
             }
+
+            if ui
+                .add_sized([w, 20.], egui::Button::new("Add Texture"))
+                .clicked()
+            {
+                let next_key = (0..)
+                    .map(|i| format!("{}", i))
+                    .find(|k| !mesh.data.textures.contains_key(k))
+                    .unwrap();
+                mesh.data.textures.insert(next_key, String::new());
+            }
+
         }
 
         ui.horizontal(|ui| {
@@ -4088,8 +4209,8 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
 
 const UV_VERT_COLORS: [egui::Color32; 3] = [
     egui::Color32::from_rgb(220, 80, 80),
-    egui::Color32::from_rgb(80, 150, 220),
     egui::Color32::from_rgb(80, 200, 120),
+    egui::Color32::from_rgb(80, 150, 220),
 ];
 
 const UV_HIT_RADIUS: f32 = 6.0;

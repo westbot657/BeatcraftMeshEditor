@@ -40,6 +40,7 @@ vec4 lerpColor(vec4 c1, vec4 c2, float t) {
 }
 
 void main() {
+    bool overrideBlack = (v_flags & 2147483648) > 0;
     if (v_style == 1) {
         if (length(v_uv - 0.5) > 0.5) {
             discard;
@@ -76,7 +77,7 @@ void main() {
         float diff = max(dot(N, LIGHT), 0.0) * 0.2 + 0.8;
         vec4 base = vColor;
         if (gl_FrontFacing) {
-            if ((v_flags & 2147483648) > 0) {
+            if (overrideBlack) {
                 base = vec4(vec3(0.0), 1.0);
             } else if (v_style == 0) {
                 base = base * texture(u_texture, v_uv);
@@ -91,7 +92,7 @@ void main() {
 
         if (passType == 0 /* Normal */ && v_material != 2 /* Not Light/Nothing */) {
             vec4 tex = tex_sample;
-            if (v_flags == 2147483648) { // 1 << 31
+            if (overrideBlack) {
                 tex = vec4(vec3(0.0), 1.0);
             }
             if (v_material == 1 /* Light/Solid */) {

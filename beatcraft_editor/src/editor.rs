@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 
 use crate::RefDuper;
 use crate::data::{
-    EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData, NormalId, SessionData, SpectrogramData, TypeData, UvId, VertexId
+    EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData, MeshType, NormalId, SessionData, SpectrogramData, TypeData, UvId, VertexId
 };
 use crate::light_mesh::{
     LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot,
@@ -73,6 +73,26 @@ impl Default for Camera {
             fov: 100f32.to_radians(),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModelEditorContext {
+    Environment,
+    Saber,
+    Notes,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapEditorContext {
+    Beatmap,
+    Lightshow,
+    Audio,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditorContext {
+    Model(ModelEditorContext),
+    Map(MapEditorContext),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -947,6 +967,7 @@ pub struct App {
     pub title: &'static str,
     pub mode: EditorMode,
     pub last_mode: EditorMode,
+    pub context: EditorContext,
     pub tool: ToolMode,
     pub last_tool: ToolMode,
     pub render: Render,
@@ -998,6 +1019,7 @@ impl App {
             title: "Beatcraft Mesh Editor",
             mode: EditorMode::View,
             last_mode: EditorMode::View,
+            context: EditorContext::Model(ModelEditorContext::Environment),
             tool: ToolMode::Auto,
             last_tool: ToolMode::Auto,
             render: Render {
@@ -2401,23 +2423,29 @@ impl App {
                     Ok((path, mesh))
                 }) {
                     let (path, mesh) = mesh?;
-                    let mut m = mesh.into_view_mesh(path.to_path_buf(), gl, &self.render.renderer);
 
-                    let mut add_placement = |data: &EnvPlacementData| {
-                        m.view_placements.push(data.to_view(Some(id.clone()), Some(path.to_path_buf())));
-                    };
+                    if mesh.mesh_type != MeshType::Environment {
+                        eprintln!("WARNING: Mesh loaded in environment is not marked as environment; Skipping mesh. ({})", path.to_string_lossy());
+                        None
+                    } else {
+                        let mut m = mesh.into_view_mesh(path.to_path_buf(), gl, &self.render.renderer);
 
-                    match data {
-                        EnvMeshData::MultiPlacement { placements } => {
-                            for place in placements {
-                                add_placement(place);
-                            }
-                        },
-                        EnvMeshData::SinglePlacement(env_placement_data) => add_placement(env_placement_data),
-                        EnvMeshData::None => {},
+                        let mut add_placement = |data: &EnvPlacementData| {
+                            m.view_placements.push(data.to_view(Some(id.clone()), Some(path.to_path_buf())));
+                        };
+
+                        match data {
+                            EnvMeshData::MultiPlacement { placements } => {
+                                for place in placements {
+                                    add_placement(place);
+                                }
+                            },
+                            EnvMeshData::SinglePlacement(env_placement_data) => add_placement(env_placement_data),
+                            EnvMeshData::None => {},
+                        }
+
+                        Some(m)
                     }
-
-                    Some(m)
                 } else {
                     None
                 };

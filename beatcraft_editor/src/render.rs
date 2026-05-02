@@ -7,7 +7,7 @@ use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 
 use crate::{RefDuper, data};
-use crate::data::{MaterialData, ShaderSettingsData};
+use crate::data::{MaterialData, MaterialType, ShaderSettingsData};
 use crate::light_mesh::{LightMesh, Part, Triangle, Vertex};
 
 static MISSING_TEXTURE_BYTES: &[u8] = include_bytes!("./assets/textures/missing.png");
@@ -38,7 +38,7 @@ impl InstanceData {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, PartialEq)]
 pub struct BillboardDesc {
     pub origin: Vec4,
     pub axis: Vec4,
@@ -479,7 +479,7 @@ impl GpuMesh {
                 texture: _,
                 color,
             }) = data.get(material.unwrap_or("default"))
-                && *material != 0
+                && *material != MaterialType::Solid
             {
                 let mat = IVec3::new(*color as i32, *material as i32, flags);
                 materials.extend_from_slice(&[mat; 3]);
@@ -526,8 +526,12 @@ impl GpuMesh {
                         axis: bb.axis.extend(0.),
                         normal_lock: bb.normal.extend(if bb.camera_lock {1.} else {0.})
                     };
-                    billboards.push(desc);
-                    billboards.len() as u8
+                    if let Some((idx, _)) = billboards.iter().enumerate().find(|(i, d)| **d == desc) {
+                        (idx + 1) as u8
+                    } else {
+                        billboards.push(desc);
+                        billboards.len() as u8
+                    }
                 });
             Self::add_triangle_data(
                 &mut vertice_us,

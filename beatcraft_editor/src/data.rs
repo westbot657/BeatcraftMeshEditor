@@ -139,6 +139,12 @@ pub struct BillboardData {
     pub camera_lock: bool,
 }
 
+impl Default for BillboardData {
+    fn default() -> Self {
+        Self { origin: Vec3::ZERO, axis: Vec3::Y, normal: Vec3::NEG_Z, camera_lock: false }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ShaderStyle {
@@ -158,9 +164,18 @@ impl ShaderStyle {
             Self::None => 0,
         }
     }
+    pub fn name(&self) -> &'static str {
+        match self {
+            ShaderStyle::None => "Default",
+            ShaderStyle::Circle => "Circle",
+        }
+    }
+    pub fn iter_all() -> impl Iterator<Item = Self> {
+        [Self::None, Self::Circle].into_iter()
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ShaderSettingsData {
     #[serde(default, skip_serializing_if = "ShaderStyle::is_none")]
     pub style: ShaderStyle,
@@ -199,18 +214,93 @@ fn is_default_scale(s: &Vec3) -> bool {
     *s == Vec3::ONE
 }
 
+#[repr(u8)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(into = "u8", from = "u8")]
+pub enum MaterialType {
+    #[default]
+    Solid = 0,
+    SolidLight,
+    TranslucentLight,
+    TintedSolid,
+}
+
+impl MaterialType {
+    pub fn name(&self) -> &'static str {
+        match self {
+            MaterialType::Solid => "Solid",
+            MaterialType::SolidLight => "Solid Light",
+            MaterialType::TranslucentLight => "Translucent Light",
+            MaterialType::TintedSolid => "Tinted Solid",
+        }
+    }
+    pub fn iter_all() -> impl Iterator<Item = Self> {
+        [Self::Solid, Self::SolidLight, Self::TranslucentLight, Self::TintedSolid].into_iter()
+    }
+}
+
+impl From<MaterialType> for u8 {
+    fn from(value: MaterialType) -> Self {
+        value as u8
+    }
+}
+
+impl From<u8> for MaterialType {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Solid,
+            1 => Self::SolidLight,
+            2 => Self::TranslucentLight,
+            3 => Self::TintedSolid,
+            _ => Self::Solid,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
 #[serde(default)]
 pub struct MaterialData {
-    pub material: u8,
+    pub material: MaterialType,
     pub texture: u8,
     pub color: u8,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MeshType {
+    #[default]
+    Environment,
+    Saber,
+    Note,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Default)]
+#[serde(try_from = "usize", into = "usize")]
+pub(crate) struct FormatMarker<const N: usize>;
+
+impl<const N: usize> TryFrom<usize> for FormatMarker<N> {
+    type Error = &'static str;
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        if value == N {
+            Ok(Self)
+        } else {
+            Err("incorrect version")
+        }
+    }
+}
+
+impl<const N: usize> From<FormatMarker<N>> for usize {
+    fn from(_value: FormatMarker<N>) -> Self {
+        N
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct LightMeshData {
-    pub mesh_format: u32,
+    pub(crate) mesh_format: FormatMarker<1>,
+    #[serde(default, rename = "type")]
+    pub mesh_type: MeshType,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub credits: Vec<String>,
     #[serde(skip_serializing_if = "IndexMap::is_empty")]
@@ -236,7 +326,8 @@ pub struct LightMeshData {
 impl Default for LightMeshData {
     fn default() -> Self {
         Self {
-            mesh_format: 1,
+            mesh_format: FormatMarker,
+            mesh_type: MeshType::default(),
             credits: Vec::new(),
             parts: IndexMap::new(),
             mesh: Vec::new(),
@@ -1023,7 +1114,8 @@ mod data_tests {
         }
 
         let value = LightMeshData {
-            mesh_format: 1,
+            mesh_format: FormatMarker,
+            mesh_type: Default::default(),
             credits: vec!["Westbot".to_string()],
             parts: map! {
                 "part0": PartData {

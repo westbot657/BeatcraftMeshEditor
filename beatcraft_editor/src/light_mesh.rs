@@ -11,12 +11,11 @@ use indexmap::map::MutableKeys;
 
 use crate::RefDuper;
 use crate::data::{
-    BillboardData, ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, NormalId, PartData, PlacementData, ShaderSettingsData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId
+    BillboardData, ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, MeshType, NormalId, PartData, PlacementData, ShaderSettingsData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId
 };
 use crate::easing::Easing;
 use crate::editor::DataSwap;
 use crate::renaming::light_mesh::rehash;
-use crate::render::BillboardDesc;
 
 #[derive(Debug, Clone)]
 pub struct ComputeVertex {
@@ -1377,6 +1376,7 @@ impl From<BloomfogStyle> for u8 {
 
 #[derive(Debug, Clone, Default)]
 pub struct LightMesh {
+    pub mesh_type: MeshType,
     pub credits: Vec<String>,
     pub parts: IndexMap<String, Part>,
     pub placements: Vec<Placement>,
@@ -1461,6 +1461,7 @@ impl From<crate::data::LightMeshData> for LightMesh {
             .collect();
         let part_names = parts.keys().cloned().collect();
         Self {
+            mesh_type: value.mesh_type,
             credits: value.credits,
             parts,
             placements: value.mesh.into_iter().map(Into::into).collect(),
@@ -1479,7 +1480,8 @@ impl From<crate::data::LightMeshData> for LightMesh {
 impl From<LightMesh> for crate::data::LightMeshData {
     fn from(value: LightMesh) -> Self {
         Self {
-            mesh_format: 1,
+            mesh_format: Default::default(),
+            mesh_type: value.mesh_type,
             credits: value.credits,
             parts: value
                 .parts
