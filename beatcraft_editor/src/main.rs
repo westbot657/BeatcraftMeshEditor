@@ -47,6 +47,7 @@ pub mod renaming;
 pub mod render;
 pub mod widgets;
 pub mod beatmap;
+pub mod appdata;
 
 pub static SMALL_X: &str = "×";
 pub static R_ARROW: &str = "▶";
@@ -154,8 +155,13 @@ fn vec3_row<T: 'static + Clone + Send + Sync>(
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     let id = ui.next_auto_id();
-                    ui.set_clip_rect(ui.max_rect());
-                    let resp = ui.add_sized(
+
+                    let (rect, _) = ui.allocate_exact_size([w3, 20.].into(), egui::Sense::empty());
+
+                    let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(*ui.layout()));
+                    child_ui.set_max_width(w3);
+
+                    let resp = child_ui.add_sized(
                         [w3, 20.],
                         MathDragValue::new(val, &mut vars)
                             .speed(0.01)
@@ -212,7 +218,6 @@ fn vec2_row<T: 'static + Clone + Send + Sync>(
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     let id = ui.next_auto_id();
-                    ui.set_clip_rect(ui.max_rect());
                     let resp = ui.add_sized(
                         [w2, 20.],
                         MathDragValue::new(val, &mut vars)
@@ -291,7 +296,7 @@ fn multi_vec3_row<T: 'static + Clone + Send + Sync>(
         let mut vals = None;
         axis_value(ui, "x", &mut vars, w3, &mut vals);
         if let Some(x) = vals {
-            for ((c, vs), x) in current.iter_mut().zip(vars.iter_mut()).zip(x.into_iter()) {
+            for ((c, vs), x) in current.iter_mut().zip(vars.iter_mut()).zip(x) {
                 c.x = x;
                 vs.insert("x".into(), x);
             }
@@ -300,7 +305,7 @@ fn multi_vec3_row<T: 'static + Clone + Send + Sync>(
         let mut vals = None;
         axis_value(ui, "y", &mut vars, w3, &mut vals);
         if let Some(y) = vals {
-            for ((c, vs), y) in current.iter_mut().zip(vars.iter_mut()).zip(y.into_iter()) {
+            for ((c, vs), y) in current.iter_mut().zip(vars.iter_mut()).zip(y) {
                 c.y = y;
                 vs.insert("y".into(), y);
             }
@@ -309,7 +314,7 @@ fn multi_vec3_row<T: 'static + Clone + Send + Sync>(
         vals = None;
         axis_value(ui, "z", &mut vars, w3, &mut vals);
         if let Some(z) = vals {
-            for ((c, vs), z) in current.iter_mut().zip(vars.iter_mut()).zip(z.into_iter()) {
+            for ((c, vs), z) in current.iter_mut().zip(vars.iter_mut()).zip(z) {
                 c.z = z;
                 vs.insert("z".into(), z);
             }
@@ -317,7 +322,7 @@ fn multi_vec3_row<T: 'static + Clone + Send + Sync>(
         }
     });
 
-    for (v, c) in vertices.iter_mut().zip(current.into_iter()) {
+    for (v, c) in vertices.iter_mut().zip(current) {
         **v = c;
     }
 
@@ -357,7 +362,6 @@ fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     let id = ui.next_auto_id();
-                    ui.set_clip_rect(ui.max_rect());
                     let resp = ui.add_sized(
                         [w3, 20.],
                         MathDragValueOpt::new(val, vars).speed(0.01).max_decimals(3),
@@ -416,7 +420,6 @@ fn delta_function_row<T: 'static + Clone + Send + Sync>(
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 let id = ui.next_auto_id();
-                ui.set_clip_rect(ui.max_rect());
                 let resp = ui.add_sized(
                     [w2, 20.],
                     MathDragValueOpt::new(delta, vars)
@@ -450,10 +453,10 @@ fn delta_function_row<T: 'static + Clone + Send + Sync>(
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 let old = *func;
-                ui.set_clip_rect(ui.max_rect());
                 egui::ComboBox::from_id_salt(egui::Id::new("delta_function").with(salt))
                     .selected_text(func.display_name())
                     .width(w3)
+                    .wrap_mode(egui::TextWrapMode::Truncate)
                     .show_ui(ui, |ui| {
                         for (name, easing) in Easing::iter_all() {
                             ui.selectable_value(func, easing, name);
@@ -507,7 +510,6 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             let id = ui.next_auto_id();
-                            ui.set_clip_rect(ui.max_rect());
                             let resp = ui.add_sized(
                                 [w2, 20.],
                                 MathDragValue::new(val, &mut vars)
@@ -544,7 +546,6 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             let id = ui.next_auto_id();
-                            ui.set_clip_rect(ui.max_rect());
                             let resp = ui.add_sized(
                                 [w2, 20.],
                                 MathDragValue::new(val, &mut vars)
@@ -630,7 +631,6 @@ fn quat_row<T: 'static + Clone + Send + Sync>(
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             let id = ui.next_auto_id();
-                            ui.set_clip_rect(ui.max_rect());
                             let resp = ui.add_sized(
                                 [w3, 20.],
                                 MathDragValue::new(val, &mut vars)
@@ -979,6 +979,58 @@ fn compute_vertex_row(
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        match self.context {
+            editor::EditorContext::Model(model_editor_context) => match model_editor_context {
+                editor::ModelEditorContext::Environment => self.draw_environment_editor(ctx, frame),
+                editor::ModelEditorContext::Saber => todo!(),
+                editor::ModelEditorContext::Notes => todo!(),
+            },
+            editor::EditorContext::Map(map_editor_context) => match map_editor_context {
+                editor::MapEditorContext::Beatmap => todo!(),
+                editor::MapEditorContext::Lightshow => todo!(),
+                editor::MapEditorContext::Audio => todo!(),
+            },
+            editor::EditorContext::None => self.draw_welcome_page(ctx, frame),
+        }
+    }
+}
+
+impl App {
+
+    fn draw_welcome_page(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        egui::TopBottomPanel::top("WelcomeTopBar")
+            .frame(Frame::NONE)
+            .show(ctx, |ui| {
+
+            });
+
+        egui::TopBottomPanel::bottom("WelcomeBottomPanel")
+            .frame(Frame::NONE)
+            .show(ctx, |ui| {
+
+            });
+
+        egui::SidePanel::left("WelcomeLeftPanel")
+            .frame(Frame::NONE)
+            .show(ctx, |ui| {
+
+            });
+
+        egui::SidePanel::right("WelcomeRightPanel")
+            .frame(Frame::NONE)
+            .show(ctx, |ui| {
+
+            });
+
+        egui::CentralPanel::default()
+            .show(ctx, |ui| {
+                if ui.button("Open Editor").clicked() {
+                    self.context = editor::EditorContext::Model(editor::ModelEditorContext::Environment);
+                }
+            });
+    }
+
+    fn draw_environment_editor(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let gl = frame.gl().unwrap();
 
         if self.state.dirty {
@@ -1570,6 +1622,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 |ui| egui::ComboBox::from_id_salt("spectrogram-easing")
                                     .selected_text(spect.easing.display_name())
                                     .width(w - w3 - 12.5)
+                                    .wrap_mode(egui::TextWrapMode::Truncate)
                                     .show_ui(ui, |ui| {
                                         for (name, easing) in Easing::iter_all() {
                                             ui.selectable_value(&mut spect.easing, easing, name);
@@ -1967,7 +2020,6 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         egui::Vec2::new(w3, 20.0),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
-                            ui.set_clip_rect(ui.max_rect());
                             ui.add(
                                 egui::DragValue::new(&mut placement.count)
                                     .speed(0.25)

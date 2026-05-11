@@ -55,6 +55,7 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
             let edit_response = ui.add(
                 egui::TextEdit::singleline(&mut text)
                     .desired_width(ui.available_width())
+                    .clip_text(true)
                     .font(egui::TextStyle::Monospace),
             );
 
@@ -80,6 +81,7 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
                 edit_response
             }
         } else {
+            let available = ui.available_width();
             let display = match self.suffix {
                 Some(s) => format!("{:.prec$}{s}", self.value, prec = self.max_decimals),
                 None => format!("{:.prec$}", self.value, prec = self.max_decimals),
@@ -93,7 +95,7 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
                 .custom_formatter(move |_, _| display.clone())
                 .custom_parser(|s| s.parse::<f64>().ok());
 
-            let mut drag_response = ui.add(drag);
+            let mut drag_response = ui.add_sized([available, 20.], drag);
 
             if drag_response.clicked() {
                 editing = true;
@@ -178,6 +180,7 @@ impl<'a, 'b, 'c, 'd, T: MapIndexable> egui::Widget for MultiMathValue<'a, 'b, 'c
         let edit_response = ui.add(
             egui::TextEdit::singleline(&mut text)
                 .desired_width(ui.available_width())
+                .clip_text(true)
                 .font(egui::TextStyle::Monospace)
                 .hint_text(self.hint_text),
         );
@@ -267,6 +270,7 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValueOpt<'a, T> {
             let edit_response = ui.add(
                 egui::TextEdit::singleline(&mut text)
                     .desired_width(ui.available_width())
+                    .clip_text(true)
                     .font(egui::TextStyle::Monospace),
             );
 
@@ -367,6 +371,7 @@ impl<'a, 'b> egui::Widget for TextInput<'a, 'b> {
         let edit_response = ui.add(
             egui::TextEdit::singleline(&mut text)
                 .desired_width(ui.available_width())
+                .clip_text(true)
                 .hint_text(self.hint_text),
         );
 

@@ -82,6 +82,16 @@ pub enum ModelEditorContext {
     Notes,
 }
 
+impl ModelEditorContext {
+    pub fn name(&self) -> &'static str {
+        match self {
+            ModelEditorContext::Environment => "environment",
+            ModelEditorContext::Saber => "saber",
+            ModelEditorContext::Notes => "notes",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapEditorContext {
     Beatmap,
@@ -89,10 +99,12 @@ pub enum MapEditorContext {
     Audio,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum EditorContext {
     Model(ModelEditorContext),
     Map(MapEditorContext),
+    #[default]
+    None,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -997,17 +1009,35 @@ impl App {
                 "./assets/fonts/SourceCodePro-Regular.ttf"
             ))),
         );
+        fonts.font_data.insert(
+            "minecraft-font".to_string(),
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "./assets/fonts/Monocraft-nerd-fonts-patched.ttc"
+            )))
+        );
         fonts
             .families
             .get_mut(&egui::FontFamily::Monospace)
             .unwrap()
-            .insert(0, String::from("source-code-pro"));
+            .insert(0, String::from("minecraft-font"));
 
         fonts
             .families
             .get_mut(&egui::FontFamily::Proportional)
             .unwrap()
-            .insert(0, String::from("source-code-pro"));
+            .insert(0, String::from("minecraft-font"));
+
+        fonts
+            .families
+            .get_mut(&egui::FontFamily::Monospace)
+            .unwrap()
+            .insert(1, String::from("source-code-pro"));
+
+        fonts
+            .families
+            .get_mut(&egui::FontFamily::Proportional)
+            .unwrap()
+            .insert(1, String::from("source-code-pro"));
 
         cc.egui_ctx.set_fonts(fonts);
 
@@ -1019,7 +1049,7 @@ impl App {
             title: "Beatcraft Mesh Editor",
             mode: EditorMode::View,
             last_mode: EditorMode::View,
-            context: EditorContext::Model(ModelEditorContext::Environment),
+            context: EditorContext::None,
             tool: ToolMode::Auto,
             last_tool: ToolMode::Auto,
             render: Render {
