@@ -8,8 +8,8 @@ name = "beatcraft_editor"
 path = "src/main.rs"
 
 [dependencies]
-eframe = { version = "0.33.3", features = ["glow"] }
-egui = "0.33.3"
+eframe = { version = "0.33.3", features = ["glow", "persistence"] }
+egui = { version = "0.33.3", features = ["persistence"] }
 glam = { version = "0.32", features = ["bytemuck", "serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

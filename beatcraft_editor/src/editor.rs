@@ -1000,46 +1000,47 @@ pub struct TriMeta {
     pub vname: Option<String>,
 }
 
+pub static SOURCE_CODE_PRO: &[u8] = include_bytes!("./assets/fonts/SourceCodePro-Regular.ttf");
+pub static MINECRAFT_NERD_FONT: &[u8] = include_bytes!("./assets/fonts/Monocraft-nerd-fonts-patched.ttc");
+
+pub static SOURCE_CODE_F: &str = "source-code-pro";
+pub static MINECRAFT_F: &str = "minecraft-font";
+
+pub(crate) fn setup_fonts(order: &[impl ToString], ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        MINECRAFT_F.into(),
+        Arc::new(egui::FontData::from_static(MINECRAFT_NERD_FONT)),
+    );
+    fonts.font_data.insert(
+        SOURCE_CODE_F.to_string(),
+        Arc::new(egui::FontData::from_static(SOURCE_CODE_PRO)),
+    );
+
+    for (idx, name) in order.iter().enumerate() {
+        fonts
+            .families
+            .get_mut(&egui::FontFamily::Monospace)
+            .unwrap()
+            .insert(idx, name.to_string());
+        fonts
+            .families
+            .get_mut(&egui::FontFamily::Proportional)
+            .unwrap()
+            .insert(idx, name.to_string());
+    }
+    ctx.set_fonts(fonts);
+
+}
+
 impl App {
     pub fn new(cc: &eframe::CreationContext, path: Option<PathBuf>) -> Self {
-        let mut fonts = egui::FontDefinitions::default();
-        fonts.font_data.insert(
-            "source-code-pro".to_string(),
-            Arc::new(egui::FontData::from_static(include_bytes!(
-                "./assets/fonts/SourceCodePro-Regular.ttf"
-            ))),
-        );
-        fonts.font_data.insert(
-            "minecraft-font".to_string(),
-            Arc::new(egui::FontData::from_static(include_bytes!(
-                "./assets/fonts/Monocraft-nerd-fonts-patched.ttc"
-            )))
-        );
-        fonts
-            .families
-            .get_mut(&egui::FontFamily::Monospace)
-            .unwrap()
-            .insert(0, String::from("minecraft-font"));
-
-        fonts
-            .families
-            .get_mut(&egui::FontFamily::Proportional)
-            .unwrap()
-            .insert(0, String::from("minecraft-font"));
-
-        fonts
-            .families
-            .get_mut(&egui::FontFamily::Monospace)
-            .unwrap()
-            .insert(1, String::from("source-code-pro"));
-
-        fonts
-            .families
-            .get_mut(&egui::FontFamily::Proportional)
-            .unwrap()
-            .insert(1, String::from("source-code-pro"));
-
-        cc.egui_ctx.set_fonts(fonts);
+        let minecraft_font: bool = cc.egui_ctx.memory_mut(|m| m.data.get_persisted("use_minecraft_font".into()).unwrap_or(true));
+        if minecraft_font {
+            setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], &cc.egui_ctx);
+        } else {
+            setup_fonts(&[SOURCE_CODE_F, MINECRAFT_F], &cc.egui_ctx);
+        }
 
         let gl = Arc::clone(cc.gl.as_ref().expect("GL context not found"));
 
