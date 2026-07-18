@@ -2,14 +2,16 @@ use std::collections::{HashMap, VecDeque};
 use std::f32::consts::PI;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
+use std::thread::panicking;
 use std::{fs, mem};
 
-use eframe::glow::Context;
+use eframe::glow::{self, Context, HasContext};
 use egui::{Key, Response};
 use glam::{IVec3, Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
+use tracing::Level;
 
-use crate::{RefDuper, load_app_data};
+use crate::{DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
 use crate::config::AppData;
 use crate::data::{
     EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData, MeshType, NormalId, SessionData, SpectrogramData, TypeData, UvId, VertexId
@@ -1037,7 +1039,11 @@ pub(crate) fn setup_fonts(order: &[impl ToString], ctx: &egui::Context) {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext, path: Option<PathBuf>) -> Self {
+        let span = tracing::span!(Level::DEBUG, "init");
+        let _guard = span.enter();
+        tracing::debug!(target: DB_MAIN, "Initializing...");
         let minecraft_font: bool = cc.egui_ctx.memory_mut(|m| m.data.get_persisted("use_minecraft_font".into()).unwrap_or(true));
+        tracing::debug!(target: DB_LOGIC, "Use Minecraft font: {minecraft_font}");
         if minecraft_font {
             setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], &cc.egui_ctx);
         } else {
@@ -1045,6 +1051,12 @@ impl App {
         }
 
         let gl = Arc::clone(cc.gl.as_ref().expect("GL context not found"));
+
+        let renderer = unsafe { gl.get_parameter_string(glow::RENDERER) };
+        tracing::debug!(target: DB_RENDER, "GL Renderer: {renderer}");
+        let version = gl.version();
+        tracing::debug!(target: DB_RENDER, "GL version: {version:?}");
+
 
         let gl2 = Arc::clone(&gl);
 
@@ -1143,6 +1155,7 @@ impl App {
             let _ = s.load_meshes(add, &gl2);
         }
 
+        tracing::debug!(target: DB_MAIN, "Initialized.");
         s
     }
 
@@ -1152,6 +1165,7 @@ impl App {
         while self.view.meshes.contains_key(&format!("{base}{i}")) {
             i += 1;
         }
+        tracing::debug!(target: DB_RENDER, "Generated new mesh id: {base}{i}");
         format!("{base}{i}")
     }
 
@@ -1160,6 +1174,8 @@ impl App {
         gl: &Context,
         renderer: &Renderer,
     ) -> anyhow::Result<IndexMap<String, Option<ViewMesh>>> {
+        let span = tracing::span!(Level::DEBUG, "load-meshes-to-vec");
+        let _guard = span.enter();
         let mut out = IndexMap::new();
         for (k, path) in paths.into_iter() {
             out.insert(k, Some(LightMesh::load(&path)?.into_view_mesh(path, gl, renderer)));
@@ -1193,6 +1209,9 @@ impl App {
     }
 
     pub fn rebuild_meshes(&mut self, gl: &Context) {
+        let span = tracing::span!(Level::DEBUG, "rebuild-meshes");
+        let _guard = span.enter();
+        tracing::debug!(target: DB_RENDER, "Rebuilding meshes...");
         self.render.renderer.rebuild_atlases(gl);
         let texture_paths = self.render.renderer.texture_paths.clone();
         let atlas_map = self.render.renderer.atlas_map.clone();
@@ -1320,6 +1339,9 @@ impl App {
             EditorMode::View => {
                 if input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace) {
                     let mut to_remove = std::mem::take(&mut self.state.ui.mirror_editor.selected);
+                    if !to_remove.is_empty() {
+                        tracing::debug!(target: DB_RENDER, ?to_remove, "Deleting mirror vertices");
+                    }
                     to_remove.sort();
                     to_remove.reverse();
                     for r in to_remove {
@@ -2512,5 +2534,16 @@ impl App {
         self.rebuild_meshes(gl);
 
         Ok(())
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        if !panicking() {
+            let res = save_app_data(&self.data);
+            if let Err(e) = res {
+                tracing::error!(target: DB_MAIN, "Failed to save app data: {e}")
+            }
+        }
     }
 }

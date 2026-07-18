@@ -24,11 +24,14 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 
+use clap::Parser;
 use eframe::glow::{self, HasContext};
 use egui::{Align2, Color32, Frame, ImageSource, Layout, Pos2, Sense, Ui};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::{fmt, EnvFilter, prelude::*};
 
 use self::config::{AppData, RawAppData};
 use self::data::{BillboardData, LightGroup, MaterialType, NormalId, ShaderSettingsData, ShaderStyle, SpectrogramData, UvId, VertexId};
@@ -52,6 +55,13 @@ pub mod beatmap;
 pub mod appdata;
 pub mod ui_elements;
 pub mod config;
+
+// Logging targets
+pub static DB_LOGIC: &str = "logic";
+pub static DB_RENDER: &str = "render";
+pub static DB_HISTORY: &str = "history";
+pub static DB_MATH: &str = "math";
+pub static DB_MAIN: &str = "main";
 
 pub static SMALL_X: &str = "×";
 pub static R_ARROW: &str = "▶";
@@ -4354,8 +4364,77 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
     });
 }
 
+#[derive(clap::Parser)]
+#[command(name="Beatcraft Editor", version)]
+/// The Beatcraft general mesh editor and Beat Saber mapping tool
+///
+/// This tool is for editing all Beatcraft mesh types.
+/// It additionally has tools for general Beat Saber
+/// mapping.
+/// Will eventually also have support for Noodle and Chroma
+struct Cli {
+    path: Option<PathBuf>,
+    #[arg(short, long)]
+    debug: bool,
+    #[arg(name="log-file")]
+    log_file: Option<PathBuf>,
+}
+
+fn build_env_filter(debug: bool) -> EnvFilter {
+    if debug {
+        EnvFilter::new("warn")
+            .add_directive("beatcraft_editor=debug".parse().unwrap())
+            .add_directive(format!("{DB_LOGIC}=debug").parse().unwrap())
+            .add_directive(format!("{DB_MAIN}=debug").parse().unwrap())
+            .add_directive(format!("{DB_MATH}=debug").parse().unwrap())
+            .add_directive(format!("{DB_RENDER}=debug").parse().unwrap())
+            .add_directive(format!("{DB_HISTORY}=debug").parse().unwrap())
+    } else {
+        EnvFilter::try_from_env("BEATCRAFT_LOG").unwrap_or_else(|_| EnvFilter::new("info"))
+    }
+}
+
+/// Returns a guard that MUST be kept alive for the program's duration
+/// (e.g. bound to a variable in `main`) if file logging is enabled.
+/// Dropping it early will stop the file writer.
+pub fn init_logger(debug: bool, log_file: Option<PathBuf>) -> Option<WorkerGuard> {
+    let stdout_layer = fmt::layer().with_filter(build_env_filter(debug));
+
+    let (file_layer, guard) = match log_file {
+        Some(path) => match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            Ok(file) => {
+                let (non_blocking, guard) = tracing_appender::non_blocking(file);
+                let layer = fmt::layer()
+                    .with_ansi(false) // no color codes in the file
+                    .with_writer(non_blocking)
+                    .with_filter(build_env_filter(debug));
+                (Some(layer), Some(guard))
+            }
+            Err(e) => {
+                eprintln!("Failed to open log file {}: {e}", path.display());
+                (None, None)
+            }
+        },
+        None => (None, None),
+    };
+
+    tracing_subscriber::registry()
+        .with(stdout_layer)
+        .with(file_layer)
+        .init();
+
+    if debug {
+        tracing::debug!(target: DB_MAIN, "Enabled debug logging");
+    }
+
+    guard
+}
+
 pub fn main() -> Result<(), eframe::Error> {
-    let path = std::env::args().nth(1).map(PathBuf::from);
+
+    let Cli { path, debug, log_file } = Cli::parse();
+
+    let _guard = init_logger(debug, log_file);
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

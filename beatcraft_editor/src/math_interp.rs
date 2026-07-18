@@ -1,8 +1,11 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::iter::Peekable;
 
 use indexmap::IndexMap;
 use regex::Matches;
+
+use crate::DB_MATH;
 
 pub trait MapIndexable {
     fn get(&self, key: &str) -> Option<&f32>;
@@ -34,7 +37,11 @@ impl MapIndexable for IndexMap<String, f32> {
     }
 }
 
-pub fn eval(expr: &str, var_table: &mut impl MapIndexable) -> Option<f32> {
+pub fn eval<M>(expr: &str, var_table: &mut M) -> Option<f32>
+where
+    M: MapIndexable + Debug
+{
+    tracing::debug!(target: DB_MATH, ?var_table, "Evaluating expression: {expr}");
     eval_inner(expr, var_table, false)
 }
 

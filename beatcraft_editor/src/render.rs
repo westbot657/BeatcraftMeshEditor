@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::f32;
 use std::path::{Path, PathBuf};
 
-use eframe::glow::{self, HasContext, SHADER_STORAGE_BUFFER};
+use eframe::egui_glow;
+use eframe::glow::{self, HasContext, NativeProgram, SHADER_STORAGE_BUFFER};
 use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 
@@ -253,6 +254,7 @@ impl GpuMesh {
         instances: &[InstanceData],
         wireframe: bool,
         renderer: &Renderer,
+        shader: NativeProgram,
     ) {
         if instances.is_empty() {
             return;
@@ -264,7 +266,7 @@ impl GpuMesh {
             gl.bind_buffer_base(glow::SHADER_STORAGE_BUFFER, 0, self.billboard_ssbo);
             gl.draw_arrays_instanced(glow::TRIANGLES, 0, self.vertex_count as i32, n);
             if wireframe {
-                renderer.set_int(gl, renderer.mesh, "u_render_mode", 2);
+                renderer.set_int(gl, shader, "u_render_mode", 2);
                 gl.polygon_mode(glow::FRONT_AND_BACK, glow::LINE);
                 gl.line_width(0.5);
                 gl.draw_arrays_instanced(glow::TRIANGLES, 0, self.vertex_count as i32, n);
@@ -1043,10 +1045,8 @@ impl Renderer {
     ) {
         unsafe {
             let grid = self.grid;
-            //let vp = *proj * *view;
             gl.use_program(Some(grid));
             gl.bind_vertex_array(Some(self.grid_vao));
-
             gl.blend_func_separate(
                 glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA,
                 glow::ZERO, glow::ONE,
@@ -1055,32 +1055,11 @@ impl Renderer {
             self.set_mat4(gl, grid, "proj", proj);
             gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
             gl.bind_vertex_array(None);
-            // if let Some(l) = gl.get_uniform_location(flat, "uMVP") {
-            //     gl.uniform_matrix_4_f32_slice(
-            //         Some(&l),
-            //         false,
-            //         &vp.to_cols_array(),
-            //     );
-            // }
-            // if let Some(l) = gl.get_uniform_location(flat, "uColor") {
-            //     gl.uniform_4_f32(Some(&l), 0.27, 0.27, 0.34, 0.5);
-            // }
-            // gl.bind_vertex_array(Some(self.grid_vao));
-            // gl.draw_arrays(glow::LINES, 0, self.grid_n);
-            // gl.line_width(2.);
-            // if let Some(l) = gl.get_uniform_location(flat, "uColor") {
-            //     gl.uniform_4_f32(Some(&l), 0.85, 0.2, 0.2, 0.9);
-            // }
-            // gl.bind_vertex_array(Some(self.axis_vao));
-            // gl.draw_arrays(glow::LINES, 0, 2);
-            // if let Some(l) =
-            //     gl.get_uniform_location(self.flat, "uColor")
-            // {
-            //     gl.uniform_4_f32(Some(&l), 0.2, 0.45, 0.9, 0.9);
-            // }
-            // gl.draw_arrays(glow::LINES, 2, 2);
-            // gl.line_width(1.);
-            // gl.bind_vertex_array(None);
+            // reset to default blend
+            gl.blend_func_separate(
+                glow::ONE, glow::ONE_MINUS_SRC_ALPHA,
+                glow::ONE_MINUS_SRC_COLOR, glow::ONE,
+            );
         }
     }
 
@@ -1151,7 +1130,7 @@ impl Renderer {
             for call in calls {
                 self.set_int(gl, self.mesh, "u_render_mode", 1);
                 call.mesh
-                    .draw_tris(gl, &call.instances, call.wireframe, self);
+                    .draw_tris(gl, &call.instances, call.wireframe, self, self.mesh);
             }
         }
     }
@@ -1172,7 +1151,7 @@ impl Renderer {
             gl.use_program(Some(self.handles));
             self.set_mat4(gl, self.handles, "uVP", vp);
             for call in calls {
-                call.mesh.draw_tris(gl, &call.instances, false, self);
+                call.mesh.draw_tris(gl, &call.instances, false, self, self.handles);
             }
             gl.use_program(Some(self.handle_points));
             self.set_mat4(gl, self.handle_points, "uVP", vp);
@@ -1544,7 +1523,8 @@ impl BloomfogRenderer {
                     LIGHT_COLORS
                 )],
                 wireframe,
-                renderer
+                renderer,
+                renderer.mirror,
             );
             gl.disable(glow::CULL_FACE);
         }
@@ -1666,7 +1646,7 @@ impl BloomfogRenderer {
                 }
                 gl.bind_vertex_array(Some(call.mesh.vao));
                 renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
-                call.mesh.draw_tris(gl, &call.instances, false, renderer);
+                call.mesh.draw_tris(gl, &call.instances, false, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
@@ -1717,7 +1697,7 @@ impl BloomfogRenderer {
                 }
                 gl.bind_vertex_array(Some(call.mesh.vao));
                 renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
-                call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer);
+                call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
@@ -1733,7 +1713,7 @@ impl BloomfogRenderer {
                 }
                 gl.bind_vertex_array(Some(call.mesh.vao));
                 renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
-                call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer);
+                call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
@@ -1780,13 +1760,13 @@ impl BloomfogRenderer {
                 if call.cull {
                     gl.enable(glow::CULL_FACE);
                 }
-                call.mesh.draw_tris(gl, &call.instances, false, renderer);
+                call.mesh.draw_tris(gl, &call.instances, false, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
             }
             if let Some(mirror_mesh) = mirror_mesh {
-                mirror_mesh.draw_tris(gl, &[InstanceData::new(Vec4::ZERO, Mat4::IDENTITY, LIGHT_COLORS)], false, renderer);
+                mirror_mesh.draw_tris(gl, &[InstanceData::new(Vec4::ZERO, Mat4::IDENTITY, LIGHT_COLORS)], false, renderer, renderer.mesh);
             }
             renderer.set_int(gl, renderer.mesh, "passType", 1);
             for call in calls {
@@ -1796,7 +1776,7 @@ impl BloomfogRenderer {
                 if call.cull {
                     gl.enable(glow::CULL_FACE);
                 }
-                call.mesh.draw_tris(gl, &call.instances, false, renderer);
+                call.mesh.draw_tris(gl, &call.instances, false, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
@@ -1807,7 +1787,6 @@ impl BloomfogRenderer {
             gl.clear_color(0., 0., 0., 0.);
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
             renderer.set_int(gl, renderer.mesh, "passType", 1);
-            //gl.blend_func(glow::ONE, glow::ONE);
             gl.enable(glow::BLEND);
             gl.disable(glow::DEPTH_TEST);
             for call in calls {
@@ -1817,7 +1796,7 @@ impl BloomfogRenderer {
                 if call.cull {
                     gl.enable(glow::CULL_FACE);
                 }
-                call.mesh.draw_tris(gl, &call.instances, false, renderer);
+                call.mesh.draw_tris(gl, &call.instances, false, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
