@@ -19,16 +19,18 @@
 //   Escape                 deselect all
 
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 
 use eframe::glow::{self, HasContext};
-use egui::{Align2, Frame, Layout, Pos2, Sense, Ui};
+use egui::{Align2, Color32, Frame, ImageSource, Layout, Pos2, Sense, Ui};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 
+use self::config::{AppData, RawAppData};
 use self::data::{BillboardData, LightGroup, MaterialType, NormalId, ShaderSettingsData, ShaderStyle, SpectrogramData, UvId, VertexId};
 use self::easing::Easing;
 use self::editor::{ActionType, App, MINECRAFT_F, RingType, SOURCE_CODE_F, Selection, SpinSide, ViewPlacement, ViewStyle, WorkingRenameKey, setup_fonts};
@@ -49,11 +51,58 @@ pub mod widgets;
 pub mod beatmap;
 pub mod appdata;
 pub mod ui_elements;
+pub mod config;
 
 pub static SMALL_X: &str = "×";
 pub static R_ARROW: &str = "▶";
 pub static D_ARROW: &str = "▼";
 pub static SMALL_R_ARROW: &str = "→";
+
+pub static ENVIRONMENT_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/environment_editor.png");
+pub static SABER_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/saber_editor.png");
+pub static NOTE_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/note_editor.png");
+
+pub static MISSING_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/svg/missing_editor.svg");
+
+pub fn get_data_folder() -> Option<PathBuf> {
+    dirs::data_local_dir()
+        .map(|dir| dir.join("BeatcraftMeshEditor"))
+}
+
+pub fn get_data_file() -> Option<PathBuf> {
+    get_data_folder()
+        .map(|dir| dir.join("data.json"))
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum AppDataError {
+    #[error("Missing Data Directory")]
+    MissingDataDirectory,
+    #[error("IO Error: {0}")]
+    IOError(#[from] std::io::Error),
+    #[error("serde Error: {0}")]
+    SerdeError(#[from] serde_json::Error),
+}
+
+pub fn load_app_data() -> Result<AppData, AppDataError> {
+    let path = get_data_folder().ok_or(AppDataError::MissingDataDirectory)?;
+    if path.exists() {
+        let json = fs::read_to_string(&path)?;
+        let data: RawAppData = serde_json::from_str(&json)?;
+        Ok(data.into())
+    } else {
+        Ok(Default::default())
+    }
+}
+
+pub fn save_app_data(data: &AppData) -> Result<(), AppDataError> {
+    let path = get_data_folder().ok_or(AppDataError::MissingDataDirectory)?;
+    let raw: RawAppData = data.into();
+    let s = serde_json::to_string(&raw)?;
+    fs::create_dir_all(path.parent().unwrap())?;
+    fs::write(path, &s)?;
+    Ok(())
+}
 
 #[derive(Copy, Clone)]
 struct UnsafeMutRef<T: 'static> {
@@ -125,9 +174,8 @@ impl eframe::App for App {
 
 impl App {
 
-    fn draw_welcome_page(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn draw_welcome_page(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("WelcomeTopBar")
-            .frame(Frame::NONE)
             .show(ctx, |ui| {
                 ui.add_space(2.);
                 egui::MenuBar::new().ui(ui, |ui| {
@@ -147,30 +195,173 @@ impl App {
                 });
             });
 
-        egui::TopBottomPanel::bottom("WelcomeBottomPanel")
-            .frame(Frame::NONE)
-            .show(ctx, |ui| {
-
-            });
+        // egui::TopBottomPanel::bottom("WelcomeBottomPanel")
+        //     .frame(Frame::NONE)
+        //     .show(ctx, |ui| {
+        //
+        //     });
 
         egui::SidePanel::left("WelcomeLeftPanel")
-            .frame(Frame::NONE)
+            .resizable(false)
+            .exact_width(300.)
             .show(ctx, |ui| {
-
+                ui.vertical_centered(|ui| {
+                    ui.add_space(8.);
+                    ui.add(egui::Label::new(egui::RichText::new("Recent Projects").size(20.).strong()))
+                })
             });
 
-        egui::SidePanel::right("WelcomeRightPanel")
-            .frame(Frame::NONE)
-            .show(ctx, |ui| {
+        // egui::SidePanel::right("WelcomeRightPanel")
+        //     .frame(Frame::NONE)
+        //     .resizable(false)
+        //     .exact_width(300.)
+        //     .show(ctx, |ui| {
+        //
+        //     });
 
-            });
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.allocate_ui_with_layout(
+                ui.available_size(),
+                egui::Layout::top_down(egui::Align::Center),
+                |ui| {
+                    let height = ui.available_height() / 2.;
+                    ui.add_space(height - 206.25);
 
-        egui::CentralPanel::default()
-            .show(ctx, |ui| {
-                if ui.button("Open Mesh Editor").clicked() {
-                    self.context = editor::EditorContext::Model(editor::ModelEditorContext::Environment);
+                    ui.allocate_ui_with_layout(
+                        [610., 200.].into(),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                        self.draw_context_selector(
+                            ctx, ui,
+                            "env_edit_scale".into(),
+                            ENVIRONMENT_EDITOR_ICON.clone(),
+                            &["Environment", "Editor"],
+                            |s| s.context = editor::EditorContext::Model(editor::ModelEditorContext::Environment),
+                        );
+
+                        self.draw_context_selector(
+                            ctx, ui,
+                            "saber_edit_scale".into(),
+                            SABER_EDITOR_ICON.clone(),
+                            &["Saber", "Editor"],
+                            |s| s.context = editor::EditorContext::Model(editor::ModelEditorContext::Saber),
+                        );
+
+                        self.draw_context_selector(
+                            ctx, ui,
+                            "note_edit_scale".into(),
+                            NOTE_EDITOR_ICON.clone(),
+                            &["Note/Bomb", "Editor"],
+                            |s| s.context = editor::EditorContext::Model(editor::ModelEditorContext::Notes),
+                        );
+
+                    });
+
+                    ui.add_space(12.5);
+
+                    ui.allocate_ui_with_layout(
+                        [405., 200.].into(),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+
+                        self.draw_context_selector(
+                            ctx, ui,
+                            "beatmap_edit_scale".into(),
+                            MISSING_EDITOR_ICON.clone(),
+                            &["Beatmap", "Editor"],
+                            |s| s.context = editor::EditorContext::Map(editor::MapEditorContext::Beatmap),
+                        );
+
+                        self.draw_context_selector(
+                            ctx, ui,
+                            "lightshow_edit_scale".into(),
+                            MISSING_EDITOR_ICON.clone(),
+                            &["Lightshow", "Editor"],
+                            |s| s.context = editor::EditorContext::Map(editor::MapEditorContext::Lightshow),
+                        );
+                    });
+
+                    ui.ctx().request_repaint();
+                },
+            );
+
+        });
+    }
+
+    fn draw_context_selector(
+        &mut self,
+        ctx: &egui::Context,
+        ui: &mut Ui,
+        scale_id: egui::Id,
+        img_source: ImageSource,
+        overlay_text: &[&'static str],
+        on_click: impl Fn(&mut Self),
+        ) {
+        let scale = ui
+            .memory(|m| m.data.get_temp::<f32>(scale_id))
+            .unwrap_or(1.);
+
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(200., 200.),
+            egui::Sense::hover() | egui::Sense::click(),
+        );
+
+        if response.clicked() {
+            on_click(self);
+        }
+
+        let center = rect.center().to_vec2();
+        let translation = center * (1.0 - scale);
+
+        let visuals = *ui.style().interact(&response);
+        let is_hovered = response.hovered();
+
+        ui.with_visual_transform(
+            egui::emath::TSTransform::new(translation, scale),
+            |ui| {
+                let painter = ui.painter();
+
+                painter.rect(
+                    rect.expand(visuals.expansion * 2.),
+                    6.0,
+                    Color32::TRANSPARENT,
+                    egui::Stroke::new(1., if is_hovered { Color32::from_white_alpha(127) } else { visuals.bg_fill }),
+                    egui::StrokeKind::Outside,
+                );
+
+                egui::Image::new(img_source)
+                    .corner_radius(6)
+                    .paint_at(ui, rect);
+
+
+                let mut y = 8.;
+                for line in overlay_text.iter().rev() {
+                    painter.text(
+                        rect.center_bottom() - egui::vec2(0.0, y),
+                        egui::Align2::CENTER_BOTTOM,
+                        line,
+                        egui::FontId::proportional(16.0),
+                        Color32::WHITE,
+                    );
+                    y += 20.;
                 }
-            });
+            },
+        );
+
+        let dt = ctx.input(|i| i.stable_dt);
+        ui.memory_mut(|m| {
+            if let Some(mut t) = m.data.get_temp::<f32>(scale_id) {
+                t = if is_hovered {
+                    1.05f32.min(t + 0.45 * dt)
+                } else {
+                    1.0f32.max(t - 0.45 * dt)
+                };
+                m.data.insert_temp(scale_id, t);
+            } else {
+                m.data.insert_temp(scale_id, 1f32);
+            }
+        });
+
     }
 
     fn draw_environment_editor(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -281,6 +472,9 @@ impl App {
                             editor::EditorMode::Assembly | editor::EditorMode::Edit => {}
                         }
                         ui.close();
+                    }
+                    if ui.button("Menu              \u{2502}").clicked() {
+                        self.context = editor::EditorContext::None;
                     }
                 });
                 ui.menu_button("Edit", |ui| {
@@ -460,7 +654,6 @@ impl App {
                             unsafe {
                                 let w = rect.width();
                                 let h = rect.height();
-                                let vp = s.ref_mut().cam().vp(w, h);
                                 let view = s.ref_mut().cam().view_mat();
                                 let proj = s.ref_mut().cam().proj_mat(w, h);
 
@@ -479,7 +672,7 @@ impl App {
                                 gl.depth_mask(true);
 
                                 if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
-                                    s.render.renderer.draw_grid(gl, &vp);
+                                    s.render.renderer.draw_grid(gl, &view, &proj);
                                 }
 
                                 match s.mode {
@@ -1041,6 +1234,9 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         if let Some(vm) = s.render.mirror.take() {
             vm.destroy(gl);
         }
+        if let Some(towers) = s.render.spectrogram.take() {
+            towers.destroy(gl);
+        }
     }
 }
 
@@ -1074,7 +1270,6 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         let rd2 = RefDuper;
         let mesh2 = unsafe { rd2.detach_mut_ref(mesh) };
-        
 
         let mut to_remove = None;
         for (p_i, placement) in mesh.view_placements.iter_mut().enumerate() {

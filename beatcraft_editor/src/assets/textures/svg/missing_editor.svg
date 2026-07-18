@@ -1,0 +1,12 @@
+<svg
+  viewBox="0 0 500 500"
+  xmlns="http://www.w3.org/2000/svg">
+    <path stroke="#B01010" stroke-dasharray="23,23" fill="#00000000" stroke-width="10"
+        d = "M 20 20 L 20 480 L 480 480 L 480 20 Z"
+    />
+    <path stroke = "#B01010" fill="#00000000" stroke-width="10"
+        d = " M 150 150 L 150 350 L 350 350 L 350 150 Z
+        M 150 250 L 200 200 L 275 275 L 325 225 L 350 250"
+    />
+
+</svg>

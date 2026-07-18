@@ -9,7 +9,8 @@ use egui::{Key, Response};
 use glam::{IVec3, Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 
-use crate::RefDuper;
+use crate::{RefDuper, load_app_data};
+use crate::config::AppData;
 use crate::data::{
     EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData, MeshType, NormalId, SessionData, SpectrogramData, TypeData, UvId, VertexId
 };
@@ -991,6 +992,7 @@ pub struct App {
     pub state: State,
     pub assembly: Assembly,
     pub history: History,
+    pub data: AppData,
 }
 
 pub struct TriMeta {
@@ -1045,6 +1047,8 @@ impl App {
         let gl = Arc::clone(cc.gl.as_ref().expect("GL context not found"));
 
         let gl2 = Arc::clone(&gl);
+
+        egui_extras::install_image_loaders(&cc.egui_ctx);
 
         let mut s = Self {
             title: "Beatcraft Mesh Editor",
@@ -1127,6 +1131,7 @@ impl App {
                 future: VecDeque::new(),
                 limit: 200,
             },
+            data: load_app_data().unwrap_or_else(|_| Default::default()),
         };
 
         if let Some(p) = path

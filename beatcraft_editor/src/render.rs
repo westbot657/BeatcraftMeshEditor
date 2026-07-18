@@ -526,7 +526,7 @@ impl GpuMesh {
                         axis: bb.axis.extend(0.),
                         normal_lock: bb.normal.extend(if bb.camera_lock {1.} else {0.})
                     };
-                    if let Some((idx, _)) = billboards.iter().enumerate().find(|(i, d)| **d == desc) {
+                    if let Some((idx, _)) = billboards.iter().enumerate().find(|(_, d)| **d == desc) {
                         (idx + 1) as u8
                     } else {
                         billboards.push(desc);
@@ -747,14 +747,10 @@ pub struct Renderer {
     pub mesh: glow::NativeProgram,
     pub mirror: glow::NativeProgram,
     pub point: glow::NativeProgram,
-    pub flat: glow::NativeProgram,
+    pub grid: glow::NativeProgram,
     pub handles: glow::NativeProgram,
     pub handle_points: glow::NativeProgram,
     pub grid_vao: glow::NativeVertexArray,
-    pub gvbo: glow::NativeBuffer,
-    pub grid_n: i32,
-    pub axis_vao: glow::NativeVertexArray,
-    pub avbo: glow::NativeBuffer,
     pub blue_noise: glow::NativeTexture,
     pub missing_texture: glow::NativeTexture,
     /// maps a texture id ('beatcraft:textures/...') to a real path.
@@ -819,10 +815,10 @@ impl Renderer {
                 include_str!("./assets/shaders/point.vert"),
                 include_str!("./assets/shaders/point.frag"),
             )?;
-            let flat = Self::compile_shader(
+            let grid = Self::compile_shader(
                 gl,
-                include_str!("./assets/shaders/flat.vert"),
-                include_str!("./assets/shaders/flat.frag"),
+                include_str!("./assets/shaders/grid.vert"),
+                include_str!("./assets/shaders/grid.frag"),
             )?;
 
             let handles = Self::compile_shader(
@@ -837,43 +833,7 @@ impl Renderer {
                 include_str!("./assets/shaders/handle_points.frag"),
             )?;
 
-            let mut grid_pts: Vec<f32> = vec![];
-            let (size, step) = (300i32, 10i32);
-            let mut i = -size;
-            while i <= size {
-                let fi = i as f32;
-                let fs = size as f32;
-                grid_pts.extend_from_slice(&[fi, 0.0, -fs, fi, 0.0, fs, -fs, 0.0, fi, fs, 0.0, fi]);
-                i += step;
-            }
             let grid_vao = gl.create_vertex_array()?;
-            gl.bind_vertex_array(Some(grid_vao));
-            let gvbo = gl.create_buffer()?;
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(gvbo));
-            gl.buffer_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                bytemuck::cast_slice(&grid_pts),
-                glow::STATIC_DRAW,
-            );
-            gl.enable_vertex_attrib_array(0);
-            gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
-            gl.bind_vertex_array(None);
-            let grid_n = (grid_pts.len() / 3) as i32;
-
-            let ax: f32 = size as f32;
-            let axis_pts: [f32; 12] = [0.0, 0.0, 0.0, ax, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, ax];
-            let axis_vao = gl.create_vertex_array()?;
-            gl.bind_vertex_array(Some(axis_vao));
-            let avbo = gl.create_buffer()?;
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(avbo));
-            gl.buffer_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                bytemuck::cast_slice(&axis_pts),
-                glow::STATIC_DRAW,
-            );
-            gl.enable_vertex_attrib_array(0);
-            gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
-            gl.bind_vertex_array(None);
 
             gl.enable(glow::PROGRAM_POINT_SIZE);
 
@@ -954,14 +914,10 @@ impl Renderer {
                 mesh,
                 mirror,
                 point,
-                flat,
+                grid,
                 handles,
                 handle_points,
                 grid_vao,
-                gvbo,
-                grid_n,
-                axis_vao,
-                avbo,
                 blue_noise,
                 missing_texture,
                 texture_paths: HashMap::new(),
@@ -1082,38 +1038,49 @@ impl Renderer {
     pub fn draw_grid(
         &self,
         gl: &glow::Context,
-        vp: &Mat4
+        view: &Mat4,
+        proj: &Mat4,
     ) {
         unsafe {
-            let flat = self.flat;
-            gl.line_width(1.);
-            gl.use_program(Some(flat));
-            if let Some(l) = gl.get_uniform_location(flat, "uMVP") {
-                gl.uniform_matrix_4_f32_slice(
-                    Some(&l),
-                    false,
-                    &vp.to_cols_array(),
-                );
-            }
-            if let Some(l) = gl.get_uniform_location(flat, "uColor") {
-                gl.uniform_4_f32(Some(&l), 0.27, 0.27, 0.34, 0.5);
-            }
+            let grid = self.grid;
+            //let vp = *proj * *view;
+            gl.use_program(Some(grid));
             gl.bind_vertex_array(Some(self.grid_vao));
-            gl.draw_arrays(glow::LINES, 0, self.grid_n);
-            gl.line_width(2.);
-            if let Some(l) = gl.get_uniform_location(flat, "uColor") {
-                gl.uniform_4_f32(Some(&l), 0.85, 0.2, 0.2, 0.9);
-            }
-            gl.bind_vertex_array(Some(self.axis_vao));
-            gl.draw_arrays(glow::LINES, 0, 2);
-            if let Some(l) =
-                gl.get_uniform_location(self.flat, "uColor")
-            {
-                gl.uniform_4_f32(Some(&l), 0.2, 0.45, 0.9, 0.9);
-            }
-            gl.draw_arrays(glow::LINES, 2, 2);
-            gl.line_width(1.);
+
+            gl.blend_func_separate(
+                glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA,
+                glow::ZERO, glow::ONE,
+            );
+            self.set_mat4(gl, grid, "view", view);
+            self.set_mat4(gl, grid, "proj", proj);
+            gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
             gl.bind_vertex_array(None);
+            // if let Some(l) = gl.get_uniform_location(flat, "uMVP") {
+            //     gl.uniform_matrix_4_f32_slice(
+            //         Some(&l),
+            //         false,
+            //         &vp.to_cols_array(),
+            //     );
+            // }
+            // if let Some(l) = gl.get_uniform_location(flat, "uColor") {
+            //     gl.uniform_4_f32(Some(&l), 0.27, 0.27, 0.34, 0.5);
+            // }
+            // gl.bind_vertex_array(Some(self.grid_vao));
+            // gl.draw_arrays(glow::LINES, 0, self.grid_n);
+            // gl.line_width(2.);
+            // if let Some(l) = gl.get_uniform_location(flat, "uColor") {
+            //     gl.uniform_4_f32(Some(&l), 0.85, 0.2, 0.2, 0.9);
+            // }
+            // gl.bind_vertex_array(Some(self.axis_vao));
+            // gl.draw_arrays(glow::LINES, 0, 2);
+            // if let Some(l) =
+            //     gl.get_uniform_location(self.flat, "uColor")
+            // {
+            //     gl.uniform_4_f32(Some(&l), 0.2, 0.45, 0.9, 0.9);
+            // }
+            // gl.draw_arrays(glow::LINES, 2, 2);
+            // gl.line_width(1.);
+            // gl.bind_vertex_array(None);
         }
     }
 
@@ -1626,7 +1593,7 @@ impl BloomfogRenderer {
             gl.depth_mask(true);
 
             if draw_grid {
-                renderer.draw_grid(gl, &(*proj * *view));
+                renderer.draw_grid(gl, view, proj);
             }
             // render mirrored?
             // render HUD

@@ -23,4 +23,7 @@ pathdiff = "0.2.3"
 image = "0.25.10"
 #tracks_rs = { path = "../../tracks-rs" }
 num-traits = "0.2.19"
-
+egui_extras = { version = "0.33.3", features = ["all_loaders"] }
+dirs = "6.0.0"
+chrono = "0.4.45"
+thiserror = "2.0.18"
