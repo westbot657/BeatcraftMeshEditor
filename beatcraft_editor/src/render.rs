@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::f32;
 use std::path::{Path, PathBuf};
 
-use eframe::egui_glow;
 use eframe::glow::{self, HasContext, NativeProgram, SHADER_STORAGE_BUFFER};
 use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
