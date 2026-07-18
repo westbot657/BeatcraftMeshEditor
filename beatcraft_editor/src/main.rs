@@ -26,14 +26,14 @@ use std::sync::{Arc, mpsc};
 
 use clap::Parser;
 use eframe::glow::{self, HasContext};
-use egui::{Align2, Color32, Frame, ImageSource, Layout, Pos2, Sense, Ui};
+use egui::{Align2, Color32, Frame, ImageSource, Layout, Pos2, Sense, Ui, response};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt, EnvFilter, prelude::*};
 
-use self::config::{AppData, RawAppData};
+use self::config::{AppData, RawAppData, RecentProject};
 use self::data::{BillboardData, LightGroup, MaterialType, NormalId, ShaderSettingsData, ShaderStyle, SpectrogramData, UvId, VertexId};
 use self::easing::Easing;
 use self::editor::{ActionType, App, MINECRAFT_F, RingType, SOURCE_CODE_F, Selection, SpinSide, ViewPlacement, ViewStyle, WorkingRenameKey, setup_fonts};
@@ -217,7 +217,50 @@ impl App {
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(8.);
-                    ui.add(egui::Label::new(egui::RichText::new("Recent Projects").size(20.).strong()))
+                    ui.add(egui::Label::new(egui::RichText::new("Recent Projects").size(20.).strong()));
+
+                    let mut to_open = None;
+                    for RecentProject { modified, path, kind } in self.data.recents.iter() {
+                        let ext = path.with_extension("");
+                        let Some(label) = ext.file_name() else { continue };
+                        let label = label.to_string_lossy();
+                        let full_path = path.to_string_lossy();
+                        ui.add_space(8.);
+                        ui.allocate_ui_with_layout(
+                            [280., 80.].into(),
+                            Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.allocate_ui_with_layout([280., 10.].into(), egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                                        let w = ui.label(egui::RichText::new(label).strong()).on_hover_text(full_path).interact_rect.width();
+                                        ui.allocate_ui_with_layout([275. - w, 1.].into(), egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                                            if ui.button("Open").clicked() {
+                                                to_open = Some((kind, path.to_path_buf()));
+                                            }
+                                        });
+
+                                    });
+                                });
+                                ui.label(egui::RichText::new(kind.to_string()).weak());
+                                ui.label(egui::RichText::new(format!("Last Modified: {modified}")).small());
+                            }
+                        );
+
+                    }
+                    if let Some((kind, path)) = to_open {
+                        match kind {
+                            config::ProjectKind::EnvironmentMesh => {
+                                let gl = Arc::clone(&self.state.gl);
+                                let _ = self.load_session(&path, &gl);
+                                self.context = editor::EditorContext::Model(editor::ModelEditorContext::Environment);
+                            }
+                            config::ProjectKind::SaberMesh => todo!(),
+                            config::ProjectKind::NoteMesh => todo!(),
+                            config::ProjectKind::Beatmap => todo!(),
+                            config::ProjectKind::Lightshow => todo!(),
+                        }
+                    }
+
                 })
             });
 
@@ -485,6 +528,8 @@ impl App {
                     }
                     if ui.button("Menu              \u{2502}").clicked() {
                         self.context = editor::EditorContext::None;
+                        let gl = Arc::clone(&self.state.gl);
+                        close_environment(self, &gl);
                     }
                 });
                 ui.menu_button("Edit", |ui| {
@@ -1229,24 +1274,28 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             .add_sized([w, 20.], egui::Button::new("Close environment"))
             .clicked()
     {
-        let meshes = std::mem::take(&mut s.view.meshes);
-        for (_, vm) in meshes {
-            if let Some(vm) = vm {
-                vm.destroy(gl);
-            }
-        }
-        s.view.session = None;
-        s.view.env_path = None;
-        s.view.mirror_id = None;
-        s.view.mirror_path = None;
-        s.view.spectrogram = None;
-        s.view.fog_heights = None;
-        if let Some(vm) = s.render.mirror.take() {
+        close_environment(s, gl);
+    }
+}
+
+pub fn close_environment(s: &mut App, gl: &glow::Context) {
+    let meshes = std::mem::take(&mut s.view.meshes);
+    for (_, vm) in meshes {
+        if let Some(vm) = vm {
             vm.destroy(gl);
         }
-        if let Some(towers) = s.render.spectrogram.take() {
-            towers.destroy(gl);
-        }
+    }
+    s.view.session = None;
+    s.view.env_path = None;
+    s.view.mirror_id = None;
+    s.view.mirror_path = None;
+    s.view.spectrogram = None;
+    s.view.fog_heights = None;
+    if let Some(vm) = s.render.mirror.take() {
+        vm.destroy(gl);
+    }
+    if let Some(towers) = s.render.spectrogram.take() {
+        towers.destroy(gl);
     }
 }
 

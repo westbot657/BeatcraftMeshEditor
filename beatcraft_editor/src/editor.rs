@@ -2441,6 +2441,7 @@ impl App {
 
         if let Some(path) = self.view.session.as_deref() {
             fs::write(path, &json)?;
+            self.data.mark_project_modified(path, crate::config::ProjectKind::EnvironmentMesh);
         } else {
             let (sx, rx) = mpsc::channel();
             self.state.ui.save_session_channel = Some(rx);
