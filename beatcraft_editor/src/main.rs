@@ -740,9 +740,6 @@ impl App {
                                 gl.enable(glow::DEPTH_TEST);
                                 gl.depth_mask(true);
 
-                                if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
-                                    s.render.renderer.draw_grid(gl, &view, &proj);
-                                }
 
                                 match s.mode {
                                     editor::EditorMode::View => {
@@ -754,6 +751,10 @@ impl App {
                                     editor::EditorMode::Edit => {
                                         draw_edit_gl(&s, gl, &view, &proj, (w as i32, h as i32));
                                     }
+                                }
+
+                                if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
+                                    s.render.renderer.draw_grid(gl, &view, &proj);
                                 }
                             }
                         },

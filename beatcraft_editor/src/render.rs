@@ -1629,9 +1629,6 @@ impl BloomfogRenderer {
             self.apply_effect_pass(renderer, gl, &self.blurred_buffer, None, PassType::Blit, false, true, window, 11., 2.);
             gl.depth_mask(true);
 
-            if draw_grid {
-                renderer.draw_grid(gl, view, proj);
-            }
             // render mirrored?
             // render HUD
             // render beatmaps
@@ -1661,6 +1658,9 @@ impl BloomfogRenderer {
             );
             gl.enable(glow::SCISSOR_TEST);
             gl.enable(glow::DEPTH_TEST);
+            if draw_grid {
+                renderer.draw_grid(gl, view, proj);
+            }
         }
     }
 
