@@ -50,6 +50,7 @@ pub fn eval_inner(expr: &str, var_table: &mut impl MapIndexable, is_degrees: boo
 
     let mut tokens = splitter.find_iter(expr).peekable();
 
+    tracing::debug!(target: DB_MATH, ?tokens, "Evaluating expression from tokens");
     let res = eval_expr(&mut tokens, var_table, is_degrees)?;
     if tokens.next().is_some() || res.is_nan() {
         None
@@ -65,24 +66,29 @@ fn eval_expr(
     vars: &mut impl MapIndexable,
     is_degrees: bool,
 ) -> Option<f32> {
+    let span = tracing::debug_span!("eval-expr");
+    let _guard = span.enter();
     let mut left = eval_term(tokens, vars, is_degrees)?;
     while let Some(token) = tokens.peek() {
         match token.as_str() {
             "+" => {
                 left += {
                     tokens.next();
+                    tracing::debug!(target: DB_MATH, "ADD");
                     eval_term(tokens, vars, is_degrees)?
                 }
             }
             "-" => {
                 left -= {
                     tokens.next();
+                    tracing::debug!(target: DB_MATH, "SUBTRACT");
                     eval_term(tokens, vars, is_degrees)?
                 }
             }
             _ => break,
         }
     }
+    tracing::debug!(target: DB_MATH, "Result: {}", left);
     Some(left)
 }
 
@@ -91,30 +97,36 @@ fn eval_term(
     vars: &mut impl MapIndexable,
     is_degrees: bool,
 ) -> Option<f32> {
+    let span = tracing::debug_span!("eval-term");
+    let _guard = span.enter();
     let mut left = eval_factor(tokens, vars, is_degrees)?;
     while let Some(token) = tokens.peek() {
         match token.as_str() {
             "*" => {
                 left *= {
                     tokens.next();
+                    tracing::debug!(target: DB_MATH, "MULTIPLY");
                     eval_factor(tokens, vars, is_degrees)?
                 }
             }
             "/" => {
                 left /= {
                     tokens.next();
+                    tracing::debug!(target: DB_MATH, "DIVIDE");
                     eval_factor(tokens, vars, is_degrees)?
                 }
             }
             "%" => {
                 left %= {
                     tokens.next();
+                    tracing::debug!(target: DB_MATH, "MODULOUS");
                     eval_factor(tokens, vars, is_degrees)?
                 }
             }
             _ => break,
         }
     }
+    tracing::debug!(target: DB_MATH, "Result: {}", left);
     Some(left)
 }
 
@@ -123,24 +135,31 @@ fn eval_factor(
     vars: &mut impl MapIndexable,
     is_degrees: bool,
 ) -> Option<f32> {
+    let span = tracing::debug_span!("eval-factor");
+    let _guard = span.enter();
     if let Some(token) = tokens.peek() {
         let tk = token.as_str();
         if let Ok(val) = tk.parse::<f32>() {
             tokens.next();
+            tracing::debug!(target: DB_MATH, "Value: {}", val);
             return Some(val);
         }
 
         match tk {
             "-" => {
                 tokens.next()?;
+                let span = tracing::debug_span!("NEGATE");
+                let _guard = span.enter();
                 Some(-eval_factor(tokens, vars, is_degrees)?)
             }
             "pi" => {
                 tokens.next()?;
+                tracing::debug!("Constant: pi");
                 Some(std::f32::consts::PI)
             }
             "e" => {
                 tokens.next()?;
+                tracing::debug!("Constant: e");
                 Some(std::f32::consts::E)
             }
 
@@ -220,7 +239,11 @@ fn eval_fn<'h>(
     vars: &mut impl MapIndexable,
     is_degrees: bool,
 ) -> Option<f32> {
-    tokens.next()?; // pop function name
+    let name = tokens.next()?;
+    let name = name.as_str();
+    let span = tracing::debug_span!("eval-fn");
+    let _guard = span.enter();
+    tracing::debug!(target: DB_MATH, "evaluating function '{}'", name);
 
     if let Some(t) = tokens.peek()
         && t.as_str() == "("

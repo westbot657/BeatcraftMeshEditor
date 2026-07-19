@@ -1041,7 +1041,7 @@ impl App {
     pub fn new(cc: &eframe::CreationContext, path: Option<PathBuf>) -> Self {
         let span = tracing::span!(Level::DEBUG, "init");
         let _guard = span.enter();
-        tracing::debug!(target: DB_MAIN, "Initializing...");
+        tracing::info!(target: DB_MAIN, "Initializing...");
         let minecraft_font: bool = cc.egui_ctx.memory_mut(|m| m.data.get_persisted("use_minecraft_font".into()).unwrap_or(true));
         tracing::debug!(target: DB_LOGIC, "Use Minecraft font: {minecraft_font}");
         if minecraft_font {
@@ -1053,9 +1053,9 @@ impl App {
         let gl = Arc::clone(cc.gl.as_ref().expect("GL context not found"));
 
         let renderer = unsafe { gl.get_parameter_string(glow::RENDERER) };
-        tracing::debug!(target: DB_RENDER, "GL Renderer: {renderer}");
+        tracing::info!(target: DB_RENDER, "GL Renderer: {renderer}");
         let version = gl.version();
-        tracing::debug!(target: DB_RENDER, "GL version: {version:?}");
+        tracing::info!(target: DB_RENDER, "GL version: {version:?}");
 
 
         let gl2 = Arc::clone(&gl);
@@ -1155,7 +1155,7 @@ impl App {
             let _ = s.load_meshes(add, &gl2);
         }
 
-        tracing::debug!(target: DB_MAIN, "Initialized.");
+        tracing::info!(target: DB_MAIN, "Initialized.");
         s
     }
 
@@ -2397,7 +2397,7 @@ impl App {
         Ok(())
     }
 
-    fn save_session(&mut self) -> anyhow::Result<()> {
+    pub fn save_session(&mut self) -> anyhow::Result<()> {
         let mut meshes = IndexMap::new();
 
         for (id, view) in self.view.meshes.iter().filter_map(|(i, x)| x.as_ref().map(|v| (i, v))) {

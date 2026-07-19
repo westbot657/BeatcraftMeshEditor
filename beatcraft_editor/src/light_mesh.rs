@@ -9,7 +9,7 @@ use glam::{FloatExt, Mat4, Quat, Vec2, Vec3};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 
-use crate::RefDuper;
+use crate::{DB_DATA, DB_MATH, RefDuper};
 use crate::data::{
     BillboardData, ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, MeshType, NormalId, PartData, PlacementData, ShaderSettingsData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId
 };
@@ -290,8 +290,11 @@ impl From<Vec<TriangleEntry>> for Triangles {
 
 impl From<Triangles> for Vec<TriangleEntry> {
     fn from(value: Triangles) -> Self {
+        let span = tracing::debug_span!("mesh-optimizer");
+        let _guard = span.enter();
         let mut sections = IndexMap::new();
 
+        tracing::debug!(target: DB_DATA, ?value, "Starting with {} triangles", value.0.len());
         // Data size optimization loop
         for Triangle {
             vertices:
@@ -414,6 +417,8 @@ impl From<Triangles> for Vec<TriangleEntry> {
             }
         }
 
+        tracing::debug!(target: DB_DATA, ?sections, "Optimized to {} sections", sections.len());
+
         // Final data packing
         let mut entries = Vec::new();
         let mut current = (UvId::Index(0), NormalId::Index(0));
@@ -440,7 +445,7 @@ impl From<Triangles> for Vec<TriangleEntry> {
                 entries.push(TriangleEntry::Triangle(tri));
             }
         }
-
+        tracing::debug!(target: DB_DATA, ?entries, "Packed to {} entries", entries.len());
         entries
     }
 }
@@ -532,12 +537,24 @@ impl From<HashableVec3> for Vec3 {
 
 impl ComputeVertex {
     pub(crate) fn compute(&self, part: &Part) -> anyhow::Result<Vec3> {
+        let span = tracing::debug_span!("compute-vertex");
+        let _guard = span.enter();
+
+        tracing::debug!(target: DB_MATH, "Interpolating between: {} and {}", self.points[0], self.points[1]);
         let a = part.resolve_vertex(&self.points[0])?;
         let b = part.resolve_vertex(&self.points[1])?;
-
-        let dt = self.delta.unwrap_or(0.);
-        let dt = self.function.apply(dt);
+        tracing::debug!(target: DB_MATH, "Concrete positions: {} and {}", a, b);
+        let dt0 = self.delta.unwrap_or(0.);
+        let dt = self.function.apply(dt0);
         let mut c = a.lerp(b, dt);
+        tracing::debug!(
+            target: DB_MATH,
+            raw_dt=dt0, dt, ?c,
+            "Interpolating by xyz: [{}, {}, {}]",
+            self.x.as_ref().map(ToString::to_string).unwrap_or("--".to_string()),
+            self.y.as_ref().map(ToString::to_string).unwrap_or("--".to_string()),
+            self.z.as_ref().map(ToString::to_string).unwrap_or("--".to_string()),
+        );
 
         let delta = b - a;
         let vx = if delta.x == 0. { 0. } else { delta.x.signum() };
@@ -574,6 +591,7 @@ impl ComputeVertex {
                 c.y = a.y.lerp(b.y, dz);
             }
         }
+        tracing::debug!(target: DB_MATH, "Final position: {c}");
         Ok(c)
     }
 }
@@ -796,6 +814,8 @@ impl Part {
     }
 
     pub fn dedupe_data(&mut self) {
+        let span = tracing::debug_span!("dedupe-mesh-data");
+        let _guard = span.enter();
         let mut v_index_remap = HashMap::new();
         let mut v_index_updated = Vec::new();
         let mut v_index_backmap = HashMap::new();
@@ -823,11 +843,12 @@ impl Part {
         let mut n_comp_updated = IndexMap::new();
         let mut n_comp_backmap = HashMap::new();
 
+        let x = self.vertices.indexed.len();
         for (i, v) in self.vertices.indexed.iter().enumerate() {
             let h: HashableVec3 = (*v).into();
             match v_index_remap.entry(h) {
                 hash_map::Entry::Vacant(e) => {
-                    v_index_updated.push(v);
+                    v_index_updated.push(*v);
                     e.insert(v_index_updated.len() - 1);
                 }
                 hash_map::Entry::Occupied(e) => {
@@ -835,11 +856,15 @@ impl Part {
                 }
             }
         }
+        let y = v_index_updated.len();
+        tracing::debug!(target: DB_DATA, "Indexed vertices: {} -> {} ({:+})", x, y, y-x);
+
+        let x = self.vertices.named.len();
         for (k, v) in self.vertices.named.iter() {
             let h: HashableVec3 = (*v).into();
             match v_named_remap.entry(h) {
                 hash_map::Entry::Vacant(e) => {
-                    v_named_updated.insert(k.clone(), v);
+                    v_named_updated.insert(k.clone(), *v);
                     e.insert(k.clone());
                 }
                 hash_map::Entry::Occupied(e) => {
@@ -847,10 +872,14 @@ impl Part {
                 }
             }
         }
+        let y = v_named_updated.len();
+        tracing::debug!(target: DB_DATA, "Named vertices: {} -> {} ({:+})", x, y, y-x);
+
+        let x = self.vertices.compute.len();
         for (k, v) in self.vertices.compute.iter() {
             match v_comp_remap.entry(v) {
                 hash_map::Entry::Vacant(e) => {
-                    v_comp_updated.insert(k.clone(), v);
+                    v_comp_updated.insert(k.clone(), v.clone());
                     e.insert(k.clone());
                 }
                 hash_map::Entry::Occupied(e) => {
@@ -858,12 +887,15 @@ impl Part {
                 }
             }
         }
+        let y = v_comp_updated.len();
+        tracing::debug!(target: DB_DATA, "Compute vertices: {} -> {} ({:+})", x, y, y-x);
 
+        let x = self.uvs.indexed.len();
         for (i, v) in self.uvs.indexed.iter().enumerate() {
             let h: HashableVec2 = (*v).into();
             match u_index_remap.entry(h) {
                 hash_map::Entry::Vacant(e) => {
-                    u_index_updated.push(v);
+                    u_index_updated.push(*v);
                     e.insert(u_index_updated.len() - 1);
                 }
                 hash_map::Entry::Occupied(e) => {
@@ -871,11 +903,15 @@ impl Part {
                 }
             }
         }
+        let y = u_index_updated.len();
+        tracing::debug!(target: DB_DATA, "Indexed UVs: {} -> {} ({:+})", x, y, y-x);
+
+        let x = self.uvs.named.len();
         for (k, v) in self.uvs.named.iter() {
             let h: HashableVec2 = (*v).into();
             match u_named_remap.entry(h) {
                 hash_map::Entry::Vacant(e) => {
-                    u_named_updated.insert(k.clone(), v);
+                    u_named_updated.insert(k.clone(), *v);
                     e.insert(k.clone());
                 }
                 hash_map::Entry::Occupied(e) => {
@@ -883,12 +919,15 @@ impl Part {
                 }
             }
         }
+        let y = u_named_updated.len();
+        tracing::debug!(target: DB_DATA, "Named UVs: {} -> {} ({:+})", x, y, y-x);
 
+        let x = self.normals.indexed.len();
         for (i, v) in self.normals.indexed.iter().enumerate() {
             let h: HashableVec3 = (*v).into();
             match n_index_remap.entry(h) {
                 hash_map::Entry::Vacant(e) => {
-                    n_index_updated.push(v);
+                    n_index_updated.push(*v);
                     e.insert(n_index_updated.len() - 1);
                 }
                 hash_map::Entry::Occupied(e) => {
@@ -896,11 +935,15 @@ impl Part {
                 }
             }
         }
+        let y = n_index_updated.len();
+        tracing::debug!(target: DB_DATA, "Indexed normals: {} -> {} ({:+})", x, y, y-x);
+
+        let x = self.normals.named.len();
         for (k, v) in self.normals.named.iter() {
             let h: HashableVec3 = (*v).into();
             match n_named_remap.entry(h) {
                 hash_map::Entry::Vacant(e) => {
-                    n_named_updated.insert(k.clone(), v);
+                    n_named_updated.insert(k.clone(), *v);
                     e.insert(k.clone());
                 }
                 hash_map::Entry::Occupied(e) => {
@@ -908,10 +951,14 @@ impl Part {
                 }
             }
         }
+        let y = n_named_updated.len();
+        tracing::debug!(target: DB_DATA, "Named normals: {} -> {} ({:+})", x, y, y-x);
+
+        let x = self.normals.compute.len();
         for (k, v) in self.normals.compute.iter() {
             match n_comp_remap.entry(v) {
                 hash_map::Entry::Vacant(e) => {
-                    n_comp_updated.insert(k.clone(), v);
+                    n_comp_updated.insert(k.clone(), v.clone());
                     e.insert(k.clone());
                 }
                 hash_map::Entry::Occupied(e) => {
@@ -919,6 +966,8 @@ impl Part {
                 }
             }
         }
+        let y = n_comp_updated.len();
+        tracing::debug!(target: DB_DATA, "Compute normals: {} -> {} ({:+})", x, y, y-x);
 
         for tri in self.triangles.0.iter_mut() {
             tri.remap(
@@ -932,6 +981,18 @@ impl Part {
                 &n_comp_backmap,
             );
         }
+
+        std::mem::swap(&mut self.vertices.indexed, &mut v_index_updated);
+        std::mem::swap(&mut self.vertices.named, &mut v_named_updated);
+        std::mem::swap(&mut self.vertices.compute, &mut v_comp_updated);
+
+        std::mem::swap(&mut self.uvs.indexed, &mut u_index_updated);
+        std::mem::swap(&mut self.uvs.named, &mut u_named_updated);
+
+        std::mem::swap(&mut self.normals.indexed, &mut n_index_updated);
+        std::mem::swap(&mut self.normals.named, &mut n_named_updated);
+        std::mem::swap(&mut self.normals.compute, &mut n_comp_updated);
+
     }
 
     /// Iterates over triangles where all 3 vertices of the triangle are in `ids`

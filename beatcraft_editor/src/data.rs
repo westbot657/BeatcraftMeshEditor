@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::ops::Not;
 use std::path::PathBuf;
 
@@ -16,6 +17,15 @@ pub enum VertexId {
     Named(String),
 }
 
+impl Display for VertexId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VertexId::Index(i) => i.fmt(f),
+            VertexId::Named(n) => n.fmt(f),
+        }
+    }
+}
+
 impl AsRef<VertexId> for VertexId {
     fn as_ref(&self) -> &VertexId {
         self
@@ -29,6 +39,15 @@ pub enum UvId {
     Named(String),
 }
 
+impl Display for UvId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UvId::Index(i) => i.fmt(f),
+            UvId::Named(n) => n.fmt(f),
+        }
+    }
+}
+
 impl AsRef<UvId> for UvId {
     fn as_ref(&self) -> &UvId {
         self
@@ -40,6 +59,15 @@ impl AsRef<UvId> for UvId {
 pub enum NormalId {
     Index(usize),
     Named(String),
+}
+
+impl Display for NormalId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NormalId::Index(i) => i.fmt(f),
+            NormalId::Named(n) => n.fmt(f),
+        }
+    }
 }
 
 impl AsRef<NormalId> for NormalId {

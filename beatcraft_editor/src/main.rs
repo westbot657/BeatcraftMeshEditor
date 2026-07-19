@@ -26,7 +26,7 @@ use std::sync::{Arc, mpsc};
 
 use clap::Parser;
 use eframe::glow::{self, HasContext};
-use egui::{Align2, Color32, Frame, ImageSource, Layout, Pos2, Sense, Ui, response};
+use egui::{Align2, Color32, Frame, ImageSource, Layout, Pos2, Sense, Ui};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
@@ -59,9 +59,11 @@ pub mod config;
 // Logging targets
 pub static DB_LOGIC: &str = "logic";
 pub static DB_RENDER: &str = "render";
+pub static DB_AUDIO: &str = "audio";
+pub static DB_DATA: &str = "data";
 pub static DB_HISTORY: &str = "history";
 pub static DB_MATH: &str = "math";
-pub static DB_MAIN: &str = "main";
+pub static DB_MAIN: &str = "editor";
 
 pub static SMALL_X: &str = "×";
 pub static R_ARROW: &str = "▶";
@@ -470,6 +472,7 @@ impl App {
                 ui.menu_button("File", |ui| {
                     if ui.button("Create new\u{2026}       \u{2502}").clicked() && !self.block_input()
                     {
+                        tracing::debug!(target: DB_LOGIC, "Spawning thread for environment creation");
                         let (sx, rx) = mpsc::channel();
                         self.state.ui.create_environment_channel = Some(rx);
                         std::thread::spawn(move || {
@@ -478,6 +481,7 @@ impl App {
                                 .set_file_name("env")
                                 .add_filter("json", &["json"])
                                 .save_file() else {
+                                    tracing::debug!(target: DB_LOGIC, "Cenceled environment creation");
                                     return; // Cancel
                                 };
                             let Some(session_path) = rfd::FileDialog::new()
@@ -485,14 +489,17 @@ impl App {
                                 .set_file_name("my_env")
                                 .add_filter("json", &["json"])
                                 .save_file() else {
+                                    tracing::debug!(target: DB_LOGIC, "Cenceled environment creation");
                                     return; // Cancel
                                 };
 
+                            tracing::debug!(target: DB_LOGIC, ?env_path, ?session_path, "Sending CreateEnv event");
                             let _ = sx.send(editor::CreateEnv { env_path, session_path });
                         });
                     }
                     if ui.button("Open environment\u{2026} \u{2502}").clicked() && !self.block_input()
                     {
+                        tracing::debug!(target: DB_LOGIC, "Spawning thread for opening environment");
                         let (sx, rx) = mpsc::channel();
                         self.state.ui.open_session_channel = Some(rx);
                         std::thread::spawn(move || {
@@ -501,12 +508,14 @@ impl App {
                                 .add_filter("json", &["json"])
                                 .pick_file()
                             {
+                                tracing::debug!(target: DB_LOGIC, ?session, "Sending environment open event");
                                 let _ = sx.send(session);
                             }
                         });
                     }
                     if ui.button("Open\u{2026}             \u{2502}").clicked() && !self.block_input()
                     {
+                        tracing::debug!(target: DB_LOGIC, "Spawning thread for opening meshes");
                         let (sx, rx) = mpsc::channel();
                         self.state.ui.open_mesh_channel = Some(rx);
                         std::thread::spawn(move || {
@@ -515,6 +524,7 @@ impl App {
                                 .add_filter("json", &["json"])
                                 .pick_files()
                             {
+                                tracing::debug!(target: DB_LOGIC, ?meshes, "Sending mesh open event");
                                 let _ = sx.send(meshes);
                             }
                         });
@@ -524,9 +534,11 @@ impl App {
                             editor::EditorMode::View => {}
                             editor::EditorMode::Assembly | editor::EditorMode::Edit => {}
                         }
+                        let _ = self.save_session();
                         ui.close();
                     }
                     if ui.button("Menu              \u{2502}").clicked() {
+                        tracing::debug!(target: DB_LOGIC, "Closing current environment and returning to menu");
                         self.context = editor::EditorContext::None;
                         let gl = Arc::clone(&self.state.gl);
                         close_environment(self, &gl);
@@ -557,8 +569,10 @@ impl App {
                     ui.checkbox(&mut minecraft_font, "Minecraft Font");
                     if old != minecraft_font {
                         if minecraft_font {
+                            tracing::debug!(target: DB_LOGIC, "Enabling Minecraft font");
                             setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], ctx);
                         } else {
+                            tracing::debug!(target: DB_LOGIC, "Enabling SOurce Code font");
                             setup_fonts(&[SOURCE_CODE_F, MINECRAFT_F], ctx);
                         }
                         ui.memory_mut(|m| m.data.insert_persisted("use_minecraft_font".into(), minecraft_font));
@@ -4436,7 +4450,9 @@ fn build_env_filter(debug: bool) -> EnvFilter {
             .add_directive(format!("{DB_LOGIC}=debug").parse().unwrap())
             .add_directive(format!("{DB_MAIN}=debug").parse().unwrap())
             .add_directive(format!("{DB_MATH}=debug").parse().unwrap())
+            .add_directive(format!("{DB_DATA}=debug").parse().unwrap())
             .add_directive(format!("{DB_RENDER}=debug").parse().unwrap())
+            .add_directive(format!("{DB_AUDIO}=debug").parse().unwrap())
             .add_directive(format!("{DB_HISTORY}=debug").parse().unwrap())
     } else {
         EnvFilter::try_from_env("BEATCRAFT_LOG").unwrap_or_else(|_| EnvFilter::new("info"))

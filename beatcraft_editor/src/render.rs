@@ -6,7 +6,7 @@ use eframe::glow::{self, HasContext, NativeProgram, SHADER_STORAGE_BUFFER};
 use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 
-use crate::{RefDuper, data};
+use crate::{DB_RENDER, RefDuper, data};
 use crate::data::{MaterialData, MaterialType, ShaderSettingsData};
 use crate::light_mesh::{LightMesh, Part, Triangle, Vertex};
 
@@ -20,7 +20,7 @@ pub static LIGHT_COLORS: [Vec4; 8] = [
 ];
 
 #[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceData {
     pub clipping_plane: Vec4,
     pub model: Mat4,
@@ -38,14 +38,14 @@ impl InstanceData {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, PartialEq)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, PartialEq)]
 pub struct BillboardDesc {
     pub origin: Vec4,
     pub axis: Vec4,
     pub normal_lock: Vec4,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct MeshDrawCall<'a> {
     pub mesh: &'a GpuMesh,
     pub instances: Vec<InstanceData>,
@@ -57,12 +57,14 @@ pub struct MeshDrawCall<'a> {
     pub mirror: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct PointDrawCall<'a> {
     pub mesh: &'a GpuMesh,
     pub instances: Vec<InstanceData>,
     pub size: f32,
 }
 
+#[derive(Debug, Clone)]
 pub struct HandleDrawCall<'a> {
     pub mesh: &'a GpuMesh,
     pub instances: Vec<InstanceData>,
@@ -88,6 +90,7 @@ impl GpuMesh {
     fn setup_instance_attribs(gl: &glow::Context) -> glow::NativeBuffer {
         unsafe {
             let vbo = gl.create_buffer().unwrap();
+            tracing::debug!(target: DB_RENDER, "Created new point instance VBO '{}'", vbo.0);
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
 
             let stride = std::mem::size_of::<InstanceData>() as i32;
@@ -99,12 +102,12 @@ impl GpuMesh {
                 gl.vertex_attrib_divisor(col, 1);
                 offset += 16;
             }
-
             vbo
         }
     }
 
     fn upload_instances(gl: &glow::Context, vbo: glow::NativeBuffer, instances: &[InstanceData]) {
+        tracing::trace!(target: DB_RENDER, ?vbo, ?instances, "Uploading mesh instances");
         unsafe {
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
             gl.buffer_data_u8_slice(
@@ -124,10 +127,13 @@ impl GpuMesh {
         point_positions: &[Vec3],
         billboard_data: &[BillboardDesc],
     ) {
+        let span = tracing::trace_span!("mesh-rebuild");
+        let _guard = span.enter();
         assert!(billboard_data.len() < 16, "Billboard data can only have up to 15 elements.");
         self.vertex_count = position_us.len();
         self.point_count = point_positions.len();
 
+        tracing::trace!(target: DB_RENDER, ?position_us, ?normal_vs, ?material_data, ?point_positions, ?billboard_data, "Rebuilding mesh");
         let pos_u: &[u8] = bytemuck::cast_slice(position_us);
         let norm_v: &[u8] = bytemuck::cast_slice(normal_vs);
         let mats: &[u8] = bytemuck::cast_slice(material_data);
@@ -152,6 +158,7 @@ impl GpuMesh {
                     let ssbo = gl.create_buffer().unwrap();
                     gl.bind_buffer(glow::SHADER_STORAGE_BUFFER, Some(ssbo));
                     gl.bind_buffer_base(glow::SHADER_STORAGE_BUFFER, 0, Some(ssbo));
+                    tracing::debug!(target: DB_RENDER, "Created new SSBO '{}'", ssbo.0);
                     ssbo
                 });
                 gl.bind_buffer(glow::SHADER_STORAGE_BUFFER, Some(ssbo));
@@ -170,9 +177,12 @@ impl GpuMesh {
         point_positions: &[Vec3],
         billboard_data: &[BillboardDesc],
     ) -> Self {
+        let span = tracing::debug_span!("new-mesh");
+        let _guard = span.enter();
         assert!(billboard_data.len() < 16, "Billboard data can only have up to 15 elements.");
         unsafe {
             let vao = gl.create_vertex_array().unwrap();
+            tracing::debug!(target: DB_RENDER, "Created new VAO '{}'", vao.0);
             gl.bind_vertex_array(Some(vao));
             let vbos = [
                 {
@@ -180,6 +190,7 @@ impl GpuMesh {
                     gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
                     gl.enable_vertex_attrib_array(0);
                     gl.vertex_attrib_pointer_f32(0, 4, glow::FLOAT, false, 0, 0);
+                    tracing::debug!(target: DB_RENDER, "Created new position/u VBO '{}'", vbo.0);
                     vbo
                 },
                 {
@@ -187,6 +198,7 @@ impl GpuMesh {
                     gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
                     gl.enable_vertex_attrib_array(1);
                     gl.vertex_attrib_pointer_f32(1, 4, glow::FLOAT, false, 0, 0);
+                    tracing::debug!(target: DB_RENDER, "Created new normal/v VBO '{}'", vbo.0);
                     vbo
                 },
                 {
@@ -194,12 +206,14 @@ impl GpuMesh {
                     gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
                     gl.enable_vertex_attrib_array(2);
                     gl.vertex_attrib_pointer_i32(2, 3, glow::INT, 0, 0);
+                    tracing::debug!(target: DB_RENDER, "Created new material VBO '{}'", vbo.0);
                     vbo
                 },
             ];
             let instance_vbo = Self::setup_instance_attribs(gl);
 
             let billboard_ssbo = if billboard_data.is_empty() {
+                tracing::debug!(target: DB_RENDER, "No billboard SSBO needed");
                 None
             } else {
                 let ssbo = gl.create_buffer().unwrap();
@@ -207,18 +221,21 @@ impl GpuMesh {
                 gl.buffer_data_u8_slice(SHADER_STORAGE_BUFFER, bytemuck::cast_slice(billboard_data), glow::STATIC_DRAW);
                 gl.bind_buffer_base(SHADER_STORAGE_BUFFER, 0, Some(ssbo));
                 gl.bind_buffer(SHADER_STORAGE_BUFFER, None);
+                tracing::debug!(target: DB_RENDER, "Created new billboard SSBO '{}'", ssbo.0);
                 Some(ssbo)
             };
 
             gl.bind_vertex_array(None);
 
             let point_vao = gl.create_vertex_array().unwrap();
+            tracing::debug!(target: DB_RENDER, "Created new point VAO '{}'", point_vao.0);
             gl.bind_vertex_array(Some(point_vao));
             let point_vbo = {
                 let vbo = gl.create_buffer().unwrap();
                 gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
                 gl.enable_vertex_attrib_array(0);
                 gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
+                tracing::debug!(target: DB_RENDER, "Created new point VBO '{}'", vbo.0);
                 vbo
             };
             let point_instance_vbo = Self::setup_instance_attribs(gl);
@@ -650,6 +667,9 @@ impl data::SpectrogramData {
     pub fn generate(&self, gl: &glow::Context, vm: &mut GpuMesh) {
         // NOTE: update to a match block when more styles get added.
 
+        let span = tracing::debug_span!(target: DB_RENDER, "generate-spectrogram");
+        let _guard = span.enter();
+
         let v = [
             self.rotation * Vec3::new(-0.5, 0., -0.5),
             self.rotation * Vec3::new(-0.5, 0.,  0.5),
@@ -690,7 +710,8 @@ impl data::SpectrogramData {
             norms.extend_from_slice(&normals);
         }
 
-        if let Some(plane) = self.mirror {
+
+        let tower_multiplier = if let Some(plane) = self.mirror {
             let mn = plane.xyz().normalize();
             let d = plane.w;
 
@@ -716,8 +737,10 @@ impl data::SpectrogramData {
                 geo.extend_from_slice(&tower);
                 norms.extend_from_slice(&mirror_normals);
             }
+            2
+        } else { 1 };
 
-        }
+        tracing::trace!(target: DB_RENDER, ?geo, ?norms, "Constructed {} towers", self.count * tower_multiplier);
 
         let mats = vec![IVec3::new(0, 0, 1 << 31); geo.len()];
 
@@ -801,33 +824,41 @@ impl Renderer {
 
     pub fn new(gl: &glow::Context) -> Result<Self, String> {
         unsafe {
+            let span = tracing::debug_span!("render-setup");
+            let _guard = span.enter();
+            tracing::debug!(target: DB_RENDER, "Compiling mesh shader");
             let mesh = Self::compile_shader(
                 gl,
                 include_str!("./assets/shaders/mesh.vert"),
                 include_str!("./assets/shaders/mesh.frag"),
             )?;
+            tracing::debug!(target: DB_RENDER, "Compiling mirror shader");
             let mirror = Self::compile_shader(
                 gl,
                 include_str!("./assets/shaders/mirror.vert"),
                 include_str!("./assets/shaders/mirror.frag")
             )?;
+            tracing::debug!(target: DB_RENDER, "Compiling point shader");
             let point = Self::compile_shader(
                 gl,
                 include_str!("./assets/shaders/point.vert"),
                 include_str!("./assets/shaders/point.frag"),
             )?;
+            tracing::debug!(target: DB_RENDER, "Compiling grid shader");
             let grid = Self::compile_shader(
                 gl,
                 include_str!("./assets/shaders/grid.vert"),
                 include_str!("./assets/shaders/grid.frag"),
             )?;
 
+            tracing::debug!(target: DB_RENDER, "Compiling handles shader");
             let handles = Self::compile_shader(
                 gl,
                 include_str!("./assets/shaders/handles.vert"),
                 include_str!("./assets/shaders/handles.frag"),
             )?;
 
+            tracing::debug!(target: DB_RENDER, "Compiling handle points shader");
             let handle_points = Self::compile_shader(
                 gl,
                 include_str!("./assets/shaders/handle_points.vert"),
@@ -838,6 +869,7 @@ impl Renderer {
 
             gl.enable(glow::PROGRAM_POINT_SIZE);
 
+            tracing::debug!(target: DB_RENDER, "Uploading blue noise texture to GPU");
             let blue_noise = {
                 let bn =
                     image::load_from_memory(include_bytes!("assets/textures/noise/blue_noise.png"))
@@ -878,6 +910,7 @@ impl Renderer {
                 tex
             };
 
+            tracing::debug!(target: DB_RENDER, "Uploading missing texture to GPU");
             let missing_texture = {
                 let img = image::load_from_memory(MISSING_TEXTURE_BYTES)
                     .unwrap()
@@ -930,6 +963,8 @@ impl Renderer {
     }
 
     pub fn rebuild_atlases(&mut self, gl: &glow::Context) {
+        let span = tracing::debug_span!("atlas-rebuild");
+        let _guard = span.enter();
         const ATLAS_SIZE: u32 = 1024;
 
         unsafe {
@@ -947,6 +982,8 @@ impl Renderer {
         let mut unique_paths: Vec<PathBuf> = self.texture_paths.values().cloned().collect();
         unique_paths.sort();
         unique_paths.dedup();
+
+        tracing::debug!(target: DB_RENDER, ?unique_paths, "Generating atlas for textures");
 
         for path in &unique_paths {
             let img = image::open(path)
@@ -989,6 +1026,7 @@ impl Renderer {
             shelf_h = shelf_h.max(h);
         }
 
+        tracing::debug!(target: DB_RENDER, "Uploading atlas to GPU");
         unsafe {
             let tex = gl.create_texture().unwrap();
             gl.bind_texture(glow::TEXTURE_2D, Some(tex));
@@ -1230,11 +1268,15 @@ struct RenderTarget {
 
 impl RenderTarget {
     pub fn new(gl: &glow::Context, width: i32, height: i32) -> Self {
+        let span = tracing::debug_span!("rt-new");
+        let _guard = span.enter();
         unsafe {
             let fbo = gl.create_framebuffer().unwrap();
+            tracing::debug!(target: DB_RENDER, "Created new FBO '{}'", fbo.0);
             gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
 
             let color = gl.create_texture().unwrap();
+            tracing::debug!(target: DB_RENDER, "Created color texture '{}'", color.0);
             gl.bind_texture(glow::TEXTURE_2D, Some(color));
             gl.tex_image_2d(
                 glow::TEXTURE_2D, 0,
@@ -1253,6 +1295,7 @@ impl RenderTarget {
             );
 
             let depth = gl.create_texture().unwrap();
+            tracing::debug!(target: DB_RENDER, "Created depth texture '{}'", depth.0);
             gl.bind_texture(glow::TEXTURE_2D, Some(depth));
             gl.tex_image_2d(
                 glow::TEXTURE_2D, 0,
@@ -1356,33 +1399,48 @@ enum PassType {
 
 impl BloomfogRenderer {
     pub fn new(gl: &glow::Context) -> Result<Self, String> {
+        let span = tracing::debug_span!("vfx-setup");
+        let _guard = span.enter();
 
         let blur_vsh = include_str!("assets/shaders/core/bloomfog_blur.vsh");
 
+        tracing::debug!(target: DB_RENDER, "Compiling blur downsample shader");
         let blur_down = Renderer::compile_shader(gl,
             blur_vsh,
             include_str!("assets/shaders/core/bloomfog_downsample.fsh")
         )?;
+
+        tracing::debug!(target: DB_RENDER, "Compiling blur upsample shader");
         let blur_up = Renderer::compile_shader(gl,
             blur_vsh,
             include_str!("assets/shaders/core/bloomfog_upsample.fsh")
         )?;
+
+        tracing::debug!(target: DB_RENDER, "Compiling gaussian vertical shader");
         let gaussian_v = Renderer::compile_shader(gl,
             blur_vsh,
             include_str!("assets/shaders/core/gaussian_v.fsh")
         )?;
+
+        tracing::debug!(target: DB_RENDER, "Compiling gaussian horizontal shader");
         let gaussian_h = Renderer::compile_shader(gl,
             blur_vsh,
             include_str!("assets/shaders/core/gaussian_h.fsh")
         )?;
+
+        tracing::debug!(target: DB_RENDER, "Compiling blue noise shader");
         let blue_noise = Renderer::compile_shader(gl,
             blur_vsh,
             include_str!("assets/shaders/core/blue_noise.fsh")
         )?;
+
+        tracing::debug!(target: DB_RENDER, "Compiling blit shader");
         let blit = Renderer::compile_shader(gl,
             include_str!("assets/shaders/core/beatcraft_blit.vsh"),
             include_str!("assets/shaders/core/beatcraft_blit.fsh")
         )?;
+
+        tracing::debug!(target: DB_RENDER, "Compiling composite shader");
         let comp = Renderer::compile_shader(gl,
             blur_vsh,
             include_str!("assets/shaders/core/composite.fsh")
