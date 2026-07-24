@@ -824,7 +824,7 @@ impl Renderer {
 
     pub fn new(gl: &glow::Context) -> Result<Self, String> {
         unsafe {
-            let span = tracing::debug_span!("render-setup");
+            let span = tracing::debug_span!("renderer");
             let _guard = span.enter();
             tracing::debug!(target: DB_RENDER, "Compiling mesh shader");
             let mesh = Self::compile_shader(
@@ -1399,7 +1399,7 @@ enum PassType {
 
 impl BloomfogRenderer {
     pub fn new(gl: &glow::Context) -> Result<Self, String> {
-        let span = tracing::debug_span!("vfx-setup");
+        let span = tracing::debug_span!("vfx");
         let _guard = span.enter();
 
         let blur_vsh = include_str!("assets/shaders/core/bloomfog_blur.vsh");

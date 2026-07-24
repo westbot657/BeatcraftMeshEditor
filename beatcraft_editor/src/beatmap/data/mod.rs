@@ -1,528 +1,640 @@
-#![allow(non_snake_case)]
 
-use std::ops::{Deref, Not};
-
-use glam::{Quat, Vec2, Vec3, Vec4};
-use num_traits::{ConstOne, ConstZero};
 use serde::{Deserialize, Serialize};
 
 use crate::easing::Easing;
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
-#[serde(untagged)]
+// Color notes
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
+#[serde(try_from = "u8", into = "u8")]
 pub enum Color {
-    V4(Vec4),
-    V3(Vec3),
+    Red = 0,
+    Blue = 1,
 }
 
-#[inline]
-fn is_zero<T: PartialEq + ConstZero>(t: &T) -> bool {
-    *t == T::ZERO
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum CutDirection {
+    Up        = 0,
+    Down      = 1,
+    Left      = 2,
+    Right     = 3,
+    UpLeft    = 4,
+    UpRight   = 5,
+    DownLeft  = 6,
+    DownRight = 7,
+    Dot       = 8,
 }
 
-#[inline]
-fn is_one<T: PartialEq + ConstOne>(t: &T) -> bool {
-    *t == T::ONE
+#[derive(Serialize, Deserialize)]
+pub struct ColorNoteV2 {
+    #[serde(rename = "_time")]
+    pub time: f32,
+    #[serde(rename = "_lineIndex")]
+    pub line_index: f32,
+    #[serde(rename = "_lineLayer")]
+    pub line_layer: f32,
+    #[serde(rename = "_type")]
+    pub typ: Color,
+    #[serde(rename = "_cutDirection")]
+    pub cut_direction: CutDirection,
 }
 
-// V2 --------------------------------------------------------
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum Spline {
-    #[serde(rename = "splineCatmullRom")]
-    SplineCatmullRom
+#[derive(Serialize, Deserialize)]
+pub struct ColorNoteV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "x")]
+    pub line_index: f32,
+    #[serde(rename = "y")]
+    pub line_layer: f32,
+    #[serde(rename = "c")]
+    pub color: Color,
+    #[serde(rename = "d")]
+    pub cut_direction: CutDirection,
+    #[serde(rename = "a")]
+    pub angle_offset: i32,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PointV3InnerV2(
-    f32, f32, f32,  f32,
-    Option<Easing>, Option<Spline>,
-);
-
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(untagged)]
-pub enum PointV3V2 {
-    Value(Vec3),
-    Lookup(String),
-    Inline(Vec<PointV3InnerV2>)
+#[derive(Serialize, Deserialize)]
+pub struct ColorNoteV4 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "r")]
+    pub rotation_lane: i32,
+    #[serde(rename = "i")]
+    pub metadata_index: u32,
+}
+#[derive(Serialize, Deserialize)]
+pub struct ColorNoteDataV4 {
+    #[serde(rename = "x")]
+    pub line_index: f32,
+    #[serde(rename = "y")]
+    pub line_layer: f32,
+    #[serde(rename = "c")]
+    pub color: Color,
+    #[serde(rename = "d")]
+    pub cut_direction: CutDirection,
+    #[serde(rename = "a")]
+    pub angle_offset: i32,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PointFV2();
+// Bomb notes
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PointQV2();
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PointCV2();
-
-macro_rules! deref_to {
-    ( [ $( $typ:path ),* ].$field:tt: $reft:path ) => {
-        $(impl Deref for $typ {
-            type Target = $reft;
-            fn deref(&self) -> &Self::Target {
-                &self.$field
-            }
-        })*
-    };
+#[derive(Serialize, Deserialize)]
+pub struct BombNoteV2 {
+    #[serde(rename = "_time")]
+    pub beat: f32,
+    #[serde(rename = "_lineIndex")]
+    pub line_index: f32,
+    #[serde(rename = "_lineLayer")]
+    pub line_layer: f32,
+    _type: Sentinel<3>,
+    #[serde(rename = "_cutDirection")]
+    pub cut_direction: CutDirection,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct AnimationDataV2 {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _position: Option<PointV3V2>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _rotation: Option<PointQV2>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _localRotation: Option<PointQV2>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _localPosition: Option<PointV3V2>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _definitePosition: Option<PointV3V2>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _scale: Option<PointV3V2>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _dissolve: Option<PointFV2>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _dissolveArrow: Option<PointFV2>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _time: Option<PointFV2>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _color: Option<PointCV2>,
+#[derive(Serialize, Deserialize)]
+pub struct BombNoteV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "x")]
+    pub line_index: f32,
+    #[serde(rename = "y")]
+    pub line_layer: f32,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct CustomDataV2 {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _noteJumpStartBeatOffset: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _noteJumpMovementSpeed: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _rotation: Option<Quat>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _localRotation: Option<Quat>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _coordinates: Option<Vec2>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _position: Option<Vec2>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _track: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _animation: Option<AnimationDataV2>,
+#[derive(Serialize, Deserialize)]
+pub struct BombNoteV4 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "r")]
+    pub rotation_lane: i32,
+    #[serde(rename = "i")]
+    pub metadata_index: u32,
+}
+#[derive(Serialize, Deserialize)]
+pub struct BombNoteDataV4 {
+    #[serde(rename = "x")]
+    pub line_index: f32,
+    #[serde(rename = "y")]
+    pub line_layer: f32,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct BeatmapObjectDataV2 {
-    pub _time: f32,
+// Obstacles
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum ObstacleV2Type {
+    FullHeight = 0,
+    Crouch     = 1,
+    Free       = 2,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct GameplayObjectDataV2 {
-    #[serde(flatten)]
-    obj: BeatmapObjectDataV2,
-    pub _lineIndex: f32,
-    pub _lineLayer: f32,
+#[derive(Serialize, Deserialize)]
+pub struct ObstacleV2 {
+    #[serde(rename = "_type")]
+    pub typ: ObstacleV2Type,
+    #[serde(rename = "_time")]
+    pub beat: f32,
+    #[serde(rename = "_duration")]
+    pub duration: f32,
+    #[serde(rename = "_lineIndex")]
+    pub line_index: f32,
+    #[serde(rename = "_lineLayer")]
+    pub line_layer: f32,
+    #[serde(rename = "_width")]
+    pub width: f32,
+    #[serde(rename = "_height")]
+    pub height: f32,
 }
 
-impl Deref for GameplayObjectDataV2 {
-    type Target = BeatmapObjectDataV2;
-    fn deref(&self) -> &Self::Target {
-        &self.obj
+#[derive(Serialize, Deserialize)]
+pub struct ObstacleV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "d")]
+    pub duration: f32,
+    #[serde(rename = "x")]
+    pub line_index: f32,
+    #[serde(rename = "y")]
+    pub line_layer: f32,
+    #[serde(rename = "w")]
+    pub width: f32,
+    #[serde(rename = "h")]
+    pub height: f32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ObstacleV4 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "r")]
+    pub rotation_lane: f32,
+    #[serde(rename = "i")]
+    pub metadata_index: u32,
+}
+#[derive(Serialize, Deserialize)]
+pub struct ObstacleDataV4 {
+    #[serde(rename = "d")]
+    pub duration: f32,
+    #[serde(rename = "x")]
+    pub line_index: f32,
+    #[serde(rename = "y")]
+    pub line_layer: f32,
+    #[serde(rename = "w")]
+    pub width: f32,
+    #[serde(rename = "h")]
+    pub height: f32,
+}
+
+// Arcs
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum ArcMidAnchorMode {
+    Straight         = 0,
+    Clockwise        = 1,
+    CounterClockwise = 2,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ArcV2 {
+    #[serde(rename = "_colorType")]
+    pub color: Color,
+    #[serde(rename = "_headTime")]
+    pub head_beat: f32,
+    #[serde(rename = "_headLineIndex")]
+    pub head_line_index: f32,
+    #[serde(rename = "_headLineLayer")]
+    pub head_line_layer: f32,
+    #[serde(rename = "_headCutDirection")]
+    pub head_cut_direction: CutDirection,
+    #[serde(rename = "_headControlPointLengthMultiplier")]
+    pub head_ctrl_magnitude: f32,
+    #[serde(rename = "_tailTime")]
+    pub tail_beat: f32,
+    #[serde(rename = "_tailLineIndex")]
+    pub tail_line_index: f32,
+    #[serde(rename = "_tailLineLayer")]
+    pub tail_line_layer: f32,
+    #[serde(rename = "_tailCutDirection")]
+    pub tail_cut_direction: CutDirection,
+    #[serde(rename = "_tailControlPointLengthMultiplier")]
+    pub tail_ctrl_magnitude: f32,
+    #[serde(rename = "_sliderMidAnchorMode")]
+    pub mid_anchor_mode: ArcMidAnchorMode,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ArcV3 {
+    #[serde(rename = "c")]
+    pub color: Color,
+    #[serde(rename = "b")]
+    pub head_beat: f32,
+    #[serde(rename = "x")]
+    pub head_line_index: f32,
+    #[serde(rename = "y")]
+    pub head_line_layer: f32,
+    #[serde(rename = "d")]
+    pub head_cut_direction: CutDirection,
+    #[serde(rename = "mu")]
+    pub head_ctrl_magnitude: f32,
+    #[serde(rename = "tb")]
+    pub tail_beat: f32,
+    #[serde(rename = "tx")]
+    pub tail_line_index: f32,
+    #[serde(rename = "ty")]
+    pub tail_line_layer: f32,
+    #[serde(rename = "tc")]
+    pub tail_cut_direction: CutDirection,
+    #[serde(rename = "tmu")]
+    pub tail_ctrl_magnitude: f32,
+    #[serde(rename = "m")]
+    pub mid_anchor_mode: ArcMidAnchorMode,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ArcV4 {
+    #[serde(rename = "hb")]
+    pub head_beat: f32,
+    #[serde(rename = "tb")]
+    pub tail_beat: f32,
+    #[serde(rename = "hr")]
+    pub head_rotation_lane: f32,
+    #[serde(rename = "tr")]
+    pub tail_rotation_lane: f32,
+    #[serde(rename = "hi")]
+    pub head_note_metadata_index: u32,
+    #[serde(rename = "ti")]
+    pub tail_note_metadata_index: u32,
+    #[serde(rename = "ai")]
+    pub metadata_index: u32,
+}
+#[derive(Serialize, Deserialize)]
+pub struct ArcDataV4 {
+    #[serde(rename = "m")]
+    pub head_ctrl_magnitude: f32,
+    #[serde(rename = "tm")]
+    pub tail_ctrl_magnitude: f32,
+    #[serde(rename = "a")]
+    pub mid_anchor_mode: ArcMidAnchorMode,
+}
+
+// Chains
+
+#[derive(Serialize, Deserialize)]
+pub struct ChainV3 {
+    #[serde(rename = "c")]
+    pub color: Color,
+    #[serde(rename = "b")]
+    pub head_beat: f32,
+    #[serde(rename = "x")]
+    pub head_line_index: f32,
+    #[serde(rename = "y")]
+    pub head_line_layer: f32,
+    #[serde(rename = "d")]
+    pub head_cut_direction: CutDirection,
+    #[serde(rename = "tb")]
+    pub tail_beat: f32,
+    #[serde(rename = "tx")]
+    pub tail_line_index: f32,
+    #[serde(rename = "ty")]
+    pub tail_line_layer: f32,
+    #[serde(rename = "sc")]
+    pub slice_count: u8,
+    #[serde(rename = "s")]
+    pub squish_factor: f32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ChainV4 {
+    #[serde(rename = "hb")]
+    pub head_beat: f32,
+    #[serde(rename = "tb")]
+    pub tail_beat: f32,
+    #[serde(rename = "hr")]
+    pub head_rotation_lane: f32,
+    #[serde(rename = "tr")]
+    pub tail_rotation_lane: f32,
+    #[serde(rename = "i")]
+    pub head_note_metadata_index: u32,
+    #[serde(rename = "ci")]
+    pub metadata_index: u32,
+}
+#[derive(Serialize, Deserialize)]
+pub struct ChainDataV4 {
+    #[serde(rename = "tx")]
+    pub tail_line_index: f32,
+    #[serde(rename = "ty")]
+    pub tail_line_layer: f32,
+    #[serde(rename = "c")]
+    pub slice_count: u8,
+    #[serde(rename = "s")]
+    pub squish_factor: f32,
+}
+
+// Spawn rotations
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum SpawnRotationExecutionTime {
+    Early       = 0,
+    Late        = 1,
+    LegacyEarly = 14,
+    LegacyLate  = 15,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum SpawnRotationAngle {
+    CCW60 = 0,
+    CCW45 = 1,
+    CCW30 = 2,
+    CCW15 = 3,
+    CW15  = 4,
+    CW30  = 5,
+    CW45  = 6,
+    CW60  = 7,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SpawnRotationEventV2 {
+    #[serde(rename = "_time")]
+    pub beat: f32,
+    #[serde(rename = "_type")]
+    pub execution_time: SpawnRotationExecutionTime,
+    #[serde(rename = "_value")]
+    pub rotation_angle: SpawnRotationAngle,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SpawnRotationEventV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "e")]
+    pub execution_time: SpawnRotationExecutionTime,
+    #[serde(rename = "r")]
+    pub magnitude: f32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SpawnRotationEventV4 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "i")]
+    pub metadata_index: u32,
+}
+#[derive(Serialize, Deserialize)]
+pub struct SpawnRotationEventDataV4 {
+    #[serde(rename = "t")]
+    pub execution_time: SpawnRotationExecutionTime,
+    #[serde(rename = "r")]
+    pub magnitude: f32,
+}
+
+// BPM events
+#[derive(Serialize, Deserialize)]
+pub struct BPMEventV2 {
+    #[serde(rename = "_time")]
+    pub beat: f32,
+    #[serde(rename = "_type")]
+    typ: Sentinel<100>,
+    #[serde(rename = "_value")]
+    value: Sentinel<0>,
+    #[serde(rename = "_floatValue")]
+    float_value: f32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct BPMEventV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "m")]
+    pub bpm: f32,
+}
+
+// NJS events
+#[derive(Serialize, Deserialize)]
+pub struct NJSEventV4 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "i")]
+    pub metadata_index: u32,
+}
+#[derive(Serialize, Deserialize)]
+pub struct NJSEventDataV4 {
+    #[serde(rename = "p", with="bool_u8_serde")]
+    pub extend: bool,
+    #[serde(rename = "e", with="easing_as_i8")]
+    pub easing: Easing,
+    #[serde(rename = "d")]
+    pub njs_diff: f32,
+}
+
+// extra helpers
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Sentinel<const N: u8>;
+
+#[derive(thiserror::Error, Debug)]
+pub enum BeatmapDataError {
+    #[error("{val} is not a valid value for {enum_name}")]
+    ToEnum { enum_name: &'static str, val: i32 },
+}
+
+impl TryFrom<u8> for Color {
+    type Error = BeatmapDataError;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0..=1 => unsafe { std::mem::transmute::<u8, Color>(value) },
+            _ => return Err(BeatmapDataError::ToEnum {
+                enum_name: "Color",
+                val: value as i32
+            })
+        })
     }
 }
 
-// Color Note
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct ColorNoteCustomDataV2 {
-    #[serde(flatten)]
-    parent: CustomDataV2,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _color: Option<Color>,
-    #[serde(skip_serializing_if = "Not::not")]
-    pub _disableNoteLook: bool,
-    #[serde(skip_serializing_if = "Not::not")]
-    pub _disableNoteGravity: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct ColorNoteDataV2 {
-    #[serde(flatten)]
-    obj: GameplayObjectDataV2,
-    pub _cutDirection: u32,
-    pub _type: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub _customData: Option<ColorNoteCustomDataV2>,
-}
-
-// Bomb Note
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct BombNoteCustomDataV2 {
-    #[serde(flatten)]
-    parent: CustomDataV2,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub _color: Option<Color>
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct BombNoteDataV2 {
-    #[serde(flatten)]
-    obj: GameplayObjectDataV2,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub _customData: Option<BombNoteCustomDataV2>,
-}
-
-// Obstacle
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(untagged)]
-pub enum CustomObstacleScale {
-    Bounds([f32; 3]),
-    Rect([f32; 2]),
-    Width([f32; 1]),
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct ObstacleCustomDataV2 {
-    #[serde(flatten)]
-    parent: CustomDataV2,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _color: Option<Color>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _scale: Option<CustomObstacleScale>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct ObstacleDataV2 {
-    #[serde(flatten)]
-    obj: BeatmapObjectDataV2,
-    pub _duration: f32,
-    pub _lineIndex: f32,
-    pub _width: f32,
-    pub _type: u32,
-}
-
-impl Deref for ObstacleDataV2 {
-    type Target = BeatmapObjectDataV2;
-    fn deref(&self) -> &Self::Target {
-        &self.obj
-    }
-}
-
-// Arc
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ArcDataV2 {
-    pub _colorType: u32,
-    pub _headTime: f32,
-    pub _headLineIndex: f32,
-    pub _headLineLayer: f32,
-    pub _tailLineIndex: f32,
-    pub _tailLineLayer: f32,
-    pub _headCutDirection: u32,
-    pub _tailCutDirection: u32,
-    pub _headControlPointLengthMultiplier: f32,
-    pub _tailControlPointLengthMultiplier: f32,
-    pub _sliderMidAnchorMode: u32,
-}
-
-// Chain Note does not exist in V2
-
-deref_to! { [
-    ColorNoteDataV2,
-    BombNoteDataV2
-].obj: GameplayObjectDataV2 }
-deref_to! { [
-    ColorNoteCustomDataV2,
-    BombNoteCustomDataV2,
-    ObstacleCustomDataV2
-].parent: CustomDataV2 }
-
-// V3 --------------------------------------------------------
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PointV3V3 {}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PointFV3 {}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PointQV3 {}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PointCV3 {}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct AnimationDataV3 {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub offsetPosition: Option<PointV3V3>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub offsetWorldRotation: Option<PointQV3>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub localRotation: Option<PointQV3>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub localPosition: Option<PointV3V3>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub definitePosition: Option<PointV3V3>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub position: Option<PointQV3>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rotation: Option<PointQV3>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub scale: Option<PointV3V3>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dissolve: Option<PointFV3>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dissolveArrow: Option<PointFV3>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub interactable: Option<PointFV3>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub time: Option<PointFV3>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub color: Option<PointCV3>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct BeatmapObjectDataV3 {
-    #[serde(skip_serializing_if = "is_zero")]
-    pub b: f32,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct GameplayObjectDataV3 {
-    #[serde(flatten)]
-    obj: BeatmapObjectDataV3,
-    #[serde(skip_serializing_if = "is_zero")]
-    pub x: f32,
-    #[serde(skip_serializing_if = "is_zero")]
-    pub y: f32,
-}
-
-impl Deref for GameplayObjectDataV3 {
-    type Target = BeatmapObjectDataV3;
-    fn deref(&self) -> &Self::Target {
-        &self.obj
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct CustomDataV3 {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub noteJumpStartBeatOffset: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub noteJumpMovementSpeed: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub worldRotation: Option<Quat>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub localRotation: Option<Quat>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub coordinates: Option<(Option<f32>, Option<f32>)>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub position: Option<(Option<f32>, Option<f32>)>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub track: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub animation: Option<AnimationDataV3>,
-}
-
-// Color Note
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct ColorNoteCustomDataV3 {
-    #[serde(flatten)]
-    pub parent: CustomDataV3,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub color: Option<Color>,
-    #[serde(skip_serializing_if = "Not::not")]
-    pub disableNoteLook: bool,
-    #[serde(skip_serializing_if = "Not::not")]
-    pub disableNoteGravity: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct ColorNoteDataV3 {
-    #[serde(flatten)]
-    obj: GameplayObjectDataV3,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub customData: Option<ColorNoteCustomDataV3>,
-}
-
-// Bomb Note
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct BombNoteCustomDataV3 {
-    #[serde(flatten)]
-    parent: CustomDataV3,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub color: Option<Color>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct BombNoteDataV3 {
-    #[serde(flatten)]
-    obj: GameplayObjectDataV3,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub customData: Option<BombNoteCustomDataV3>,
-}
-
-// Obstacle
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct ObstacleCustomDataV3 {
-    #[serde(flatten)]
-    parent: CustomDataV3,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub color: Option<Color>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub size: Option<CustomObstacleScale>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(default)]
-pub struct ObstacleDataV3 {
-    parent: BeatmapObjectDataV3,
-    /// duration
-    #[serde(skip_serializing_if = "is_zero")]
-    pub d: f32,
-    #[serde(skip_serializing_if = "is_zero")]
-    pub x: f32,
-    #[serde(skip_serializing_if = "is_zero")]
-    pub y: f32,
-    /// width
-    #[serde(skip_serializing_if = "is_zero")]
-    pub w: f32,
-    /// height
-    #[serde(skip_serializing_if = "is_zero")]
-    pub h: f32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub customData: Option<ObstacleCustomDataV3>,
-}
-
-impl Deref for ObstacleDataV3 {
-    type Target = BeatmapObjectDataV3;
-    fn deref(&self) -> &Self::Target {
-        &self.parent
-    }
-}
-
-
-// Arc
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct ArcDataV3 {
-    /// Note Type
-    #[serde(skip_serializing_if = "is_zero")]
-    pub c: u32,
-    /// Beat
-    #[serde(skip_serializing_if = "is_zero")]
-    pub b: f32,
-    /// Tail Beat
-    #[serde(skip_serializing_if = "is_zero")]
-    pub tb: f32,
-    #[serde(skip_serializing_if = "is_zero")]
-    pub x: f32,
-    #[serde(skip_serializing_if = "is_zero")]
-    pub y: f32,
-    #[serde(skip_serializing_if = "is_zero")]
-    pub tx: f32,
-    #[serde(skip_serializing_if = "is_zero")]
-    pub ty: f32,
-    /// Head Cut Direction
-    #[serde(skip_serializing_if = "is_zero")]
-    pub d: u32,
-    /// Tail Cut Direction
-    #[serde(skip_serializing_if = "is_zero")]
-    pub tc: u32,
-    /// Head Magnitude
-    #[serde(skip_serializing_if = "is_zero")]
-    pub mu: f32,
-    /// Tail Magnitude
-    #[serde(skip_serializing_if = "is_zero")]
-    pub tmu: f32,
-    /// Mid Anchor Mode
-    #[serde(skip_serializing_if = "is_zero")]
-    pub m: u32,
-}
-
-
-// Chain Note
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(default)]
-pub struct ChainNoteDataV3 {
-    #[serde(flatten)]
-    obj: GameplayObjectDataV3,
-    /// Cut Direction
-    #[serde(skip_serializing_if = "is_zero")]
-    pub d: u32,
-    /// Note Type
-    #[serde(skip_serializing_if = "is_zero")]
-    pub c: u32,
-    /// Tail Beat
-    #[serde(skip_serializing_if = "is_zero")]
-    pub tb: f32,
-    /// Tail X
-    #[serde(skip_serializing_if = "is_zero")]
-    pub tx: f32,
-    /// Tail Y
-    #[serde(skip_serializing_if = "is_zero")]
-    pub ty: f32,
-    /// Slice Count
-    #[serde(skip_serializing_if = "is_zero")]
-    pub sc: u32,
-    /// Squish Factor
-    #[serde(skip_serializing_if = "is_one")]
-    pub s: f32,
-}
-
-impl Default for ChainNoteDataV3 {
-    fn default() -> Self {
-        Self {
-            obj: Default::default(),
-            d: Default::default(),
-            c: Default::default(),
-            tb: Default::default(),
-            tx: Default::default(),
-            ty: Default::default(),
-            sc: Default::default(),
-            s: 1.,
+impl From<Color> for u8 {
+    fn from(value: Color) -> Self {
+        unsafe {
+            std::mem::transmute::<Color, u8>(value)
         }
     }
 }
 
-deref_to! { [
-    ColorNoteDataV3,
-    BombNoteDataV3,
-    ChainNoteDataV3
-].obj: GameplayObjectDataV3 }
-deref_to! { [
-    ColorNoteCustomDataV3,
-    BombNoteCustomDataV3,
-    ObstacleCustomDataV3
-].parent: CustomDataV3 }
+impl TryFrom<u8> for CutDirection {
+    type Error = BeatmapDataError;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0..=8 => unsafe { std::mem::transmute::<u8, CutDirection>(value) },
+            _ => return Err(BeatmapDataError::ToEnum {
+                enum_name: "CutDirection",
+                val: value as i32
+            })
+        })
+    }
+}
 
-// V4 --------------------------------------------------------
+impl From<CutDirection> for u8 {
+    fn from(value: CutDirection) -> Self {
+        unsafe { std::mem::transmute::<CutDirection, u8>(value) }
+    }
+}
 
+impl TryFrom<u8> for ObstacleV2Type {
+    type Error = BeatmapDataError;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0..=2 => unsafe { std::mem::transmute::<u8, ObstacleV2Type>(value) },
+            _ => return Err(BeatmapDataError::ToEnum {
+                enum_name: "ObstacleType",
+                val: value as i32
+            })
+        })
+    }
+}
 
+impl From<ObstacleV2Type> for u8 {
+    fn from(value: ObstacleV2Type) -> Self {
+        unsafe { std::mem::transmute::<ObstacleV2Type, u8>(value) }
+    }
+}
 
+impl TryFrom<u8> for ArcMidAnchorMode {
+    type Error = BeatmapDataError;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0..=2 => unsafe { std::mem::transmute::<u8, ArcMidAnchorMode>(value) },
+            _ => return Err(BeatmapDataError::ToEnum {
+                enum_name: "ArcMidAnchorMode",
+                val: value as i32
+            })
+        })
+    }
+}
 
+impl From<ArcMidAnchorMode> for u8 {
+    fn from(value: ArcMidAnchorMode) -> Self {
+        unsafe { std::mem::transmute::<ArcMidAnchorMode, u8>(value) }
+    }
+}
 
+impl TryFrom<u8> for SpawnRotationExecutionTime {
+    type Error = BeatmapDataError;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0..=1 => unsafe { std::mem::transmute::<u8, SpawnRotationExecutionTime>(value) },
+            14..=15 => unsafe { std::mem::transmute::<u8, SpawnRotationExecutionTime>(value) },
+            _ => return Err(BeatmapDataError::ToEnum {
+                enum_name: "SpawnRotationExecutionTime",
+                val: value as i32
+            })
+        })
+    }
+}
 
+impl From<SpawnRotationExecutionTime> for u8 {
+    fn from(value: SpawnRotationExecutionTime) -> Self {
+        unsafe { std::mem::transmute::<SpawnRotationExecutionTime, u8>(value) }
+    }
+}
 
+impl TryFrom<u8> for SpawnRotationAngle {
+    type Error = BeatmapDataError;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0..=7 => unsafe { std::mem::transmute::<u8, SpawnRotationAngle>(value) },
+            _ => return Err(BeatmapDataError::ToEnum {
+                enum_name: "SpawnRotationAngle",
+                val: value as i32
+            })
+        })
+    }
+}
 
+impl From<SpawnRotationAngle> for u8 {
+    fn from(value: SpawnRotationAngle) -> Self {
+        unsafe { std::mem::transmute::<SpawnRotationAngle, u8>(value) }
+    }
+}
 
+use serde::{Deserializer, Serializer};
+use serde::de::Error as _;
 
+impl<const N: u8> Serialize for Sentinel<N> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u8(N)
+    }
+}
 
+impl<'de, const N: u8> Deserialize<'de> for Sentinel<N> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let val = u8::deserialize(deserializer)?;
+        if val != N {
+            return Err(D::Error::custom(format!(
+                "expected sentinel value {N}, found {val}"
+            )));
+        }
+        Ok(Sentinel)
+    }
+}
 
+pub(crate) mod bool_u8_serde {
+    use serde::{Deserializer, Serializer, Deserialize};
 
+    pub fn serialize<S>(val: &bool, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u8(*val as u8)
+    }
 
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<bool, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let val = u8::deserialize(deserializer)?;
+        match val {
+            0 => Ok(false),
+            1 => Ok(true),
+            other => Err(serde::de::Error::custom(format!(
+                "expected 0 or 1 for bool, found {other}"
+            ))),
+        }
+    }
+}
 
+pub(crate) mod easing_as_i8 {
+    use super::Easing;
+    use serde::{Deserialize, Deserializer, Serializer};
+    use serde::de::Error as _;
 
+    pub fn serialize<S>(easing: &Easing, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_i8(i8::from(*easing))
+    }
 
-
-
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Easing, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let val = i8::deserialize(deserializer)?;
+        Easing::try_from(val).map_err(D::Error::custom)
+    }
+}
