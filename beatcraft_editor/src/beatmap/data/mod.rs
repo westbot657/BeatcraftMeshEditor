@@ -1,7 +1,79 @@
 
+use std::fmt::{Debug, Display};
+
+use num_traits::{Num, Zero};
 use serde::{Deserialize, Serialize};
 
 use crate::easing::Easing;
+
+pub mod v2;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum VersionClass {
+    V2,
+    V3,
+    V4,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MapVersion {
+    #[serde(rename = "2.0.0")]
+    V2_0_0,
+    #[serde(rename = "2.2.0")]
+    V2_2_0,
+    #[serde(rename = "2.4.0")]
+    V2_4_0,
+    #[serde(rename = "2.5.0")]
+    V2_5_0,
+    #[serde(rename = "2.6.0")]
+    V2_6_0,
+
+    #[serde(rename = "3.0.0")]
+    V3_0_0,
+    #[serde(rename = "3.1.0")]
+    V3_1_0,
+    #[serde(rename = "3.2.0")]
+    V3_2_0,
+    #[serde(rename = "3.3.0")]
+    V3_3_0,
+
+    #[serde(rename = "4.0.0")]
+    V4_0_0,
+    #[serde(rename = "4.1.0")]
+    V4_1_0,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InfoVersion {
+    #[serde(rename = "2.0.0")]
+    V2_0_0,
+    #[serde(rename = "2.1.0")]
+    V2_1_0,
+
+    #[serde(rename = "4.0.0")]
+    V4_0_0,
+    #[serde(rename = "4.0.1")]
+    V4_0_1,
+}
+
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MapCharacteristic {
+    Standard,
+    NoArrows,
+    OneSaber,
+    #[serde(rename = "360Degree")]
+    Degree360,
+    #[serde(rename = "90Degree")]
+    Degree90,
+    Legacy,
+
+    Lightshow,
+    Lawless,
+
+    #[serde(untagged)]
+    Unknown(String)
+}
 
 // Color notes
 
@@ -11,6 +83,14 @@ use crate::easing::Easing;
 pub enum Color {
     Red = 0,
     Blue = 1,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RGBAColor {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,21 +108,36 @@ pub enum CutDirection {
     Dot       = 8,
 }
 
-#[derive(Serialize, Deserialize)]
+fn is_value<T: Num + From<i16>, const N: i16>(v: &T) -> bool {
+    *v == N.into()
+}
+
+fn def_value<T: Num + From<i16>, const N: i16>() -> T {
+    N.into()
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ColorNoteV2 {
     #[serde(rename = "_time")]
     pub time: f32,
     #[serde(rename = "_lineIndex")]
+    #[serde(default, skip_serializing_if="Zero::is_zero")]
     pub line_index: f32,
     #[serde(rename = "_lineLayer")]
+    #[serde(default, skip_serializing_if="Zero::is_zero")]
     pub line_layer: f32,
     #[serde(rename = "_type")]
     pub typ: Color,
     #[serde(rename = "_cutDirection")]
     pub cut_direction: CutDirection,
+    #[serde(rename = "_customData")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ColorNoteV3 {
     #[serde(rename = "b")]
     pub beat: f32,
@@ -58,7 +153,8 @@ pub struct ColorNoteV3 {
     pub angle_offset: i32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ColorNoteV4 {
     #[serde(rename = "b")]
     pub beat: f32,
@@ -67,7 +163,8 @@ pub struct ColorNoteV4 {
     #[serde(rename = "i")]
     pub metadata_index: u32,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ColorNoteDataV4 {
     #[serde(rename = "x")]
     pub line_index: f32,
@@ -83,20 +180,27 @@ pub struct ColorNoteDataV4 {
 
 // Bomb notes
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BombNoteV2 {
     #[serde(rename = "_time")]
     pub beat: f32,
     #[serde(rename = "_lineIndex")]
+    #[serde(default, skip_serializing_if="Zero::is_zero")]
     pub line_index: f32,
     #[serde(rename = "_lineLayer")]
+    #[serde(default, skip_serializing_if="Zero::is_zero")]
     pub line_layer: f32,
     _type: Sentinel<3>,
     #[serde(rename = "_cutDirection")]
     pub cut_direction: CutDirection,
+    #[serde(rename = "_customData")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BombNoteV3 {
     #[serde(rename = "b")]
     pub beat: f32,
@@ -106,7 +210,8 @@ pub struct BombNoteV3 {
     pub line_layer: f32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BombNoteV4 {
     #[serde(rename = "b")]
     pub beat: f32,
@@ -115,7 +220,8 @@ pub struct BombNoteV4 {
     #[serde(rename = "i")]
     pub metadata_index: u32,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BombNoteDataV4 {
     #[serde(rename = "x")]
     pub line_index: f32,
@@ -134,7 +240,8 @@ pub enum ObstacleV2Type {
     Free       = 2,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ObstacleV2 {
     #[serde(rename = "_type")]
     pub typ: ObstacleV2Type,
@@ -143,16 +250,24 @@ pub struct ObstacleV2 {
     #[serde(rename = "_duration")]
     pub duration: f32,
     #[serde(rename = "_lineIndex")]
+    #[serde(default, skip_serializing_if="Zero::is_zero")]
     pub line_index: f32,
     #[serde(rename = "_lineLayer")]
+    #[serde(default, skip_serializing_if="Zero::is_zero")]
     pub line_layer: f32,
     #[serde(rename = "_width")]
     pub width: f32,
     #[serde(rename = "_height")]
+    #[serde(default="def_value::<_, 5>")]
+    #[serde(skip_serializing_if="is_value::<_, 5>")]
     pub height: f32,
+    #[serde(rename = "_customData")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ObstacleV3 {
     #[serde(rename = "b")]
     pub beat: f32,
@@ -168,7 +283,8 @@ pub struct ObstacleV3 {
     pub height: f32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ObstacleV4 {
     #[serde(rename = "b")]
     pub beat: f32,
@@ -177,7 +293,8 @@ pub struct ObstacleV4 {
     #[serde(rename = "i")]
     pub metadata_index: u32,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ObstacleDataV4 {
     #[serde(rename = "d")]
     pub duration: f32,
@@ -202,15 +319,18 @@ pub enum ArcMidAnchorMode {
     CounterClockwise = 2,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArcV2 {
     #[serde(rename = "_colorType")]
     pub color: Color,
     #[serde(rename = "_headTime")]
     pub head_beat: f32,
     #[serde(rename = "_headLineIndex")]
+    #[serde(default, skip_serializing_if="Zero::is_zero")]
     pub head_line_index: f32,
     #[serde(rename = "_headLineLayer")]
+    #[serde(default, skip_serializing_if="Zero::is_zero")]
     pub head_line_layer: f32,
     #[serde(rename = "_headCutDirection")]
     pub head_cut_direction: CutDirection,
@@ -219,8 +339,10 @@ pub struct ArcV2 {
     #[serde(rename = "_tailTime")]
     pub tail_beat: f32,
     #[serde(rename = "_tailLineIndex")]
+    #[serde(default, skip_serializing_if="Zero::is_zero")]
     pub tail_line_index: f32,
     #[serde(rename = "_tailLineLayer")]
+    #[serde(default, skip_serializing_if="Zero::is_zero")]
     pub tail_line_layer: f32,
     #[serde(rename = "_tailCutDirection")]
     pub tail_cut_direction: CutDirection,
@@ -228,9 +350,13 @@ pub struct ArcV2 {
     pub tail_ctrl_magnitude: f32,
     #[serde(rename = "_sliderMidAnchorMode")]
     pub mid_anchor_mode: ArcMidAnchorMode,
+    #[serde(rename = "_customData")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArcV3 {
     #[serde(rename = "c")]
     pub color: Color,
@@ -258,7 +384,8 @@ pub struct ArcV3 {
     pub mid_anchor_mode: ArcMidAnchorMode,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArcV4 {
     #[serde(rename = "hb")]
     pub head_beat: f32,
@@ -275,7 +402,8 @@ pub struct ArcV4 {
     #[serde(rename = "ai")]
     pub metadata_index: u32,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArcDataV4 {
     #[serde(rename = "m")]
     pub head_ctrl_magnitude: f32,
@@ -287,7 +415,8 @@ pub struct ArcDataV4 {
 
 // Chains
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChainV3 {
     #[serde(rename = "c")]
     pub color: Color,
@@ -311,7 +440,8 @@ pub struct ChainV3 {
     pub squish_factor: f32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChainV4 {
     #[serde(rename = "hb")]
     pub head_beat: f32,
@@ -326,7 +456,8 @@ pub struct ChainV4 {
     #[serde(rename = "ci")]
     pub metadata_index: u32,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChainDataV4 {
     #[serde(rename = "tx")]
     pub tail_line_index: f32,
@@ -364,7 +495,8 @@ pub enum SpawnRotationAngle {
     CW60  = 7,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpawnRotationEventV2 {
     #[serde(rename = "_time")]
     pub beat: f32,
@@ -374,7 +506,8 @@ pub struct SpawnRotationEventV2 {
     pub rotation_angle: SpawnRotationAngle,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpawnRotationEventV3 {
     #[serde(rename = "b")]
     pub beat: f32,
@@ -384,14 +517,16 @@ pub struct SpawnRotationEventV3 {
     pub magnitude: f32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpawnRotationEventV4 {
     #[serde(rename = "b")]
     pub beat: f32,
     #[serde(rename = "i")]
     pub metadata_index: u32,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpawnRotationEventDataV4 {
     #[serde(rename = "t")]
     pub execution_time: SpawnRotationExecutionTime,
@@ -400,7 +535,8 @@ pub struct SpawnRotationEventDataV4 {
 }
 
 // BPM events
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BPMEventV2 {
     #[serde(rename = "_time")]
     pub beat: f32,
@@ -412,7 +548,8 @@ pub struct BPMEventV2 {
     float_value: f32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BPMEventV3 {
     #[serde(rename = "b")]
     pub beat: f32,
@@ -421,14 +558,16 @@ pub struct BPMEventV3 {
 }
 
 // NJS events
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NJSEventV4 {
     #[serde(rename = "b")]
     pub beat: f32,
     #[serde(rename = "i")]
     pub metadata_index: u32,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NJSEventDataV4 {
     #[serde(rename = "p", with="bool_u8_serde")]
     pub extend: bool,
@@ -438,10 +577,145 @@ pub struct NJSEventDataV4 {
     pub njs_diff: f32,
 }
 
+// Implementations
+
+impl MapCharacteristic {
+    pub fn display_name(&self) -> &str {
+        match self {
+            MapCharacteristic::Standard => "Standard",
+            MapCharacteristic::NoArrows => "NoArrows",
+            MapCharacteristic::OneSaber => "OneSaber",
+            MapCharacteristic::Degree360 => "360Degree",
+            MapCharacteristic::Degree90 => "90Degree",
+            MapCharacteristic::Legacy => "Legacy",
+            MapCharacteristic::Lightshow => "Lightshow",
+            MapCharacteristic::Lawless => "Lawless",
+            MapCharacteristic::Unknown(s) => s.as_str(),
+        }
+    }
+}
+
+impl Display for MapCharacteristic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display_name())
+    }
+}
+
+impl PartialEq<&str> for MapCharacteristic {
+    fn eq(&self, other: &&str) -> bool {
+        self.display_name() == *other
+    }
+}
+
+impl PartialEq<MapCharacteristic> for &str {
+    fn eq(&self, other: &MapCharacteristic) -> bool {
+        other.eq(self)
+    }
+}
+
+impl MapVersion {
+    pub fn classifier(&self) -> VersionClass {
+        match self {
+            MapVersion::V2_0_0 |
+            MapVersion::V2_2_0 |
+            MapVersion::V2_4_0 |
+            MapVersion::V2_5_0 |
+            MapVersion::V2_6_0 => VersionClass::V2,
+            MapVersion::V3_0_0 |
+            MapVersion::V3_1_0 |
+            MapVersion::V3_2_0 |
+            MapVersion::V3_3_0 => VersionClass::V3,
+            MapVersion::V4_0_0 |
+            MapVersion::V4_1_0 => VersionClass::V4,
+        }
+    }
+}
+
+impl PartialEq<VersionClass> for MapVersion {
+    fn eq(&self, other: &VersionClass) -> bool {
+        self.classifier() == *other
+    }
+}
+impl PartialEq<MapVersion> for VersionClass {
+    fn eq(&self, other: &MapVersion) -> bool {
+        other.eq(self)
+    }
+}
+
+impl InfoVersion {
+    pub fn classifier(&self) -> VersionClass {
+        match self {
+            InfoVersion::V2_0_0 |
+            InfoVersion::V2_1_0 => VersionClass::V2,
+            InfoVersion::V4_0_0 |
+            InfoVersion::V4_0_1 => VersionClass::V4,
+        }
+    }
+}
+
+impl PartialEq<VersionClass> for InfoVersion {
+    fn eq(&self, other: &VersionClass) -> bool {
+        self.classifier() == *other
+    }
+}
+impl PartialEq<InfoVersion> for VersionClass {
+    fn eq(&self, other: &InfoVersion) -> bool {
+        other.eq(self)
+    }
+}
+
+impl VersionClass {
+    pub fn as_map_version(&self) -> MapVersion {
+        match self {
+            VersionClass::V2 => MapVersion::V2_6_0,
+            VersionClass::V3 => MapVersion::V3_3_0,
+            VersionClass::V4 => MapVersion::V4_1_0,
+        }
+    }
+
+    pub fn as_info_version(&self) -> InfoVersion {
+        match self {
+            VersionClass::V2 |
+            VersionClass::V3 => InfoVersion::V2_1_0,
+            VersionClass::V4 => InfoVersion::V4_0_1,
+        }
+    }
+}
+
 // extra helpers
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+
+macro_rules! convert_u8 {
+    ($cl:ty: $values:pat) => {
+        impl TryFrom<u8> for $cl {
+            type Error = BeatmapDataError;
+            fn try_from(value: u8) -> Result<Self, Self::Error> {
+                Ok(match value {
+                    $values => unsafe { std::mem::transmute::<u8, Self>(value) },
+                    _ => return Err(BeatmapDataError::ToEnum {
+                        enum_name: stringify!($name),
+                        val: value as i32,
+                    })
+                })
+            }
+        }
+        impl From<$cl> for u8 {
+            fn from(value: $cl) -> Self {
+                unsafe { std::mem::transmute::<$cl, u8>(value) }
+            }
+        }
+    };
+}
+pub(crate) use convert_u8;
+
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Sentinel<const N: u8>;
+
+impl<const N: u8> Debug for Sentinel<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Sentinel").field(&N).finish()
+    }
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum BeatmapDataError {
@@ -449,122 +723,13 @@ pub enum BeatmapDataError {
     ToEnum { enum_name: &'static str, val: i32 },
 }
 
-impl TryFrom<u8> for Color {
-    type Error = BeatmapDataError;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Ok(match value {
-            0..=1 => unsafe { std::mem::transmute::<u8, Color>(value) },
-            _ => return Err(BeatmapDataError::ToEnum {
-                enum_name: "Color",
-                val: value as i32
-            })
-        })
-    }
-}
+convert_u8! { Color: 0 | 1 }
+convert_u8! { CutDirection: 0..=8 }
+convert_u8! { ObstacleV2Type: 0..=2 }
+convert_u8! { ArcMidAnchorMode: 0..=2 }
+convert_u8! { SpawnRotationExecutionTime: 0 | 1 | 14 | 15 }
+convert_u8! { SpawnRotationAngle: 0..=7 }
 
-impl From<Color> for u8 {
-    fn from(value: Color) -> Self {
-        unsafe {
-            std::mem::transmute::<Color, u8>(value)
-        }
-    }
-}
-
-impl TryFrom<u8> for CutDirection {
-    type Error = BeatmapDataError;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Ok(match value {
-            0..=8 => unsafe { std::mem::transmute::<u8, CutDirection>(value) },
-            _ => return Err(BeatmapDataError::ToEnum {
-                enum_name: "CutDirection",
-                val: value as i32
-            })
-        })
-    }
-}
-
-impl From<CutDirection> for u8 {
-    fn from(value: CutDirection) -> Self {
-        unsafe { std::mem::transmute::<CutDirection, u8>(value) }
-    }
-}
-
-impl TryFrom<u8> for ObstacleV2Type {
-    type Error = BeatmapDataError;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Ok(match value {
-            0..=2 => unsafe { std::mem::transmute::<u8, ObstacleV2Type>(value) },
-            _ => return Err(BeatmapDataError::ToEnum {
-                enum_name: "ObstacleType",
-                val: value as i32
-            })
-        })
-    }
-}
-
-impl From<ObstacleV2Type> for u8 {
-    fn from(value: ObstacleV2Type) -> Self {
-        unsafe { std::mem::transmute::<ObstacleV2Type, u8>(value) }
-    }
-}
-
-impl TryFrom<u8> for ArcMidAnchorMode {
-    type Error = BeatmapDataError;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Ok(match value {
-            0..=2 => unsafe { std::mem::transmute::<u8, ArcMidAnchorMode>(value) },
-            _ => return Err(BeatmapDataError::ToEnum {
-                enum_name: "ArcMidAnchorMode",
-                val: value as i32
-            })
-        })
-    }
-}
-
-impl From<ArcMidAnchorMode> for u8 {
-    fn from(value: ArcMidAnchorMode) -> Self {
-        unsafe { std::mem::transmute::<ArcMidAnchorMode, u8>(value) }
-    }
-}
-
-impl TryFrom<u8> for SpawnRotationExecutionTime {
-    type Error = BeatmapDataError;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Ok(match value {
-            0..=1 => unsafe { std::mem::transmute::<u8, SpawnRotationExecutionTime>(value) },
-            14..=15 => unsafe { std::mem::transmute::<u8, SpawnRotationExecutionTime>(value) },
-            _ => return Err(BeatmapDataError::ToEnum {
-                enum_name: "SpawnRotationExecutionTime",
-                val: value as i32
-            })
-        })
-    }
-}
-
-impl From<SpawnRotationExecutionTime> for u8 {
-    fn from(value: SpawnRotationExecutionTime) -> Self {
-        unsafe { std::mem::transmute::<SpawnRotationExecutionTime, u8>(value) }
-    }
-}
-
-impl TryFrom<u8> for SpawnRotationAngle {
-    type Error = BeatmapDataError;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Ok(match value {
-            0..=7 => unsafe { std::mem::transmute::<u8, SpawnRotationAngle>(value) },
-            _ => return Err(BeatmapDataError::ToEnum {
-                enum_name: "SpawnRotationAngle",
-                val: value as i32
-            })
-        })
-    }
-}
-
-impl From<SpawnRotationAngle> for u8 {
-    fn from(value: SpawnRotationAngle) -> Self {
-        unsafe { std::mem::transmute::<SpawnRotationAngle, u8>(value) }
-    }
-}
 
 use serde::{Deserializer, Serializer};
 use serde::de::Error as _;

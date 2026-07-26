@@ -636,7 +636,13 @@ pub enum PopupResponse {
     OpenNew((String, PopupCallback)),
 }
 
+pub enum RoutineAction {
+    None,
+    Remove,
+}
+
 type PopupCallback = Box<dyn Fn(&mut App, &egui::Ui) -> PopupResponse>;
+type RoutineCallback = Box<dyn Fn(&mut App, &Context) -> RoutineAction>;
 
 pub struct MirrorEditorState {
     pub selected: Vec<(usize, usize)>, // (tri_index, vertex_index_within_tri)
@@ -671,20 +677,7 @@ pub struct CreateEnv {
 pub struct UiState {
     /// Currently displayed view mesh settings
     pub view_mesh: Option<String>,
-    /// mpsc channel for opening meshes
-    pub open_mesh_channel: Option<mpsc::Receiver<Vec<PathBuf>>>,
-    /// mpsc channel for opening a session
-    pub open_session_channel: Option<mpsc::Receiver<PathBuf>>,
-    /// mpsc channel for saving a session
-    pub save_session_channel: Option<mpsc::Receiver<PathBuf>>,
-    /// mpsc channel for creating a new mesh part
-    pub create_mesh_channel: Option<mpsc::Receiver<PathBuf>>,
-    /// mpsc channel for linking image paths
-    pub select_image_channel: Option<(String, mpsc::Receiver<PathBuf>)>,
-    /// mpsc channel for selecting a mirror geometry file
-    pub select_mirror_channel: Option<mpsc::Receiver<PathBuf>>,
-    /// mpsc channel for creating a new environment
-    pub create_environment_channel: Option<mpsc::Receiver<CreateEnv>>,
+    pub routines: Vec<RoutineCallback>,
     /// callback for custom popup window logic
     pub custom_popup: Vec<(String, PopupCallback)>,
     /// Map<viewmesh id, Vec<view placement collapse state>>
@@ -1236,10 +1229,7 @@ impl App {
     }
 
     pub fn block_input(&self) -> bool {
-        self.state.ui.open_mesh_channel.is_some()
-        || self.state.ui.open_session_channel.is_some()
-        || self.state.ui.save_session_channel.is_some()
-        || self.state.ui.select_image_channel.is_some()
+        !self.state.ui.routines.is_empty()
         || !self.state.ui.custom_popup.is_empty()
     }
 
@@ -2256,123 +2246,41 @@ impl App {
         }
     }
 
+    pub fn add_routine(&mut self, value: RoutineCallback) {
+        self.state.ui.routines.push(value);
+    }
+
+    pub fn set_status(&mut self, title: Option<String>, message: impl ToString, time: f32) {
+        self.state.status = message.to_string();
+        self.state.status_timer = time;
+        if let Some(t) = title {
+            self.state.title_content = Some(t.to_string());
+        }
+    }
+
     pub fn handle_file_open(&mut self, gl: &Context) {
-        if let Some(recv) = self.state.ui.open_session_channel.as_ref() {
-            match recv.try_recv() {
-                Err(mpsc::TryRecvError::Empty) => {}
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.state.ui.open_session_channel = None;
-                }
-                Ok(session) => {
-                    if let Err(e) = self.load_session(&session, gl) {
-                        eprintln!("Error loading session: {e}")
-                    }
-                }
-            }
-        }
-        if let Some(recv) = self.state.ui.open_mesh_channel.as_ref() {
-            match recv.try_recv() {
-                Err(mpsc::TryRecvError::Empty) => {}
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.state.ui.open_mesh_channel = None;
-                }
-                Ok(meshes) => {
-                    for m in meshes.into_iter() {
-                        if let Err(e) = self.load_meshes({ let mut m2 = IndexMap::new(); m2.insert(self.get_unique_mesh_id(), m); m2 }, gl) {
-                            eprintln!("Error loading meshes: {e}");
-                        }
-                    }
+        let mut routines = Vec::new();
+        std::mem::swap(&mut routines, &mut self.state.ui.routines);
+
+        let mut i = 0;
+        while i < routines.len() {
+
+
+            let callback = &routines[i];
+
+            match callback(self, gl) {
+                RoutineAction::None => {},
+                RoutineAction::Remove => {
+                    let _ = routines.swap_remove(i);
+                    continue;
                 }
             }
+
+            i += 1;
         }
-        if let Some(recv) = self.state.ui.save_session_channel.as_ref() {
-            match recv.try_recv() {
-                Err(mpsc::TryRecvError::Empty) => {}
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.state.ui.save_session_channel = None;
-                }
-                Ok(dest) => {
-                    self.view.session = Some(dest);
-                    if let Err(e) = self.save_session() {
-                        self.state.status = "Failed to save session".into();
-                        eprintln!("Failed to save session:\n{e}");
-                        self.state.status_timer = 2.;
-                    } else {
-                        self.state.status = "[Saved]".into();
-                        self.state.title_content = Some("[Saved]".into());
-                        self.state.status_timer = 2.;
-                    }
-                }
-            }
-        }
-        if let Some(recv) = self.state.ui.create_mesh_channel.as_ref() {
-            match recv.try_recv() {
-                Err(mpsc::TryRecvError::Empty) => {}
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.state.ui.create_mesh_channel = None;
-                }
-                Ok(dest) => {
-                    if let Err(e) = fs::write(
-                        &dest,
-                        serde_json::to_string(&LightMeshData::default()).unwrap(),
-                    ) {
-                        eprintln!("Failed to write mesh file\n{e}");
-                    } else if let Err(e) = self.load_meshes({ let mut m = IndexMap::new(); m.insert(self.get_unique_mesh_id(), dest); m }, gl) {
-                        eprintln!("Failed to load mesh\n{e}");
-                    }
-                }
-            }
-        }
-        if let Some((id, recv)) = self.state.ui.select_image_channel.as_ref() {
-            match recv.try_recv() {
-                Err(mpsc::TryRecvError::Empty) => {}
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.state.ui.select_image_channel = None;
-                }
-                Ok(src) => {
-                    self.render.renderer.texture_paths.insert(id.clone(), src);
-                    self.rebuild_meshes(gl);
-                }
-            }
-        }
-        if let Some(recv) = self.state.ui.select_mirror_channel.as_ref() {
-            match recv.try_recv() {
-                Err(mpsc::TryRecvError::Empty) => {}
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.state.ui.select_mirror_channel = None;
-                }
-                Ok(src) => {
-                    if let Err(e) = self.load_mirror(src.as_path(), gl) {
-                        eprintln!("Failed to load mirror geometry: {e}");
-                        self.state.status = "Failed to load mirror geometry".into();
-                        self.state.status_timer = 2.;
-                    } else {
-                        self.view.mirror_path = Some(src);
-                        self.rebuild_meshes(gl);
-                    }
-                }
-            }
-        }
-        if let Some(recv) = self.state.ui.create_environment_channel.as_ref() {
-            match recv.try_recv() {
-                Err(mpsc::TryRecvError::Empty) => {}
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.state.ui.create_environment_channel = None;
-                }
-                Ok(CreateEnv { env_path, session_path }) => {
-                    self.view.env_path = Some(env_path);
-                    self.view.session = Some(session_path);
-                    if let Err(e) = self.save_session() {
-                        eprintln!("Failed to save environment/session: {e}");
-                        self.state.status = "Failed to save environment/session".into();
-                        self.state.status_timer = 2.;
-                    } else {
-                        self.state.status = "Created new environment".into();
-                        self.state.status_timer = 2.;
-                    }
-                }
-            }
-        }
+
+        self.state.ui.routines.append(&mut routines);
+
     }
 
     fn load_mirror_geo(&mut self, gl: &Context, mut geo: Vec<Vec2>) {
@@ -2390,7 +2298,7 @@ impl App {
 
     }
 
-    fn load_mirror(&mut self, path: &Path, gl: &Context) -> anyhow::Result<()> {
+    pub fn load_mirror(&mut self, path: &Path, gl: &Context) -> anyhow::Result<()> {
         let raw = fs::read_to_string(path)?;
         let geo: Vec<Vec2> = serde_json::from_str(&raw)?;
         self.load_mirror_geo(gl, geo);
@@ -2444,8 +2352,6 @@ impl App {
             self.data.mark_project_modified(path, crate::config::ProjectKind::EnvironmentMesh);
         } else {
             let (sx, rx) = mpsc::channel();
-            self.state.ui.save_session_channel = Some(rx);
-
             std::thread::spawn(move || {
                 if let Some(dest) = rfd::FileDialog::new()
                     .set_title("Save Session")
@@ -2456,6 +2362,22 @@ impl App {
                     let _ = sx.send(dest);
                 }
             });
+            self.add_routine(Box::new(move |s, _| {
+                match rx.try_recv() {
+                    Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                    Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+                    Ok(dest) => {
+                        s.view.session = Some(dest);
+                        if let Err(e) = s.save_session() {
+                            s.set_status(None, "Failed to save session", 2.);
+                            eprintln!("Failed to save session:\n{e}");
+                        } else {
+                            s.set_status(Some("[Saved]".to_string()), "[Saved]", 2.);
+                        }
+                        RoutineAction::Remove
+                    }
+                }
+            }));
         }
 
         Ok(())

@@ -34,9 +34,9 @@ use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt, EnvFilter, prelude::*};
 
 use self::config::{AppData, RawAppData, RecentProject};
-use self::data::{BillboardData, LightGroup, MaterialType, NormalId, ShaderSettingsData, ShaderStyle, SpectrogramData, UvId, VertexId};
+use self::data::{BillboardData, LightGroup, LightMeshData, MaterialType, NormalId, ShaderSettingsData, ShaderStyle, SpectrogramData, UvId, VertexId};
 use self::easing::Easing;
-use self::editor::{ActionType, App, MINECRAFT_F, RingType, SOURCE_CODE_F, Selection, SpinSide, ViewPlacement, ViewStyle, WorkingRenameKey, setup_fonts};
+use self::editor::{ActionType, App, CreateEnv, MINECRAFT_F, RingType, RoutineAction, SOURCE_CODE_F, Selection, SpinSide, ViewPlacement, ViewStyle, WorkingRenameKey, setup_fonts};
 use self::light_mesh::{BloomfogStyle, ComputeNormal, ComputeVertex, Part, Triangle};
 use self::renaming::light_mesh::rehash;
 use self::render::{HandleDrawCall, InstanceData, LIGHT_COLORS, MeshDrawCall, PointDrawCall};
@@ -168,14 +168,61 @@ impl RefDuper {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+
+        let gl = frame.gl().unwrap();
+
+        if self.state.dirty {
+            self.rebuild_meshes(gl);
+        }
+
+        let (shift, ctrl) = self.handle_keys(ctx, gl);
+
+        let dt = ctx.input(|i| i.unstable_dt);
+        if self.state.status_timer > 0. {
+            if let Some(t) = self.state.title_content.as_mut()
+                && !t.is_empty()
+            {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+                    "{} {}",
+                    self.title, t
+                )));
+                t.clear();
+            }
+            self.state.status_timer -= dt;
+        } else if self.state.title_content.is_some() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.title.to_string()));
+            self.state.title_content = None;
+        }
+
+        self.handle_file_open(gl);
+
+        let rd = RefDuper;
+        let self2 = unsafe { rd.detach_mut_ref(self) };
+        if let Some((label, popup)) = self.state.ui.custom_popup.last()
+        && let Some(resp) = egui::Window::new(label)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, [0., 0.])
+            .show(ctx, |ui| {
+                popup(self2, ui)
+            })
+        && let Some(inner) = resp.inner
+        {
+            match inner {
+                editor::PopupResponse::KeepOpen => {},
+                editor::PopupResponse::Close => {self.state.ui.custom_popup.pop(); },
+                editor::PopupResponse::OpenNew(x) => self.state.ui.custom_popup.push(x),
+            }
+        }
+
         match self.context {
             editor::EditorContext::Model(model_editor_context) => match model_editor_context {
-                editor::ModelEditorContext::Environment => self.draw_environment_editor(ctx, frame),
+                editor::ModelEditorContext::Environment => self.draw_environment_editor(ctx, frame, shift, ctrl),
                 editor::ModelEditorContext::Saber => todo!(),
                 editor::ModelEditorContext::Notes => todo!(),
             },
             editor::EditorContext::Map(map_editor_context) => match map_editor_context {
-                editor::MapEditorContext::Beatmap => todo!(),
+                editor::MapEditorContext::Beatmap => self.draw_beatmap_editor(ctx, frame, shift, ctrl),
                 editor::MapEditorContext::Lightshow => todo!(),
                 editor::MapEditorContext::Audio => todo!(),
             },
@@ -419,52 +466,8 @@ impl App {
 
     }
 
-    fn draw_environment_editor(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn draw_environment_editor(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame, shift: bool, ctrl: bool) {
         let gl = frame.gl().unwrap();
-
-        if self.state.dirty {
-            self.rebuild_meshes(gl);
-        }
-
-        let (shift, ctrl) = self.handle_keys(ctx, gl);
-
-        let dt = ctx.input(|i| i.unstable_dt);
-        if self.state.status_timer > 0. {
-            if let Some(t) = self.state.title_content.as_mut()
-                && !t.is_empty()
-            {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-                    "{} {}",
-                    self.title, t
-                )));
-                t.clear();
-            }
-            self.state.status_timer -= dt;
-        } else if self.state.title_content.is_some() {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.title.to_string()));
-            self.state.title_content = None;
-        }
-
-        self.handle_file_open(gl);
-
-        let rd = RefDuper;
-        let self2 = unsafe { rd.detach_mut_ref(self) };
-        if let Some((label, popup)) = self.state.ui.custom_popup.last()
-        && let Some(resp) = egui::Window::new(label)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, [0., 0.])
-            .show(ctx, |ui| {
-                popup(self2, ui)
-            })
-        && let Some(inner) = resp.inner
-        {
-            match inner {
-                editor::PopupResponse::KeepOpen => {},
-                editor::PopupResponse::Close => {self.state.ui.custom_popup.pop(); },
-                editor::PopupResponse::OpenNew(x) => self.state.ui.custom_popup.push(x),
-            }
-        }
 
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             ui.add_space(2.);
@@ -474,7 +477,6 @@ impl App {
                     {
                         tracing::debug!(target: DB_LOGIC, "Spawning thread for environment creation");
                         let (sx, rx) = mpsc::channel();
-                        self.state.ui.create_environment_channel = Some(rx);
                         std::thread::spawn(move || {
                             let Some(env_path) = rfd::FileDialog::new()
                                 .set_title("Create environment file...")
@@ -496,12 +498,28 @@ impl App {
                             tracing::debug!(target: DB_LOGIC, ?env_path, ?session_path, "Sending CreateEnv event");
                             let _ = sx.send(editor::CreateEnv { env_path, session_path });
                         });
+                        self.add_routine(Box::new(move |s, _| {
+                            match rx.try_recv() {
+                                Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                                Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+                                Ok(CreateEnv { env_path, session_path }) => {
+                                    s.view.env_path = Some(env_path);
+                                    s.view.session = Some(session_path);
+                                    if let Err(e) = s.save_session() {
+                                        s.set_status(None, "Failed to save environment/session", 2.);
+                                        eprintln!("Failed to save environment/session: {e}");
+                                    } else {
+                                        s.set_status(None, "Created new environment", 2.);
+                                    }
+                                    RoutineAction::Remove
+                                }
+                            }
+                        }));
                     }
                     if ui.button("Open environment\u{2026} \u{2502}").clicked() && !self.block_input()
                     {
                         tracing::debug!(target: DB_LOGIC, "Spawning thread for opening environment");
                         let (sx, rx) = mpsc::channel();
-                        self.state.ui.open_session_channel = Some(rx);
                         std::thread::spawn(move || {
                             if let Some(session) = rfd::FileDialog::new()
                                 .set_title("Open environment...")
@@ -512,12 +530,23 @@ impl App {
                                 let _ = sx.send(session);
                             }
                         });
+                        self.add_routine(Box::new(move |s, gl| {
+                            match rx.try_recv() {
+                                Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                                Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+                                Ok(session) => {
+                                    if let Err(e) = s.load_session(&session, gl) {
+                                        eprintln!("Error loading session: {e}")
+                                    }
+                                    RoutineAction::Remove
+                                }
+                            }
+                        }));
                     }
                     if ui.button("Open\u{2026}             \u{2502}").clicked() && !self.block_input()
                     {
                         tracing::debug!(target: DB_LOGIC, "Spawning thread for opening meshes");
                         let (sx, rx) = mpsc::channel();
-                        self.state.ui.open_mesh_channel = Some(rx);
                         std::thread::spawn(move || {
                             if let Some(meshes) = rfd::FileDialog::new()
                                 .set_title("Open Meshes...")
@@ -528,6 +557,20 @@ impl App {
                                 let _ = sx.send(meshes);
                             }
                         });
+                        self.add_routine(Box::new(move |s, gl| {
+                            match rx.try_recv() {
+                                Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                                Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+                                Ok(meshes) => {
+                                    for m in meshes.into_iter() {
+                                        if let Err(e) = s.load_meshes({ let mut m2 = IndexMap::new(); m2.insert(s.get_unique_mesh_id(), m); m2 }, gl) {
+                                            eprintln!("Error loading meshes: {e}");
+                                        }
+                                    }
+                                    RoutineAction::Remove
+                                }
+                            }
+                        }));
                     }
                     if ui.button("Save              \u{2502} [Ctrl+S]").clicked() {
                         match self.mode {
@@ -869,7 +912,6 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             .clicked()
         {
             let (sx, rx) = mpsc::channel();
-            s.state.ui.create_mesh_channel = Some(rx);
             std::thread::spawn(move || {
                 if let Some(file) = rfd::FileDialog::new()
                     .set_title("Create new mesh")
@@ -880,6 +922,23 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     let _ = sx.send(file);
                 }
             });
+            s.add_routine(Box::new(move |s, gl| {
+                match rx.try_recv() {
+                    Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                    Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+                    Ok(dest) => {
+                        if let Err(e) = fs::write(
+                            &dest,
+                            serde_json::to_string(&LightMeshData::default()).unwrap(),
+                        ) {
+                            eprintln!("Failed to write mesh file\n{e}");
+                        } else if let Err(e) = s.load_meshes({ let mut m = IndexMap::new(); m.insert(s.get_unique_mesh_id(), dest); m }, gl) {
+                            eprintln!("Failed to load mesh\n{e}");
+                        }
+                        RoutineAction::Remove
+                    }
+                }
+            }));
         }
     }
 
@@ -1210,7 +1269,6 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     .clicked()
                 {
                     let (sx, rx) = mpsc::channel();
-                    s2.state.ui.select_mirror_channel = Some(rx);
                     std::thread::spawn(move || {
                         if let Some(path) = rfd::FileDialog::new()
                             .set_title("Open mirror file")
@@ -1220,6 +1278,22 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             let _ = sx.send(path);
                         }
                     });
+                    s2.add_routine(Box::new(move |s, gl| {
+                        match rx.try_recv() {
+                            Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                            Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+                            Ok(src) => {
+                                if let Err(e) = s.load_mirror(src.as_path(), gl) {
+                                    s.set_status(None, "Failed to load mirror geometry", 2.);
+                                    eprintln!("Failed to load mirror geometry: {e}");
+                                } else {
+                                    s.view.mirror_path = Some(src);
+                                    s.rebuild_meshes(gl);
+                                }
+                                RoutineAction::Remove
+                            }
+                        }
+                    }));
                 }
                 remove_mirror = ui.small_button(SMALL_X).clicked();
             });
@@ -2482,7 +2556,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         .clicked()
                     {
                         let (sx, rx) = mpsc::channel();
-                        self2.state.ui.select_image_channel = Some((val.clone(), rx));
+                        let id = val.clone();
                         std::thread::spawn(move || {
                             if let Some(path) = rfd::FileDialog::new()
                                 .set_title("Choose image")
@@ -2492,6 +2566,17 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 let _ = sx.send(path);
                             }
                         });
+                        self3.add_routine(Box::new(move |s, gl| {
+                            match rx.try_recv() {
+                                Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                                Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+                                Ok(src) => {
+                                    s.render.renderer.texture_paths.insert(id.clone(), src);
+                                    s.rebuild_meshes(gl);
+                                    RoutineAction::Remove
+                                }
+                            }
+                        }));
                     }
                     if ui.small_button(SMALL_X).clicked() {
                         tex_to_remove = Some(key.clone());
