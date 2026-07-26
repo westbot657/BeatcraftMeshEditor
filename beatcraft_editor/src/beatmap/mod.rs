@@ -12,6 +12,18 @@ pub mod render;
 #[cfg(test)]
 pub mod tests;
 
+pub struct BeatmapEditor {
+
+}
+
+impl BeatmapEditor {
+    pub fn new() -> Self {
+        Self {
+
+        }
+    }
+}
+
 impl App {
     pub fn draw_beatmap_editor(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame, shift: bool, ctrl: bool) {
         let gl = frame.gl().unwrap();

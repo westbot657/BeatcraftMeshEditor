@@ -975,9 +975,10 @@ impl Renderer {
         self.atlas_map.clear();
 
         let mut atlas_image = image::RgbaImage::new(ATLAS_SIZE, ATLAS_SIZE);
-        let mut shelf_x: u32 = 0;
-        let mut shelf_y: u32 = 0;
-        let mut shelf_h: u32 = 0;
+        const PADDING: u32 = 2;
+        let mut shelf_x: u32 = PADDING;
+        let mut shelf_y: u32 = PADDING;
+        let mut shelf_h: u32 = PADDING;
 
         let mut unique_paths: Vec<PathBuf> = self.texture_paths.values().cloned().collect();
         unique_paths.sort();
@@ -1001,14 +1002,14 @@ impl Renderer {
                 ATLAS_SIZE
             );
 
-            if shelf_x + w > ATLAS_SIZE {
-                shelf_y += shelf_h;
-                shelf_x = 0;
-                shelf_h = 0;
+            if shelf_x + w + PADDING > ATLAS_SIZE {
+                shelf_y += shelf_h + PADDING;
+                shelf_x = PADDING;
+                shelf_h = PADDING;
             }
 
             assert!(
-                shelf_y + h <= ATLAS_SIZE,
+                shelf_y + h + PADDING <= ATLAS_SIZE,
                 "atlas is full, could not fit texture {:?}",
                 path
             );
@@ -1022,7 +1023,7 @@ impl Renderer {
             self.atlas_map
                 .insert(path.clone(), Vec4::new(u0, v0, u1, v1));
 
-            shelf_x += w;
+            shelf_x += w + PADDING;
             shelf_h = shelf_h.max(h);
         }
 

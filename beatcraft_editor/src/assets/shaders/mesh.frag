@@ -4,24 +4,55 @@ in vec2 v_uv;
 in vec4 v_color;
 in vec3 v_pos;
 in vec3 v_normal;
-flat in int v_material; // 0 = solid, 1 = light/solid, 2 = light/nothing
+flat in int v_material;
 flat in int v_style;
 flat in int v_flags;
 in vec3 screenUV;
 
-uniform int passType; // 0 = normal, 1 = bloom, 2 = bloomfog, 3 = late lights
+uniform int passType;
 uniform sampler2D u_texture;
 uniform sampler2D u_bloomfog;
 uniform sampler2D u_depth;
 
 uniform sampler2D u_noise;
-uniform int u_render_mode; // 0 = Beatcraft, 1 = Editor, 2 = Wireframe
+uniform int u_render_mode;
 
 uniform vec2 u_fog;
 
 out vec4 fragColor;
 
 const vec3 LIGHT = normalize(vec3(0.6, 1.0, 0.4));
+
+
+const int MAT_SOLID             = 0;
+const int MAT_SOLID_LIGHT       = 1;
+const int MAT_TRANSPARENT_LIGHT = 2;
+const int MAT_TINTED            = 3;
+
+const int MAT_NOTE              = 4;
+const int MAT_ARROW             = 5;
+
+const int MAT_OBSTACLE          = 6;
+
+const int MAT_ARC               = 7;
+
+
+const int PASS_NORMAL      = 0;
+const int PASS_BLOOM       = 1;
+const int PASS_BLOOMFOG    = 2;
+const int PASS_LATE_LIGHTS = 3;
+
+
+const int MODE_BEATCRAFT        = 0;
+const int MODE_EDITOR           = 1;
+const int MODE_EDITOR_WIREFRAME = 2;
+
+
+const int STYLE_DEFAULT = 0;
+const int STYLE_CIRCLE  = 1;
+
+
+const int FLAG_OVERRIDE_BLACK_BIT = 31;
 
 
 const int BAYER[16] = int[16](
@@ -40,18 +71,18 @@ vec4 lerpColor(vec4 c1, vec4 c2, float t) {
 }
 
 void main() {
-    bool overrideBlack = (v_flags & (1 << 31)) != 0;
-    if (v_style == 1) {
+    bool overrideBlack = (v_flags & (1 << FLAG_OVERRIDE_BLACK_BIT)) != 0;
+    if (u_render_mode == MODE_EDITOR_WIREFRAME) {
+        fragColor = vec4(vec3(0.4), 0.4);
+        return;
+    }
+    if (v_style == STYLE_CIRCLE) {
         if (length(v_uv - 0.5) > 0.5) {
             discard;
         }
     }
-    if (u_render_mode == 2) {
-        fragColor = vec4(vec3(0.4), 0.4);
-        return;
-    }
 
-    if (u_render_mode == 1) {
+    if (u_render_mode == MODE_EDITOR) {
         float x = gl_FragCoord.x;
         float y = gl_FragCoord.y;
 
@@ -62,6 +93,7 @@ void main() {
         float noise = texture(u_noise, vec2(x, y) / vec2(textureSize(u_noise, 0))).r;
         float depth = gl_FragCoord.z / gl_FragCoord.w + (noise - 0.5) * 3.5;
         vec4 vColor = v_color;
+        vec3 N = normalize(v_normal);
         if (!gl_FrontFacing) {
             if (vColor.r > 0.99 && vColor.g > 0.99 && vColor.b > 0.99) {
                 vColor = vec4(0.2, 0.3, 0.8, 1.0);
@@ -70,39 +102,38 @@ void main() {
             int threshold = int(mix(15.0, 1.0, t));
             if (bayer >= threshold) discard;
             vColor = vec4(vColor.rgb * vec3(2.0, 2.0, 4.0), vColor.a);
+            N = -N;
         }
 
-        vec3 N = normalize(v_normal);
-        if (!gl_FrontFacing) N = -N;
         float diff = max(dot(N, LIGHT), 0.0) * 0.2 + 0.8;
         vec4 base = vColor;
         if (gl_FrontFacing) {
             if (overrideBlack) {
                 base = vec4(vec3(0.0), 1.0);
-            } else if (v_style == 0) {
+            } else if (v_style == STYLE_DEFAULT) {
                 base = base * texture(u_texture, v_uv);
             }
         }
         fragColor = base;
     } else {
 
-        vec4 tex_sample = ((v_style == 0)
+        vec4 tex_sample = ((v_style == STYLE_DEFAULT)
             ? texture(u_texture, v_uv)
             : vec4(1.0)) * v_color;
 
-        if (passType == 0 /* Normal */ && v_material != 2 /* Not Light/Nothing */) {
+        if (passType == PASS_NORMAL && v_material != MAT_TRANSPARENT_LIGHT) {
             vec4 tex = tex_sample;
             if (overrideBlack) {
                 tex = vec4(vec3(0.0), 1.0);
             }
-            else if (v_material == 1 /* Light/Solid */) {
+            else if (v_material == MAT_SOLID_LIGHT) {
                 tex = vec4(tex.rgb, 1.0);
             }
             vec4 fog = texture(u_bloomfog, (screenUV.xy/(-screenUV.z*4.0))+0.5);
             float fadeHeight = clamp((v_pos.y - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0);
             fragColor = lerpColor(tex * fadeHeight, fog, clampF(abs(screenUV.z)));
-        } else if (passType == 1 /* Bloom */) {
-            if (v_material == 0 /* Solid */ || v_material == 3 /* Tinted */) {
+        } else if (passType == PASS_BLOOM ) {
+            if (v_material == MAT_SOLID || v_material == MAT_TINTED ) {
                 discard;
             } else {
                 vec2 uv = (screenUV.xy / (-screenUV.z * 2)) + 0.5;
@@ -113,13 +144,13 @@ void main() {
                 float fadeHeight = clamp((v_pos.y - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0);
                 fragColor = lerpColor(tex_sample * fadeHeight, vec4(0.0), clampF(abs(screenUV.z)));
             }
-        } else if (passType == 2 /* Bloomfog */) {
-            if (v_material == 0 /* Solid */ || v_material == 3 /* Tinted */) {
+        } else if (passType == PASS_BLOOMFOG ) {
+            if (v_material == MAT_SOLID || v_material == MAT_TINTED ) {
                 discard;
             } else {
                 fragColor = v_color;
             }
-        } else if (passType == 3 /* Late Lights */ && v_material == 2 /* Light/Nothing */) {
+        } else if (passType == PASS_LATE_LIGHTS && v_material == MAT_TRANSPARENT_LIGHT) {
             float fadeHeight = clamp((v_pos.y - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0);
             fragColor = lerpColor(tex_sample * fadeHeight, vec4(0.0), clampF(abs(screenUV.z)));
         } else {

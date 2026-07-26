@@ -11,6 +11,7 @@ use glam::{IVec3, Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use tracing::Level;
 
+use crate::beatmap::BeatmapEditor;
 use crate::{DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
 use crate::config::AppData;
 use crate::data::{
@@ -980,6 +981,7 @@ pub struct App {
     pub last_tool: ToolMode,
     pub render: Render,
     pub editor: Editor,
+    pub map_editor: BeatmapEditor,
     pub selection: Selection,
     pub drag: Drag,
     pub click_cycle: ClickCycle,
@@ -1078,6 +1080,7 @@ impl App {
                 part: None,
                 hovered: None,
             },
+            map_editor: BeatmapEditor::new(),
             selection: Selection::None,
             drag: Drag {
                 state: DragState::None,

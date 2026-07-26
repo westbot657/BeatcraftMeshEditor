@@ -20,8 +20,8 @@ layout(location = 14) in vec4  c6;
 layout(location = 15) in vec4  c7;
 
 // Flags:
-// 31 : bool : Editor render mode
-// 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10  9  8
+// 31 : bool : Editor render mode (aka override black)
+// 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10  9  8
 //  7  6  5  4 : u4 : shader style
 //  3  2  1  0 : u4 : billboard index
 //
@@ -37,7 +37,7 @@ layout(std430, binding = 0) readonly buffer BillboardBuffer {
 };
 
 
-uniform int passType; // 0 = normal, 1 = bloom, 2 = bloomfog, 3 = late lights
+uniform int passType;
 uniform mat4 u_projection;
 uniform mat4 u_view;
 uniform mat4 u_camera_pos;
@@ -53,6 +53,32 @@ flat out int v_style;
 flat out int v_flags;
 out vec3 screenUV;
 
+
+const int MAT_SOLID             = 0;
+const int MAT_SOLID_LIGHT       = 1;
+const int MAT_TRANSPARENT_LIGHT = 2;
+const int MAT_TINTED            = 3;
+
+const int MAT_NOTE              = 4;
+const int MAT_ARROW             = 5;
+
+const int MAT_OBSTACLE          = 6;
+
+const int MAT_ARC               = 7;
+
+
+
+const int PASS_NORMAL      = 0;
+const int PASS_BLOOM       = 1;
+const int PASS_BLOOMFOG    = 2;
+const int PASS_LATE_LIGHTS = 3;
+
+
+const int MODE_BEATCRAFT        = 0;
+const int MODE_EDITOR           = 1;
+const int MODE_EDITOR_WIREFRAME = 2;
+
+
 const vec3 COLORS[8] = vec3[8](
     vec3(0.55,0.70,1.00), vec3(1.00,0.25,0.35),
     vec3(0.15,0.95,0.45), vec3(1.00,0.90,0.10),
@@ -64,63 +90,67 @@ void main() {
     vec3 in_position = in_position_u.xyz;
     vec3 in_normal = in_normal_v.xyz;
     vec2 in_uv = vec2(in_position_u.w, in_normal_v.w);
+    int colorLayer = in_colorLayer_materialLayer_flags.x;
+    v_material = in_colorLayer_materialLayer_flags.y;
     v_flags = in_colorLayer_materialLayer_flags.z;
-
-    if (in_colorLayer_materialLayer_flags.y >= 1) {
-        if (u_render_mode == 0) {
-            vec4 colors[8] = vec4[8](c0, c1, c2, c3, c4, c5, c6, c7);
-            v_color = colors[clamp(in_colorLayer_materialLayer_flags.x, 0, 7)];
-        } else {
-            v_color = vec4(COLORS[clamp(in_colorLayer_materialLayer_flags.x, 0, 7)], 1.0);
-        }
-    } else {
-        v_color = vec4(1.0);
-    }
 
     vec4 pos = instance_model * vec4(in_position, 1.0);
 
-    int billboard_idx = in_colorLayer_materialLayer_flags.z & 0xF;
-    if (billboard_idx > 0) {
-        BillboardDesc bd = billboards[billboard_idx - 1];
-        vec3 camera_pos = (u_camera_pos * vec4(vec3(0.0), 1.0)).xyz;
-        vec3 authored_front = normalize(mat3(instance_model) * bd.forward_lock.xyz);
-        vec3 axis = normalize(mat3(instance_model) * bd.axis.xyz);
-        vec3 pivot = (instance_model * vec4(bd.origin.xyz, 1.0)).xyz;
-        bool spin = bd.forward_lock.w > 0.5;
-
-        vec3 local = (instance_model * vec4(in_position, 1.0)).xyz - pivot;
-
-        vec3 to_cam = normalize(camera_pos - pivot);
-
-        vec3 world_right, world_up, world_forward;
-
-        if (spin) {
-            vec3 cam_up = normalize(vec3(u_view[0][1], u_view[1][1], u_view[2][1]));
-            world_forward = to_cam;
-            vec3 up_hint = (abs(dot(world_forward, cam_up)) < 0.99) ? cam_up : vec3(0.0, 0.0, 1.0);
-            world_right = normalize(cross(world_forward, up_hint));
-            world_up = normalize(cross(world_right, world_forward));
+    if (v_material >= MAT_SOLID && v_material <= MAT_TINTED) {
+        if (v_material >= MAT_SOLID_LIGHT) {
+            if (u_render_mode == MODE_BEATCRAFT) {
+                vec4 colors[8] = vec4[8](c0, c1, c2, c3, c4, c5, c6, c7);
+                v_color = colors[clamp(in_colorLayer_materialLayer_flags.x, 0, 7)];
+            } else {
+                v_color = vec4(COLORS[clamp(in_colorLayer_materialLayer_flags.x, 0, 7)], 1.0);
+            }
         } else {
-            vec3 proj = to_cam - dot(to_cam, axis) * axis;
-            world_forward = (length(proj) > 0.001) ? normalize(proj) : authored_front;
-            world_right = normalize(cross(world_forward, axis));
-            world_up = axis;
+            v_color = vec4(1.0);
         }
 
-        vec3 helper = (abs(dot(authored_front, axis)) < 0.99) ? axis : vec3(1.0, 0.0, 0.0);
-        vec3 local_right = normalize(cross(authored_front, helper));
-        vec3 local_up = normalize(cross(local_right, authored_front));
+        int billboard_idx = in_colorLayer_materialLayer_flags.z & 0xF;
+        if (billboard_idx > 0) {
+            BillboardDesc bd = billboards[billboard_idx - 1];
+            vec3 camera_pos = (u_camera_pos * vec4(vec3(0.0), 1.0)).xyz;
+            vec3 authored_front = normalize(mat3(instance_model) * bd.forward_lock.xyz);
+            vec3 axis = normalize(mat3(instance_model) * bd.axis.xyz);
+            vec3 pivot = (instance_model * vec4(bd.origin.xyz, 1.0)).xyz;
+            bool spin = bd.forward_lock.w > 0.5;
 
-        float cx = dot(local, local_right);
-        float cy = dot(local, local_up);
-        float cz = dot(local, authored_front);
+            vec3 local = (instance_model * vec4(in_position, 1.0)).xyz - pivot;
 
-        vec3 world_pos = pivot
-                       + world_right   * cx
-                       + world_up      * cy
-                       + world_forward * cz;
+            vec3 to_cam = normalize(camera_pos - pivot);
 
-        pos = vec4(world_pos, 1.0);
+            vec3 world_right, world_up, world_forward;
+
+            if (spin) {
+                vec3 cam_up = normalize(vec3(u_view[0][1], u_view[1][1], u_view[2][1]));
+                world_forward = to_cam;
+                vec3 up_hint = (abs(dot(world_forward, cam_up)) < 0.99) ? cam_up : vec3(0.0, 0.0, 1.0);
+                world_right = normalize(cross(world_forward, up_hint));
+                world_up = normalize(cross(world_right, world_forward));
+            } else {
+                vec3 proj = to_cam - dot(to_cam, axis) * axis;
+                world_forward = (length(proj) > 0.001) ? normalize(proj) : authored_front;
+                world_right = normalize(cross(world_forward, axis));
+                world_up = axis;
+            }
+
+            vec3 helper = (abs(dot(authored_front, axis)) < 0.99) ? axis : vec3(1.0, 0.0, 0.0);
+            vec3 local_right = normalize(cross(authored_front, helper));
+            vec3 local_up = normalize(cross(local_right, authored_front));
+
+            float cx = dot(local, local_right);
+            float cy = dot(local, local_up);
+            float cz = dot(local, authored_front);
+
+            vec3 world_pos = pivot
+                           + world_right   * cx
+                           + world_up      * cy
+                           + world_forward * cz;
+
+            pos = vec4(world_pos, 1.0);
+        }
     }
 
     pos = u_view * pos;
@@ -128,7 +158,7 @@ void main() {
     gl_ClipDistance[0] = dot(wp, clipping_plane);
 
     vec4 final = u_projection * pos;
-    if (passType == 2 /* Bloomfog */) {
+    if (passType == PASS_BLOOMFOG) {
         final = vec4(final.xyz/2.0, final.w);
     }
     gl_Position = final;
