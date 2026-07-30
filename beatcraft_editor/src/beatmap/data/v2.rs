@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{ArcV2, BPMEventV2, convert_u8, BeatmapDataError, BombNoteV2, ColorNoteV2, InfoVersion, MapCharacteristic, MapVersion, ObstacleV2, RGBAColor, Sentinel, SpawnRotationEventV2};
+use super::{ArcV2, BPMEventV2, BeatmapDataError, BombNoteV2, ColorNoteV2, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion, ObstacleV2, RGBAColor, Sentinel, SpawnRotationEventV2, convert_u8};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -296,7 +296,7 @@ pub struct CharacteristicSetV2 {
 #[serde(deny_unknown_fields)]
 pub struct DifficultyBeatmapV2 {
     #[serde(rename = "_difficulty")]
-    pub difficulty: String,
+    pub difficulty: MapDifficulty,
     #[serde(rename = "_difficultyRank")]
     pub difficulty_rank: u8,
     #[serde(rename = "_beatmapFilename")]

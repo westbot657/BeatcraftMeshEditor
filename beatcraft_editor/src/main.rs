@@ -55,6 +55,7 @@ pub mod beatmap;
 pub mod appdata;
 pub mod ui_elements;
 pub mod config;
+pub mod audio;
 
 // Logging targets
 pub static DB_LOGIC: &str = "logic";
@@ -194,7 +195,9 @@ impl eframe::App for App {
             self.state.title_content = None;
         }
 
-        self.handle_file_open(gl);
+        self.update_routines(gl);
+
+        self.audio_system.update();
 
         let rd = RefDuper;
         let self2 = unsafe { rd.detach_mut_ref(self) };
@@ -228,6 +231,7 @@ impl eframe::App for App {
             },
             editor::EditorContext::None => self.draw_welcome_page(ctx, frame),
         }
+        ctx.request_repaint();
     }
 }
 
@@ -4530,7 +4534,7 @@ struct Cli {
 }
 
 fn build_env_filter(debug: bool) -> EnvFilter {
-    if debug {
+    let mut filter = if debug {
         EnvFilter::new("warn")
             .add_directive("beatcraft_editor=debug".parse().unwrap())
             .add_directive(format!("{DB_LOGIC}=debug").parse().unwrap())
@@ -4541,8 +4545,20 @@ fn build_env_filter(debug: bool) -> EnvFilter {
             .add_directive(format!("{DB_AUDIO}=debug").parse().unwrap())
             .add_directive(format!("{DB_HISTORY}=debug").parse().unwrap())
     } else {
-        EnvFilter::try_from_env("BEATCRAFT_LOG").unwrap_or_else(|_| EnvFilter::new("info"))
+        EnvFilter::new("info")
+    };
+
+    // Layer any env-provided directives on top, whichever mode we're in
+    if let Ok(env_value) = std::env::var("BEATCRAFT_LOG") {
+        for directive in env_value.split(',').filter(|s| !s.trim().is_empty()) {
+            match directive.parse() {
+                Ok(d) => filter = filter.add_directive(d),
+                Err(e) => eprintln!("Ignoring invalid BEATCRAFT_LOG directive '{directive}': {e}"),
+            }
+        }
     }
+
+    filter
 }
 
 /// Returns a guard that MUST be kept alive for the program's duration

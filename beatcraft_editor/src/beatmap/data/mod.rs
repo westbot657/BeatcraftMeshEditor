@@ -75,6 +75,18 @@ pub enum MapCharacteristic {
     Unknown(String)
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MapDifficulty {
+    Easy,
+    Normal,
+    Hard,
+    Expert,
+    ExpertPlus,
+
+    #[serde(untagged)]
+    Unknown(String),
+}
+
 // Color notes
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,7 +120,7 @@ pub enum CutDirection {
     Dot       = 8,
 }
 
-fn is_value<T: Num + From<i16>, const N: i16>(v: &T) -> bool {
+fn is_value<const N: i16>(v: &(impl Num + From<i16>)) -> bool {
     *v == N.into()
 }
 
@@ -259,7 +271,7 @@ pub struct ObstacleV2 {
     pub width: f32,
     #[serde(rename = "_height")]
     #[serde(default="def_value::<_, 5>")]
-    #[serde(skip_serializing_if="is_value::<_, 5>")]
+    #[serde(skip_serializing_if="is_value::<5>")]
     pub height: f32,
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -609,6 +621,37 @@ impl PartialEq<&str> for MapCharacteristic {
 
 impl PartialEq<MapCharacteristic> for &str {
     fn eq(&self, other: &MapCharacteristic) -> bool {
+        other.eq(self)
+    }
+}
+
+impl MapDifficulty {
+    pub fn display_name(&self) -> &str {
+        match self {
+            MapDifficulty::Easy => "Easy",
+            MapDifficulty::Normal => "Normal",
+            MapDifficulty::Hard => "Hard",
+            MapDifficulty::Expert => "Expert",
+            MapDifficulty::ExpertPlus => "ExpertPlus",
+            MapDifficulty::Unknown(s) => s.as_str(),
+        }
+    }
+}
+
+impl Display for MapDifficulty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display_name())
+    }
+}
+
+impl PartialEq<&str> for MapDifficulty {
+    fn eq(&self, other: &&str) -> bool {
+        self.display_name() == *other
+    }
+}
+
+impl PartialEq<MapDifficulty> for &str {
+    fn eq(&self, other: &MapDifficulty) -> bool {
         other.eq(self)
     }
 }

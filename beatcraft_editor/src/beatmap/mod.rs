@@ -2,8 +2,12 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 
+use eframe::glow::Context;
+
 use crate::{DB_LOGIC, DB_MAIN};
 use crate::editor::{App, RoutineAction};
+
+use self::data::MapDifficulty;
 
 pub mod event;
 pub mod object;
@@ -12,15 +16,46 @@ pub mod render;
 #[cfg(test)]
 pub mod tests;
 
-pub struct BeatmapEditor {
+pub struct BeatmapProjectDiff {
+    pub difficulty: MapDifficulty,
+    pub rank: u8,
+    pub beatmap_file: Option<PathBuf>,
+    pub njs: f32,
+    pub njs_offset: f32,
+    pub custom_data: Option<serde_json::Value>,
+}
 
+pub struct BeatmapProjectSet {
+    pub diffs: Vec<BeatmapProjectDiff>
+}
+
+pub struct BeatmapProject {
+    pub folder: PathBuf,
+    pub audio_file: Option<PathBuf>,
+    pub cover_image: Option<PathBuf>,
+    pub sets: Vec<BeatmapProjectSet>
+}
+
+pub struct BeatmapEditor {
+    pub map: Option<BeatmapProject>
 }
 
 impl BeatmapEditor {
-    pub fn new() -> Self {
-        Self {
+    pub fn new(map_gl: Option<(PathBuf, &Context)>) -> Result<Self, String> {
+        let mut s = Self {
+            map: None,
+        };
 
+        if let Some((map, gl)) = map_gl {
+            s.load(map, gl)?
         }
+
+        Ok(s)
+    }
+
+    pub fn load(&mut self, map: PathBuf, gl: &Context) -> Result<(), String> {
+        
+        Ok(())
     }
 }
 

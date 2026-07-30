@@ -11,6 +11,7 @@ use glam::{IVec3, Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use tracing::Level;
 
+use crate::audio::{Audio, AudioSystem};
 use crate::beatmap::BeatmapEditor;
 use crate::{DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
 use crate::config::AppData;
@@ -990,6 +991,7 @@ pub struct App {
     pub assembly: Assembly,
     pub history: History,
     pub data: AppData,
+    pub audio_system: AudioSystem,
 }
 
 pub struct TriMeta {
@@ -1080,7 +1082,7 @@ impl App {
                 part: None,
                 hovered: None,
             },
-            map_editor: BeatmapEditor::new(),
+            map_editor: BeatmapEditor::new(None).unwrap(),
             selection: Selection::None,
             drag: Drag {
                 state: DragState::None,
@@ -1140,15 +1142,21 @@ impl App {
                 limit: 200,
             },
             data: load_app_data().unwrap_or_else(|_| Default::default()),
+            audio_system: AudioSystem::new().unwrap(),
         };
+
+        // let test_audio = PathBuf::from("/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/11f9c (Tenebrous - Swifter1243)/song.egg");
+        // Audio::new(&mut s.audio_system, &test_audio, crate::audio::AudioMode::Full).unwrap();
 
         if let Some(p) = path
             && s.load_session(&p, &gl2).is_err()
         {
             let name = s.get_unique_mesh_id();
             let mut add = IndexMap::new();
-            add.insert(name, p);
-            let _ = s.load_meshes(add, &gl2);
+            add.insert(name, p.clone());
+            if s.load_meshes(add, &gl2).is_err() {
+                let _ = s.map_editor.load(p, &gl2);
+            }
         }
 
         tracing::info!(target: DB_MAIN, "Initialized.");
@@ -2261,7 +2269,7 @@ impl App {
         }
     }
 
-    pub fn handle_file_open(&mut self, gl: &Context) {
+    pub fn update_routines(&mut self, gl: &Context) {
         let mut routines = Vec::new();
         std::mem::swap(&mut routines, &mut self.state.ui.routines);
 
