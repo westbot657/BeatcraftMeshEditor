@@ -725,6 +725,19 @@ impl VersionClass {
     }
 }
 
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum InfoFile {
+    V2(InfoV2),
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum BeatmapFile {
+    V2(BeatmapFileV2),
+}
+
 // extra helpers
 
 
@@ -776,6 +789,8 @@ convert_u8! { SpawnRotationAngle: 0..=7 }
 
 use serde::{Deserializer, Serializer};
 use serde::de::Error as _;
+
+use self::v2::{BeatmapFileV2, InfoV2};
 
 impl<const N: u8> Serialize for Sentinel<N> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

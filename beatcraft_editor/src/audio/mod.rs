@@ -5,7 +5,7 @@ use std::sync::{Arc, mpsc};
 
 use parking_lot::RwLock;
 use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
-use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, TrackType};
+use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
@@ -34,6 +34,14 @@ pub enum AudioError {
     String(String),
     #[error("{0}")]
     Str(&'static str),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum PlaybackError {
+    #[error("Audio data is not ready yet")]
+    NotReady,
+    #[error("Cannot seek to invalid position: {0}")]
+    InvalidSeekPosition(f32),
 }
 
 pub struct AudioSystem {
@@ -259,9 +267,11 @@ pub enum AudioMode {
 #[derive(Debug)]
 enum AudioSource {
     Stream {
-        sections: Arc<RwLock<Vec<AudioLoadState>>>,
-        playback_cursor: Arc<RwLock<usize>>,
-        background_cursor: Arc<RwLock<usize>>,
+        loaded_ranges: Arc<RwLock<Vec<(usize, usize)>>>, // interleaved-sample ranges, sorted+merged
+        decode_cursor: Arc<RwLock<usize>>,                 // where the decoder has written up to
+        seek_target: Arc<RwLock<Option<usize>>>,           // pending seek, consumed by the decode task
+        playback_position: usize,
+        free_buffers: Vec<u32>,
     },
     Full {
         load_position: Arc<RwLock<usize>>,
@@ -276,9 +286,11 @@ pub struct Audio {
     sample_count: Arc<RwLock<Option<usize>>>,
     source: Arc<RwLock<AudioSource>>,
     loaded: Arc<RwLock<bool>>,
+    pending_play: Arc<RwLock<bool>>,
     src_handle: u32,
     channels: u16,
     sample_rate: u32,
+    fx_filter: u32,
 }
 
 impl Audio {
@@ -290,13 +302,21 @@ impl Audio {
             AudioMode::Stream => {
                 let mut audio_info = AudioSystem::open_decoder(path)?;
                 let data: Arc<RwLock<Vec<i16>>> = Arc::default();
-                let sections: Arc<RwLock<Vec<AudioLoadState>>> = Arc::default();
+                let sections: Arc<RwLock<Vec<(usize, usize)>>> = Arc::default();
                 let pb_cursor: Arc<RwLock<usize>> = Arc::default();
-                let bg_cursor: Arc<RwLock<usize>> = Arc::default();
+                let seek_target = Arc::new(RwLock::new(None));
+
+                let mut buffers = vec![0u32; FULL_BUFFER_COUNT];
+                unsafe { al::alGenBuffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr()); }
+                check_al_error("after alGenBuffers");
+                tracing::debug!(target: DB_AUDIO, "Generated {} AL buffers for streaming", FULL_BUFFER_COUNT);
+
                 let source = Arc::new(RwLock::new(AudioSource::Stream {
-                    sections: sections.clone(),
-                    playback_cursor: pb_cursor.clone(),
-                    background_cursor: bg_cursor.clone(),
+                    loaded_ranges: Arc::clone(&sections),
+                    decode_cursor: Arc::clone(&pb_cursor),
+                    seek_target: Arc::clone(&seek_target),
+                    playback_position: 0,
+                    free_buffers: buffers,
                 }));
                 let loaded = Arc::new(RwLock::new(true));
 
@@ -304,30 +324,34 @@ impl Audio {
                 unsafe { al::alGenSources(1, src_handle.as_mut_ptr()); }
                 let [src_handle] = src_handle;
 
+                let mut fx_filter = [0];
+                unsafe { al::alGenFilters(1, fx_filter.as_mut_ptr()) };
+                let [fx_filter] = fx_filter;
+
+                unsafe {
+                    al::alFilteri(fx_filter, al::AL_FILTER_TYPE, al::AL_FILTER_LOWPASS);
+                    al::alFilterf(fx_filter, al::AL_LOWPASS_GAIN, 1.);
+                    al::alFilterf(fx_filter, al::AL_LOWPASS_GAINHF, 0.1);
+                }
+
+                let sample_count = Arc::new(RwLock::new(audio_info.sample_count));
+
                 let audio = Arc::new(Self {
-                    data: data.clone(),
-                    sample_count: Arc::default(),
-                    source: source.clone(),
-                    loaded: loaded.clone(),
+                    data: Arc::clone(&data),
+                    sample_count: Arc::clone(&sample_count),
+                    source: Arc::clone(&source),
+                    loaded: Arc::clone(&loaded),
+                    pending_play: Arc::new(RwLock::new(false)),
                     src_handle,
                     channels: audio_info.channels,
                     sample_rate: audio_info.sample_rate,
+                    fx_filter,
                 });
 
-                audio_sys.audio_refs.push(audio.clone());
+                audio_sys.audio_refs.push(Arc::clone(&audio));
 
-                let dat = data.clone();
-                let sects = sections.clone();
-                let cursor = bg_cursor.clone();
-                let src = source.clone();
-                let lod = loaded.clone();
                 audio_sys.add_task(Box::new(move || {
-                    Self::background_task_loop(&dat, &sects, &cursor, &src, &lod, &mut audio_info)
-                }));
-                let cursor = pb_cursor.clone();
-                let mut audio_info = AudioSystem::open_decoder(path)?;
-                audio_sys.add_task(Box::new(move || {
-                    Self::playback_track_task_loop(&data, &sections, &cursor, &bg_cursor, &loaded, &mut audio_info)
+                    Self::decode_task_loop(&data, &sections, &pb_cursor, &seek_target, &loaded, audio_info.channels, &mut audio_info)
                 }));
                 Ok(audio)
             },
@@ -351,27 +375,40 @@ impl Audio {
                 tracing::debug!(target: DB_AUDIO, "Generated {} AL buffers for full-streaming", FULL_BUFFER_COUNT);
 
                 let source = Arc::new(RwLock::new(AudioSource::Full {
-                    load_position: load_pos.clone(),
+                    load_position: Arc::clone(&load_pos),
                     playback_position: 0,
                     free_buffers: buffers,
                 }));
 
                 let loaded = Arc::new(RwLock::new(true));
 
+                let mut fx_filter = [0];
+                unsafe { al::alGenFilters(1, fx_filter.as_mut_ptr()) };
+                let [fx_filter] = fx_filter;
+                unsafe {
+                    al::alFilteri(fx_filter, al::AL_FILTER_TYPE, al::AL_FILTER_LOWPASS);
+                    al::alFilterf(fx_filter, al::AL_LOWPASS_GAIN, 1.);
+                    al::alFilterf(fx_filter, al::AL_LOWPASS_GAINHF, 0.1);
+                }
+
+                let sample_count = Arc::new(RwLock::new(audio_info.sample_count));
+
                 let audio = Arc::new(Self {
-                    data: data.clone(),
-                    sample_count: Arc::default(),
+                    data: Arc::clone(&data),
+                    sample_count: Arc::clone(&sample_count),
                     source,
-                    loaded: loaded.clone(),
+                    loaded: Arc::clone(&loaded),
+                    pending_play: Arc::new(RwLock::new(false)),
                     src_handle,
                     channels,
                     sample_rate,
+                    fx_filter,
                 });
 
-                audio_sys.audio_refs.push(audio.clone());
+                audio_sys.audio_refs.push(Arc::clone(&audio));
 
                 audio_sys.add_task(Box::new(move || {
-                    Self::load_full(&data, &loaded, &load_pos, &mut audio_info)
+                    Self::load_full(&data, &loaded, &load_pos, &mut audio_info, &sample_count)
                 }));
 
                 Ok(audio)
@@ -379,12 +416,39 @@ impl Audio {
         }
     }
 
-    
-pub fn update(&self) {
+    pub fn update(&self) {
         let mut source = self.source.write();
  
         match &mut *source {
-            AudioSource::Stream { sections, playback_cursor, background_cursor } => todo!(),
+            AudioSource::Stream { loaded_ranges, playback_position, free_buffers, .. } => {
+                unsafe {
+                    let mut processed = [0i32];
+                    al::alGetSourcei(self.src_handle, al::AL_BUFFERS_PROCESSED, processed.as_mut_ptr());
+                    for _ in 0..processed[0] {
+                        let mut buf = [0u32];
+                        al::alSourceUnqueueBuffers(self.src_handle, 1, buf.as_mut_ptr());
+                        free_buffers.push(buf[0]);
+                    }
+                }
+
+                let ranges = loaded_ranges.read();
+                let available = Self::contiguous_loaded_end(&ranges, *playback_position);
+                drop(ranges);
+                let dat = self.data.read();
+
+                while let Some(buf) = free_buffers.pop() {
+                    let remaining = available.saturating_sub(*playback_position);
+                    if remaining == 0 { free_buffers.push(buf); break; }
+                    let take = remaining.min(FULL_CHUNK_SAMPLES);
+                    let slice = &dat[*playback_position..*playback_position + take];
+                    unsafe {
+                        let format = if self.channels == 1 { al::AL_FORMAT_MONO16 } else { al::AL_FORMAT_STEREO16 };
+                        al::alBufferData(buf, format, slice.as_ptr() as *const _, std::mem::size_of_val(slice) as i32, self.sample_rate as i32);
+                        al::alSourceQueueBuffers(self.src_handle, 1, &buf);
+                    }
+                    *playback_position += take;
+                }
+            },
             AudioSource::Full { load_position, playback_position, free_buffers } => {
                 unsafe {
                     let mut processed = [0i32];
@@ -428,19 +492,178 @@ pub fn update(&self) {
  
             },
         }
+
+        drop(source);
+
+        if *self.pending_play.read() {
+            match self.play() {
+                Ok(()) => {
+                    tracing::debug!(target: DB_AUDIO, "Playing queued audio");
+                    *self.pending_play.write() = false
+                },
+                Err(PlaybackError::NotReady) => {},
+                Err(_) => {},
+            }
+        }
+
     }
 
-    pub fn play(&self) {
+    pub fn play(&self) -> Result<(), PlaybackError> {
         unsafe {
             let mut state = [0i32];
             al::alGetSourcei(self.src_handle, al::AL_SOURCE_STATE, state.as_mut_ptr());
             let mut queued = [0i32];
             al::alGetSourcei(self.src_handle, al::AL_BUFFERS_QUEUED, queued.as_mut_ptr());
-            if state[0] != al::AL_PLAYING && queued[0] > 0 {
+            if state[0] == al::AL_PLAYING {
+                return Ok(())
+            }
+            if queued[0] > 0 {
                 al::alSourcePlay(self.src_handle);
-                check_al_error("alSourcePlay");
+                Ok(())
+            } else {
+                Err(PlaybackError::NotReady)
             }
         }
+    }
+
+    pub fn queue_play(&self) {
+        tracing::debug!(target: DB_AUDIO, "Queueing audio to play when ready");
+        *self.pending_play.write() = true;
+    }
+
+    pub fn pause(&self) {
+        *self.pending_play.write() = false;
+        unsafe {
+            al::alSourcePause(self.src_handle);
+        }
+    }
+
+    pub fn stop(&self) {
+        *self.pending_play.write() = false;
+        unsafe {
+            al::alSourceStop(self.src_handle);
+        }
+    }
+
+    /// Volume should be between 0-1
+    pub fn set_volume(&self, volume: f32) {
+        unsafe {
+            al::alSourcef(self.src_handle, al::AL_GAIN, volume);
+        }
+    }
+
+    pub fn enable_fx(&self) {
+        unsafe {
+            al::alSourcei(self.src_handle, al::AL_DIRECT_FILTER, self.fx_filter as i32);
+        }
+    }
+
+    pub fn disable_fx(&self) {
+        unsafe {
+            al::alSourcei(self.src_handle, al::AL_DIRECT_FILTER, 0);
+        }
+    }
+
+    pub fn set_speed(&self, speed: f32) {
+        unsafe {
+            al::alSourcef(self.src_handle, al::AL_PITCH, speed);
+        }
+    }
+
+    pub fn reset_speed(&self) {
+        self.set_speed(1.);
+    }
+
+    pub fn seek(&mut self, target: f32) -> Result<(), PlaybackError> {
+        if target < 0.0 {
+            return Err(PlaybackError::InvalidSeekPosition(target));
+        }
+        let target_sample = (target * self.sample_rate as f32) as usize * self.channels as usize;
+
+        let mut source = self.source.write();
+        match &mut *source {
+            AudioSource::Full { load_position, playback_position, free_buffers } => {
+                let loaded = *load_position.read();
+                if target_sample > loaded {
+                    return Err(PlaybackError::InvalidSeekPosition(target));
+                }
+
+                let mut was_playing = [0i32];
+                unsafe { al::alGetSourcei(self.src_handle, al::AL_SOURCE_STATE, was_playing.as_mut_ptr()); }
+                let was_playing = was_playing[0] == al::AL_PLAYING;
+
+                unsafe {
+                    al::alSourceStop(self.src_handle);
+                    let mut queued = [0i32];
+                    al::alGetSourcei(self.src_handle, al::AL_BUFFERS_QUEUED, queued.as_mut_ptr());
+                    for _ in 0..queued[0] {
+                        let mut buf = [0u32];
+                        al::alSourceUnqueueBuffers(self.src_handle, 1, buf.as_mut_ptr());
+                        check_al_error("seek: unqueue");
+                        free_buffers.push(buf[0]);
+                    }
+                }
+
+                *playback_position = target_sample;
+                drop(source);
+
+                self.update();
+                if was_playing {
+                    self.play()?;
+                }
+                Ok(())
+            }
+            AudioSource::Stream { .. } => {
+                drop(source);
+                self.seek_stream(target)
+            },
+        }
+    }
+
+    fn seek_stream(&mut self, target: f32) -> Result<(), PlaybackError> {
+        let target_sample = (target * self.sample_rate as f32) as usize * self.channels as usize;
+        let mut source = self.source.write();
+        if let AudioSource::Stream { loaded_ranges, playback_position, seek_target, free_buffers, .. } = &mut *source {
+            let already_loaded = Self::contiguous_loaded_end(&loaded_ranges.read(), target_sample) > target_sample;
+
+            unsafe {
+                al::alSourceStop(self.src_handle);
+                let mut queued = [0i32];
+                al::alGetSourcei(self.src_handle, al::AL_BUFFERS_QUEUED, queued.as_mut_ptr());
+                for _ in 0..queued[0] {
+                    let mut buf = [0u32];
+                    al::alSourceUnqueueBuffers(self.src_handle, 1, buf.as_mut_ptr());
+                    free_buffers.push(buf[0]);
+                }
+            }
+
+            *playback_position = target_sample;
+            if !already_loaded {
+                *seek_target.write() = Some(target_sample); // decode task will jump on its next tick
+            }
+        }
+        Ok(())
+    }
+
+    fn contiguous_loaded_end(ranges: &[(usize, usize)], pos: usize) -> usize {
+        ranges.iter().find(|&&(s, e)| s <= pos && pos < e).map(|&(_, e)| e).unwrap_or(pos)
+    }
+
+    pub fn mode(&self) -> AudioMode {
+        let source = self.source.read();
+        match *source {
+            AudioSource::Stream { .. } => AudioMode::Stream,
+            AudioSource::Full { .. } => AudioMode::Full,
+        }
+    }
+
+    /// This may be None if the audio did not provide the length as metadata.
+    /// If not provided by metadata this is calculated during decoding.
+    /// If decoding is required to determine length, this might return a
+    /// shorter duration than the audio actually is until done.
+    pub fn length_seconds(&self) -> Option<f32> {
+        let frames = (*self.sample_count.read())?;
+        Some(frames as f32 / self.sample_rate as f32)
     }
 
     fn get_cursor(task: LoadTask, cursors: &[Arc<RwLock<usize>>; 2]) -> usize {
@@ -501,6 +724,7 @@ pub fn update(&self) {
         loaded: &Arc<RwLock<bool>>,
         load_pos: &Arc<RwLock<usize>>,
         info: &mut AudioInfo,
+        sample_count: &Arc<RwLock<Option<usize>>>,
     ) -> TaskAction {
 
         if !{ *loaded.read() } {
@@ -554,84 +778,80 @@ pub fn update(&self) {
         TaskAction::None
     }
 
-    fn background_task_loop(
+    fn decode_task_loop(
         data: &Arc<RwLock<Vec<i16>>>,
-        sections: &Arc<RwLock<Vec<AudioLoadState>>>,
-        cursor: &Arc<RwLock<usize>>,
-        source: &Arc<RwLock<AudioSource>>,
+        loaded_ranges: &Arc<RwLock<Vec<(usize, usize)>>>,
+        decode_cursor: &Arc<RwLock<usize>>,
+        seek_target: &Arc<RwLock<Option<usize>>>,
         loaded: &Arc<RwLock<bool>>,
+        channels: u16,
         info: &mut AudioInfo,
     ) -> TaskAction {
+        if !*loaded.read() { return TaskAction::Remove; }
 
-        if !{ *loaded.read() } {
-            return TaskAction::Remove;
+        if let Some(target_sample) = seek_target.write().take() {
+            let target_frame = target_sample / channels as usize;
+            let target_time_secs = target_frame as f64 / info.sample_rate as f64;
+            let time = symphonia::core::units::Time::try_from_secs_f64(target_time_secs).unwrap();
+
+            match info.format_reader.seek(
+                symphonia::core::formats::SeekMode::Accurate,
+                symphonia::core::formats::SeekTo::Time {
+                    time,
+                    track_id: Some(info.track_id),
+                },
+            ) {
+                Ok(seeked) => {
+                    // Timestamp is now an opaque newtype — .get() extracts the i64
+                    let actual_frame = seeked.actual_ts.get().max(0) as usize;
+                    *decode_cursor.write() = actual_frame * channels as usize;
+                }
+                Err(err) => tracing::warn!(target: DB_AUDIO, "seek failed: {err}"),
+            }
         }
 
         let packet = loop {
             let packet = match info.format_reader.next_packet() {
-                Ok(Some(packet)) => packet,
+                Ok(Some(p)) => p,
                 Ok(None) => return TaskAction::Remove,
-                Err(symphonia::core::errors::Error::ResetRequired) => {
-                    unimplemented!("why do I have to deal with OGG");
-                }
-                Err(err) => {
-                    tracing::error!(target: DB_AUDIO, "Audio reader encountered an unrecoverable error: {err}");
-                    return TaskAction::Remove;
-                }
+                Err(symphonia::core::errors::Error::ResetRequired) => unimplemented!("why do I have to deal with OGG"),
+                Err(err) => { tracing::error!(target: DB_AUDIO, "{err}"); return TaskAction::Remove; }
             };
-            while !info.format_reader.metadata().is_latest() {
-                info.format_reader.metadata().pop();
-            }
-            if packet.track_id != info.track_id {
-                continue;
-            }
+            while !info.format_reader.metadata().is_latest() { info.format_reader.metadata().pop(); }
+            if packet.track_id != info.track_id { continue; }
             break packet;
         };
 
-        match info.decoder.decode(&packet) {
-            Ok(buf) => {
-                let size = buf.samples_interleaved();
-                let mut dat = data.write();
-                dat.reserve(size);
-                dat.append(&mut vec![i16::MID; size]);
-                let end = dat.len() - 1;
-                let slice = &mut dat[(end-size)..];
-                buf.copy_to_slice_interleaved(slice);
-                *cursor.write() += size;
-                // potentially send AL cmd to main thread to buffer data?
-            }
-            Err(symphonia::core::errors::Error::IoError(err)) => {
-                tracing::warn!(target: DB_AUDIO, "IO Error during decode: {err}");
-            }
-            Err(symphonia::core::errors::Error::DecodeError(err)) => {
-                tracing::warn!(target: DB_AUDIO, "Decode error: {err}")
-            }
-            Err(err) => {
-                tracing::error!(target: DB_AUDIO, "Audio decoder encountered an unrecoverable error: {err}")
-            }
+        if let Ok(buf) = info.decoder.decode(&packet) {
+            let size = buf.samples_interleaved();
+            let start = *decode_cursor.read();
+            let end = start + size;
+
+            let mut dat = data.write();
+            if dat.len() < end { dat.resize(end, i16::MID); }
+            buf.copy_to_slice_interleaved(&mut dat[start..end]);
+            drop(dat);
+
+            *decode_cursor.write() = end;
+            let mut ranges = loaded_ranges.write();
+            ranges.push((start, end));
+            Self::merge_ranges(&mut ranges);
         }
 
         TaskAction::None
     }
 
-    fn playback_track_task_loop(
-        data: &Arc<RwLock<Vec<i16>>>,
-        sections: &Arc<RwLock<Vec<AudioLoadState>>>,
-        cursor: &Arc<RwLock<usize>>,
-        bg_cursor: &Arc<RwLock<usize>>,
-        loaded: &Arc<RwLock<bool>>,
-        info: &mut AudioInfo,
-    ) -> TaskAction {
-
-        if !{ *loaded.read() } {
-            return TaskAction::Remove;
+    fn merge_ranges(ranges: &mut Vec<(usize, usize)>) {
+        ranges.sort_unstable_by_key(|r| r.0);
+        let mut merged: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
+        for &(s, e) in ranges.iter() {
+            match merged.last_mut() {
+                Some(last) if s <= last.1 => last.1 = last.1.max(e),
+                _ => merged.push((s, e)),
+            }
         }
-
-        // this is the task that only runs when playback is not in-time with the background task
-
-        TaskAction::None
+        *ranges = merged;
     }
-
 }
 
 impl Drop for Audio {

@@ -1146,7 +1146,8 @@ impl App {
         };
 
         // let test_audio = PathBuf::from("/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/11f9c (Tenebrous - Swifter1243)/song.egg");
-        // Audio::new(&mut s.audio_system, &test_audio, crate::audio::AudioMode::Full).unwrap();
+        // let audio = Audio::new(&mut s.audio_system, &test_audio, crate::audio::AudioMode::Stream).unwrap();
+        // audio.queue_play();
 
         if let Some(p) = path
             && s.load_session(&p, &gl2).is_err()
