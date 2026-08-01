@@ -79,13 +79,14 @@ pub static MISSING_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets
 
 pub fn get_data_folder() -> Option<PathBuf> {
     dirs::data_local_dir()
-        .map(|dir| dir.join("BeatcraftMeshEditor"))
+        .map(|dir| dir.join("beatcraftmesheditor"))
 }
 
 pub fn get_data_file() -> Option<PathBuf> {
     get_data_folder()
         .map(|dir| dir.join("data.json"))
 }
+
 
 #[derive(thiserror::Error, Debug)]
 pub enum AppDataError {
@@ -109,10 +110,10 @@ pub fn load_app_data() -> Result<AppData, AppDataError> {
 }
 
 pub fn save_app_data(data: &AppData) -> Result<(), AppDataError> {
-    let path = get_data_folder().ok_or(AppDataError::MissingDataDirectory)?;
+    let path = get_data_file().ok_or(AppDataError::MissingDataDirectory)?;
     let raw: RawAppData = data.into();
     let s = serde_json::to_string(&raw)?;
-    fs::create_dir_all(path.parent().unwrap())?;
+    let _ = fs::create_dir_all(path.parent().unwrap());
     fs::write(path, &s)?;
     Ok(())
 }
@@ -2036,7 +2037,11 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_view_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32)) {
+fn draw_view_gl(
+    s: &UnsafeMutRef<App>, gl: &glow::Context,
+    view: &Mat4, proj: &Mat4,
+    window: (i32, i32)
+) {
     let mut calls = Vec::new();
     for (_id, vm) in s.view.meshes.iter() {
         if let Some(vm) = vm {
@@ -4535,7 +4540,9 @@ struct Cli {
 
 fn build_env_filter(debug: bool) -> EnvFilter {
     let mut filter = if debug {
-        EnvFilter::new("warn")
+        EnvFilter::new("off")
+            .add_directive("egui_glow=warn".parse().unwrap())
+            .add_directive("egui=warn".parse().unwrap())
             .add_directive("beatcraft_editor=debug".parse().unwrap())
             .add_directive(format!("{DB_LOGIC}=debug").parse().unwrap())
             .add_directive(format!("{DB_MAIN}=debug").parse().unwrap())

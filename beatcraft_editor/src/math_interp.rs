@@ -41,7 +41,7 @@ pub fn eval<M>(expr: &str, var_table: &mut M) -> Option<f32>
 where
     M: MapIndexable + Debug
 {
-    tracing::debug!(target: DB_MATH, ?var_table, "Evaluating expression: {expr}");
+    tracing::debug!(target: DB_MATH, "Evaluating expression: {expr}");
     eval_inner(expr, var_table, false)
 }
 
@@ -50,7 +50,7 @@ pub fn eval_inner(expr: &str, var_table: &mut impl MapIndexable, is_degrees: boo
 
     let mut tokens = splitter.find_iter(expr).peekable();
 
-    tracing::debug!(target: DB_MATH, ?tokens, "Evaluating expression from tokens");
+    tracing::debug!(target: DB_MATH, "Evaluating expression from tokens");
     let res = eval_expr(&mut tokens, var_table, is_degrees)?;
     if tokens.next().is_some() || res.is_nan() {
         None

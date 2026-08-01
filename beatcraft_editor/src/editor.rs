@@ -1059,6 +1059,10 @@ impl App {
 
         egui_extras::install_image_loaders(&cc.egui_ctx);
 
+        let mut renderer = Renderer::new(&gl2).unwrap();
+
+        let map_editor = BeatmapEditor::new(None, &gl2, &mut renderer).unwrap();
+
         let mut s = Self {
             title: "Beatcraft Mesh Editor",
             mode: EditorMode::View,
@@ -1067,7 +1071,7 @@ impl App {
             tool: ToolMode::Auto,
             last_tool: ToolMode::Auto,
             render: Render {
-                renderer: Renderer::new(&gl2).unwrap(),
+                renderer,
                 assembly: None,
                 parts: HashMap::new(),
                 orphans: HashMap::new(),
@@ -1082,7 +1086,7 @@ impl App {
                 part: None,
                 hovered: None,
             },
-            map_editor: BeatmapEditor::new(None).unwrap(),
+            map_editor,
             selection: Selection::None,
             drag: Drag {
                 state: DragState::None,
@@ -1156,7 +1160,7 @@ impl App {
             let mut add = IndexMap::new();
             add.insert(name, p.clone());
             if s.load_meshes(add, &gl2).is_err() {
-                let _ = s.map_editor.load(p, &gl2);
+                let _ = s.map_editor.load(p, &gl2, &mut s.render.renderer);
             }
         }
 
@@ -1511,23 +1515,30 @@ impl App {
                 self.cam().dist = (self.cam().dist * factor).clamp(0.05, 5000.);
             }
 
-            let rd = RefDuper;
-            let self2 = unsafe { rd.detach_mut_ref(self) };
-            if self.mode == EditorMode::Edit
-                && let Some(i) = &input
-                && i.key_pressed(Key::C)
-                && !i.modifiers.ctrl
-                && let vp = self.cam().vp(w, h)
-                && let Some(part) = self.get_current_part_mut()
-            {
-                self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
-                    id: self2.get_current_mesh_id().unwrap().to_string(),
-                    name: self2.get_current_part_name().unwrap().to_string(),
-                    part: Box::new(part.clone()),
-                }));
-                let (orig, dir) = Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &vp);
-                part.vertices.indexed.push(orig + dir * 10.);
-                self.rebuild_meshes(gl);
+            #[allow(clippy::single_match)]
+            match self.context {
+                EditorContext::Model(ModelEditorContext::Environment) => {
+                    let rd = RefDuper;
+                    let self2 = unsafe { rd.detach_mut_ref(self) };
+                    if self.mode == EditorMode::Edit
+                        && let Some(i) = &input
+                            && i.key_pressed(Key::C)
+                            && !i.modifiers.ctrl
+                            && let vp = self.cam().vp(w, h)
+                            && let Some(part) = self.get_current_part_mut()
+                    {
+                        self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
+                            id: self2.get_current_mesh_id().unwrap().to_string(),
+                            name: self2.get_current_part_name().unwrap().to_string(),
+                            part: Box::new(part.clone()),
+                        }));
+                        let (orig, dir) = Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &vp);
+                        part.vertices.indexed.push(orig + dir * 10.);
+                        self.rebuild_meshes(gl);
+                    }
+
+                },
+                _ => {},
             }
         }
 

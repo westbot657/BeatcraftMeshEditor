@@ -2,11 +2,16 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 
-use eframe::glow::Context;
+use eframe::glow::{self, Context, HasContext};
+use egui::Response;
+use glam::Mat4;
 
 use crate::audio::Audio;
-use crate::{DB_DATA, DB_LOGIC, DB_MAIN};
-use crate::editor::{App, EditorContext, RoutineAction};
+use crate::data::LightMeshData;
+use crate::light_mesh::LightMesh;
+use crate::render::{GpuMesh, Renderer};
+use crate::{DB_DATA, DB_LOGIC, DB_MAIN, RefDuper, UnsafeMutRef, editor, get_data_folder};
+use crate::editor::{App, EditorContext, RoutineAction, ViewMesh, ViewStyle};
 
 use self::data::v2::{CharacteristicSetV2, DifficultyBeatmapV2};
 use self::data::{InfoFile, MapCharacteristic, MapDifficulty};
@@ -62,8 +67,20 @@ pub struct BeatmapProject {
     pub sets: Vec<BeatmapProjectSet>
 }
 
+pub struct BeatmapMeshSet {
+    pub note_mesh: GpuMesh,
+    pub bomb_mesh: GpuMesh,
+    pub chain_head_mesh: GpuMesh,
+    pub chain_body_mesh: GpuMesh,
+    pub arrow_mesh: GpuMesh,
+    pub dot_mesh: GpuMesh,
+    pub chain_dot_mesh: GpuMesh,
+    obstacle_mesh: GpuMesh,
+}
+
 pub struct BeatmapEditor {
-    pub map: Option<BeatmapProject>
+    pub map: Option<BeatmapProject>,
+    pub mesh_set: BeatmapMeshSet
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -76,20 +93,83 @@ pub enum MapLoadError {
     SerdeError(#[from] serde_json::Error),
 }
 
+static DEFAULT_NOTE: &[u8] = include_bytes!("../assets/meshes/color_note.json");
+static DEFAULT_ARROW: &[u8] = include_bytes!("../assets/meshes/arrow.json");
+static DEFAULT_DOT: &[u8] = include_bytes!("../assets/meshes/color_note_dot.json");
+static DEFAULT_CHAIN_HEAD: &[u8] = include_bytes!("../assets/meshes/chain_note_head.json");
+static DEFAULT_CHAIN_LINK: &[u8] = include_bytes!("../assets/meshes/chain_note_link.json");
+static DEFAULT_CHAIN_DOT: &[u8] = include_bytes!("../assets/meshes/chain_note_link_dot.json");
+static CUBE: &[u8] = include_bytes!("../assets/meshes/cube.json");
+
+static NOTE_TEXTURE: &[u8] = include_bytes!("../assets/textures/color_note.png");
+static ARROW_TEXTURE: &[u8] = include_bytes!("../assets/textures/arrow.png");
+
+impl BeatmapMeshSet {
+    pub fn new(gl: &Context, renderer: &mut Renderer) -> Result<Self, MapLoadError> {
+
+        let dir = get_data_folder().unwrap();
+
+        let _ = std::fs::create_dir_all(&dir);
+
+        let note_tex = dir.join("color_note.png");
+        let arrow_tex = dir.join("arrow.png");
+
+        std::fs::write(&note_tex, NOTE_TEXTURE).unwrap();
+        std::fs::write(&arrow_tex, ARROW_TEXTURE).unwrap();
+
+        renderer.texture_paths.insert("builtin:color_note".to_string(), note_tex);
+        renderer.texture_paths.insert("builtin:arrow".to_string(), arrow_tex);
+
+        macro_rules! setup_mesh {
+            ($data:ident) => {
+                {
+                    let lm: LightMeshData = serde_json::from_slice($data)?;
+                    let lm: LightMesh = lm.into();
+                    let mut mesh = GpuMesh::empty(gl);
+                    mesh.set_from_full_light_mesh(gl, &lm, &renderer.texture_paths, &renderer.atlas_map);
+                    mesh
+                }
+            };
+        }
+
+        let note_mesh = setup_mesh!(DEFAULT_NOTE);
+        let bomb_mesh = setup_mesh!(DEFAULT_NOTE);
+        let chain_head_mesh = setup_mesh!(DEFAULT_CHAIN_HEAD);
+        let chain_body_mesh = setup_mesh!(DEFAULT_CHAIN_LINK);
+        let arrow_mesh = setup_mesh!(DEFAULT_ARROW);
+        let dot_mesh = setup_mesh!(DEFAULT_DOT);
+        let chain_dot_mesh = setup_mesh!(DEFAULT_CHAIN_DOT);
+        let obstacle_mesh = setup_mesh!(CUBE);
+
+        Ok(Self {
+            note_mesh,
+            bomb_mesh,
+            chain_head_mesh,
+            chain_body_mesh,
+            arrow_mesh,
+            dot_mesh,
+            chain_dot_mesh,
+            obstacle_mesh,
+        })
+    }
+}
+
 impl BeatmapEditor {
-    pub fn new(map_gl: Option<(PathBuf, &Context)>) -> Result<Self, MapLoadError> {
+    pub fn new(map: Option<PathBuf>, gl: &Context, renderer: &mut Renderer) -> Result<Self, MapLoadError> {
+
         let mut s = Self {
             map: None,
+            mesh_set: BeatmapMeshSet::new(gl, renderer)?,
         };
 
-        if let Some((map, gl)) = map_gl {
-            s.load(map, gl)?
+        if let Some(map) = map {
+            s.load(map, gl, renderer)?
         }
 
         Ok(s)
     }
 
-    pub fn load(&mut self, map: PathBuf, gl: &Context) -> Result<(), MapLoadError> {
+    pub fn load(&mut self, map: PathBuf, gl: &Context, renderer: &mut Renderer) -> Result<(), MapLoadError> {
         let span = tracing::debug_span!("load beatmap");
         let _guard = span.enter();
 
@@ -167,7 +247,9 @@ impl App {
                                     RoutineAction::Remove
                                 }
                                 Ok(folder) => {
-                                    if let Err(e) = s.load_beatmap(folder, gl) {
+                                    let rd = RefDuper;
+                                    let s2 = unsafe { rd.detach_mut_ref(s) };
+                                    if let Err(e) = s.load_beatmap(folder, gl, &mut s2.render.renderer) {
                                         s.set_status(None, "Failed to load beatmap", 2.);
                                         tracing::error!(target: DB_MAIN, "Failed to load beatmap: {e}");
                                     }
@@ -185,16 +267,96 @@ impl App {
         });
 
         egui::TopBottomPanel::bottom("scrub_controls")
-            .exact_height(100.)
+            .exact_height(150.)
             .show(ctx, |ui| {
 
                 ui.label("Seek controls")
 
             });
+
+        egui::SidePanel::left("left_panel")
+            .exact_width(300.)
+            .show(ctx, |ui| {
+                //
+            });
+
+        egui::SidePanel::right("right_panel")
+            .exact_width(300.)
+            .show(ctx, |ui| {
+                //
+            });
+
+        egui::CentralPanel::default()
+            .show(ctx, |ui| {
+                let rect = ui.available_rect_before_wrap();
+                self.state.vp_rect = rect;
+
+                let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
+                self.handle_3d_input(&resp, ctx, gl);
+
+                let s = unsafe { UnsafeMutRef::new(self) };
+
+                ui.painter().add(egui::PaintCallback {
+                    rect,
+                    callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
+                        move |_info, painter| {
+                            let gl = painter.gl();
+                            unsafe {
+                                let w = rect.width();
+                                let h = rect.height();
+                                let view = s.ref_mut().cam().view_mat();
+                                let proj = s.ref_mut().cam().proj_mat(w, h);
+
+                                match s.state.view_style {
+                                    editor::ViewStyle::Beatcraft { blackout_sky: true } => {
+                                        gl.clear_color(0., 0., 0., 1.);
+                                    }
+                                    _ => {
+                                        gl.clear_color(0.07, 0.08, 0.11, 1.);
+                                        gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+                                    }
+                                }
+
+                                gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+                                gl.enable(glow::DEPTH_TEST);
+                                gl.depth_mask(true);
+
+
+                                draw_map_gl(&s, gl, &view, &proj, (w as i32, h as i32));
+
+                                if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
+                                    s.render.renderer.draw_map_grid(gl, &view, &proj);
+                                }
+                            }
+
+                        }
+                    ))
+                })
+
+            });
+
     }
 
-    pub fn load_beatmap(&mut self, folder: PathBuf, gl: &Context) -> Result<(), MapLoadError> {
-        self.map_editor.load(folder, gl)
+    pub fn load_beatmap(&mut self, folder: PathBuf, gl: &Context, renderer: &mut Renderer) -> Result<(), MapLoadError> {
+        self.map_editor.load(folder, gl, renderer)
     }
 }
+
+fn draw_map_gl(
+    s: &UnsafeMutRef<App>, gl: &glow::Context,
+    view: &Mat4, proj: &Mat4,
+    window: (i32, i32),
+) {
+
+    
+
+    match s.state.view_style {
+        ViewStyle::Edit => {
+
+        },
+        ViewStyle::Beatcraft { .. } => todo!(),
+    }
+}
+
+
 

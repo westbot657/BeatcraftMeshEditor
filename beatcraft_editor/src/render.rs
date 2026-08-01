@@ -169,6 +169,11 @@ impl GpuMesh {
         }
     }
 
+    /// Creates a new GpuMesh with no data
+    pub fn empty(gl: &glow::Context) -> Self {
+        Self::new(gl, &[], &[], &[], &[], &[])
+    }
+
     pub fn new(
         gl: &glow::Context,
         position_us: &[Vec4],
@@ -1093,7 +1098,27 @@ impl Renderer {
             self.set_mat4(gl, grid, "proj", proj);
             gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
             gl.bind_vertex_array(None);
-            // reset to default blend
+            gl.blend_func_separate(
+                glow::ONE, glow::ONE_MINUS_SRC_ALPHA,
+                glow::ONE_MINUS_SRC_COLOR, glow::ONE,
+            );
+        }
+    }
+
+    pub fn draw_map_grid(
+        &self,
+        gl: &glow::Context,
+        view: &Mat4,
+        proj: &Mat4,
+    ) {
+        unsafe {
+            //
+            gl.blend_func_separate(
+                glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA,
+                glow::ZERO, glow::ONE,
+            );
+
+
             gl.blend_func_separate(
                 glow::ONE, glow::ONE_MINUS_SRC_ALPHA,
                 glow::ONE_MINUS_SRC_COLOR, glow::ONE,
