@@ -1,12 +1,12 @@
 #version 450 core
 
-uniform uint u_beat_i;
+uniform int u_beat_i;
 uniform float u_beat_f;
 uniform float u_beat_spacing;
 uniform int u_beats_before;
 
 flat out int v_beat_number;
-out float v_x0;
+flat out float v_x0;
 
 void main() {
     int beat_offset = gl_VertexID - u_beats_before;

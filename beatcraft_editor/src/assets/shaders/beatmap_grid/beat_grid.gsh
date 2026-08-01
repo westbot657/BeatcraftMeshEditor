@@ -1,9 +1,9 @@
-#version 450 core;
+#version 450 core
 
 layout(points) in;
 layout(triangle_strip, max_vertices = 28) out;
 
-flat in uint v_beat_number[];
+flat in int v_beat_number[];
 flat in float v_x0[];
 
 uniform float u_beat_spacing;
@@ -23,7 +23,12 @@ void emit_quad(float x0, float x1, float z0, float z1, vec4 uv) {
 }
 
 void main() {
-    float z0 = v_z0[0];
+    int un = v_beat_number[0];
+    if (un < 0) {
+        return;
+    }
+    uint n = uint(un);
+    float z0 = v_x0[0];
     float z1 = z0 + u_beat_spacing;
 
     emit_quad(
@@ -33,22 +38,19 @@ void main() {
         vec4(-2.0, -2.0, -1.0, -1.0)
     );
 
-    uint n = v_beat_number[0];
     uint digits[5];
     int count = 0;
     if (n == 0u) { digits[count++] = 0u; }
-    while (n > 0u && count < 5) { digits[count++] = n % 20u; n /= 10u; }
+    while (n > 0u && count < 5) { digits[count++] = n % 10u; n /= 10u; }
 
     for (int i = 0; i < count; i++) {
         int column = count - 1 - i;
-        vec2 pos = (vec2(-u_track_width, 0.0) - u_digit_offset) * u_digit_size.x;
+        float dx0 = -u_track_width - u_digit_offset.x - float(column) * u_digit_size.x;
+        float dx1 = dx0 - u_digit_size.x;
+        float dz0 = z0 + u_digit_offset.y;
+        float dz1 = dz0 + u_digit_size.y;
         float u0 = float(digits[i]) / 11.0;
-
-        emit_quad(
-            pos.x, pos.x - u_digit_size.x,
-            pos.y, pos.y - u_digit_size.y,
-            vec4(u0, 0.0, u0 + (1.0 / 11.0), 1.0)
-        );
+        emit_quad(dx0, dx1, dz0, dz1, vec4(u0, 0.0, u0 + (1.0/11.0), 1.0));
 
     }
 

@@ -792,28 +792,27 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    fn compile_shader(
+
+    fn compile_shader(gl: &glow::Context, kind: u32, src: &str) -> Result<glow::Shader, String> {
+        unsafe {
+            let shader = gl.create_shader(kind).map_err(|e| e.to_string())?;
+            gl.shader_source(shader, src);
+            gl.compile_shader(shader);
+            if !gl.get_shader_compile_status(shader) {
+                return Err(gl.get_shader_info_log(shader));
+            }
+            Ok(shader)
+        }
+    }
+
+    fn build_program(
         gl: &glow::Context,
         vs: &str,
         fs: &str,
     ) -> Result<glow::NativeProgram, String> {
         unsafe {
-            let v = gl
-                .create_shader(glow::VERTEX_SHADER)
-                .map_err(|e| e.to_string())?;
-            gl.shader_source(v, vs);
-            gl.compile_shader(v);
-            if !gl.get_shader_compile_status(v) {
-                return Err(gl.get_shader_info_log(v));
-            }
-            let f = gl
-                .create_shader(glow::FRAGMENT_SHADER)
-                .map_err(|e| e.to_string())?;
-            gl.shader_source(f, fs);
-            gl.compile_shader(f);
-            if !gl.get_shader_compile_status(f) {
-                return Err(gl.get_shader_info_log(f));
-            }
+            let v = Self::compile_shader(gl, glow::VERTEX_SHADER, vs)?;
+            let f = Self::compile_shader(gl, glow::FRAGMENT_SHADER, fs)?;
             let p = gl.create_program().map_err(|e| e.to_string())?;
             gl.attach_shader(p, v);
             gl.attach_shader(p, f);
@@ -821,7 +820,37 @@ impl Renderer {
             if !gl.get_program_link_status(p) {
                 return Err(gl.get_program_info_log(p));
             }
+            gl.detach_shader(p, v);
+            gl.detach_shader(p, f);
             gl.delete_shader(v);
+            gl.delete_shader(f);
+            Ok(p)
+        }
+    }
+
+    fn build_geo_program(
+        gl: &glow::Context,
+        vs: &str,
+        gs: &str,
+        fs: &str,
+    ) -> Result<glow::NativeProgram, String> {
+        unsafe {
+            let v = Self::compile_shader(gl, glow::VERTEX_SHADER, vs)?;
+            let g = Self::compile_shader(gl, glow::GEOMETRY_SHADER, gs)?;
+            let f = Self::compile_shader(gl, glow::FRAGMENT_SHADER, fs)?;
+            let p = gl.create_program().map_err(|e| e.to_string())?;
+            gl.attach_shader(p, v);
+            gl.attach_shader(p, g);
+            gl.attach_shader(p, f);
+            gl.link_program(p);
+            if !gl.get_program_link_status(p) {
+                return Err(gl.get_program_info_log(p));
+            }
+            gl.detach_shader(p, v);
+            gl.detach_shader(p, g);
+            gl.detach_shader(p, f);
+            gl.delete_shader(v);
+            gl.delete_shader(g);
             gl.delete_shader(f);
             Ok(p)
         }
@@ -832,39 +861,39 @@ impl Renderer {
             let span = tracing::debug_span!("renderer");
             let _guard = span.enter();
             tracing::debug!(target: DB_RENDER, "Compiling mesh shader");
-            let mesh = Self::compile_shader(
+            let mesh = Self::build_program(
                 gl,
                 include_str!("./assets/shaders/mesh.vert"),
                 include_str!("./assets/shaders/mesh.frag"),
             )?;
             tracing::debug!(target: DB_RENDER, "Compiling mirror shader");
-            let mirror = Self::compile_shader(
+            let mirror = Self::build_program(
                 gl,
                 include_str!("./assets/shaders/mirror.vert"),
                 include_str!("./assets/shaders/mirror.frag")
             )?;
             tracing::debug!(target: DB_RENDER, "Compiling point shader");
-            let point = Self::compile_shader(
+            let point = Self::build_program(
                 gl,
                 include_str!("./assets/shaders/point.vert"),
                 include_str!("./assets/shaders/point.frag"),
             )?;
             tracing::debug!(target: DB_RENDER, "Compiling grid shader");
-            let grid = Self::compile_shader(
+            let grid = Self::build_program(
                 gl,
                 include_str!("./assets/shaders/grid.vert"),
                 include_str!("./assets/shaders/grid.frag"),
             )?;
 
             tracing::debug!(target: DB_RENDER, "Compiling handles shader");
-            let handles = Self::compile_shader(
+            let handles = Self::build_program(
                 gl,
                 include_str!("./assets/shaders/handles.vert"),
                 include_str!("./assets/shaders/handles.frag"),
             )?;
 
             tracing::debug!(target: DB_RENDER, "Compiling handle points shader");
-            let handle_points = Self::compile_shader(
+            let handle_points = Self::build_program(
                 gl,
                 include_str!("./assets/shaders/handle_points.vert"),
                 include_str!("./assets/shaders/handle_points.frag"),
@@ -1431,43 +1460,43 @@ impl BloomfogRenderer {
         let blur_vsh = include_str!("assets/shaders/core/bloomfog_blur.vsh");
 
         tracing::debug!(target: DB_RENDER, "Compiling blur downsample shader");
-        let blur_down = Renderer::compile_shader(gl,
+        let blur_down = Renderer::build_program(gl,
             blur_vsh,
             include_str!("assets/shaders/core/bloomfog_downsample.fsh")
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling blur upsample shader");
-        let blur_up = Renderer::compile_shader(gl,
+        let blur_up = Renderer::build_program(gl,
             blur_vsh,
             include_str!("assets/shaders/core/bloomfog_upsample.fsh")
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling gaussian vertical shader");
-        let gaussian_v = Renderer::compile_shader(gl,
+        let gaussian_v = Renderer::build_program(gl,
             blur_vsh,
             include_str!("assets/shaders/core/gaussian_v.fsh")
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling gaussian horizontal shader");
-        let gaussian_h = Renderer::compile_shader(gl,
+        let gaussian_h = Renderer::build_program(gl,
             blur_vsh,
             include_str!("assets/shaders/core/gaussian_h.fsh")
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling blue noise shader");
-        let blue_noise = Renderer::compile_shader(gl,
+        let blue_noise = Renderer::build_program(gl,
             blur_vsh,
             include_str!("assets/shaders/core/blue_noise.fsh")
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling blit shader");
-        let blit = Renderer::compile_shader(gl,
+        let blit = Renderer::build_program(gl,
             include_str!("assets/shaders/core/beatcraft_blit.vsh"),
             include_str!("assets/shaders/core/beatcraft_blit.fsh")
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling composite shader");
-        let comp = Renderer::compile_shader(gl,
+        let comp = Renderer::build_program(gl,
             blur_vsh,
             include_str!("assets/shaders/core/composite.fsh")
         )?;
