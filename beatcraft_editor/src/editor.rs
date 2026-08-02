@@ -1059,7 +1059,13 @@ impl App {
 
         egui_extras::install_image_loaders(&cc.egui_ctx);
 
-        let mut renderer = Renderer::new(&gl2).unwrap();
+        let mut renderer = match Renderer::new(&gl2) {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!(target: DB_MAIN, "{}", e.to_string());
+                std::process::exit(1);
+            }
+        };
 
         let map_editor = BeatmapEditor::new(None, &gl2, &mut renderer).unwrap();
 
@@ -1539,11 +1545,48 @@ impl App {
                             part: Box::new(part.clone()),
                         }));
                         let (orig, dir) = Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &vp);
-                        part.vertices.indexed.push(orig + dir * 10.);
+                        part.vertices.indexed.push(orig + dir * 2.);
                         self.rebuild_meshes(gl);
                     }
 
                 },
+                EditorContext::Map(MapEditorContext::Beatmap) => {
+                    let beatmap = &self.render.renderer.beatmap;
+                    let placement_z = beatmap.placement_z;
+                    let half_width = 2.;
+                    let grid_height = 3.;
+                    const COLS: u32 = 4;
+                    const ROWS: u32 = 3;
+
+                    self.render.renderer.beatmap.hovered_placement_cell = u32::MAX;
+
+                    let vp = self.cam().vp(w, h);
+                    let (ray_pos, ray_dir) = Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &vp);
+
+                    // the placement grid is a vertical plane (facing the camera along Z) at
+                    // world Z == placement_z, per how the note-grid quads are laid out
+                    let denom = ray_dir.z;
+                    if denom.abs() > 1e-6 {
+                        let t = (placement_z - ray_pos.z) / denom;
+                        if t > 0.0 {
+                            let hit = ray_pos + ray_dir * t;
+
+                            // +X is left (per the camera convention established earlier), track
+                            // spans [-half_width, half_width]; grid Y spans [0, grid_height]
+                            if hit.x.abs() <= half_width && hit.y >= 0.0 && hit.y <= grid_height {
+                                // remap so u=0 is the rightmost column (since +X is left, the
+                                // rightmost column is at x = -half_width) — flip if this reads backwards
+                                let u = (half_width - hit.x) / (2.0 * half_width);
+                                let v = hit.y / grid_height;
+
+                                let col = (u * COLS as f32).floor().clamp(0.0, (COLS - 1) as f32) as u32;
+                                let row = (v * ROWS as f32).floor().clamp(0.0, (ROWS - 1) as f32) as u32;
+
+                                self.render.renderer.beatmap.hovered_placement_cell = row * COLS + col;
+                            }
+                        }
+                    }
+                }
                 _ => {},
             }
         }

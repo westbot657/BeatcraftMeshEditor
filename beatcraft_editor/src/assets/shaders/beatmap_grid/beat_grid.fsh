@@ -13,7 +13,7 @@ out vec4 fragColor;
 
 void main() {
     if (v_uv.x < -0.5) {
-        vec2 remap = v_uv + vec2(2.0); // both in [0,1]: remap.x = across track, remap.y = along beat span
+        vec2 remap = v_uv + vec2(2.0);
         float world_z = remap.y * u_beat_spacing;
 
         float dist_to_boundary = min(world_z, u_beat_spacing - world_z);
@@ -31,12 +31,12 @@ void main() {
         // draw thick (beat boundary) at full brightness, thin (subdivision) dimmer;
         // where they overlap, let the brighter one win rather than adding
         vec3 thick_color = vec3(1.0);
-        vec3 thin_color  = vec3(0.35); // tweak to taste — lower = dimmer subdivisions
+        vec3 thin_color  = vec3(0.35);
 
         float alpha = max(thick, thin);
         if (alpha <= 0.001) discard;
 
-        vec3 color = mix(thin_color, thick_color, thick); // thick, when present, overrides thin's color
+        vec3 color = mix(thin_color, thick_color, thick);
         fragColor = vec4(color, alpha);
     } else {
         fragColor = texture(u_digit_tex, v_uv);

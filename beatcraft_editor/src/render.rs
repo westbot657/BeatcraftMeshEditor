@@ -1303,6 +1303,13 @@ impl Renderer {
             }
         }
     }
+    pub(crate) fn set_uint(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: u32) {
+        unsafe {
+            if let Some(l) = gl.get_uniform_location(prog, name) {
+                gl.uniform_1_u32(Some(&l), v);
+            }
+        }
+    }
 }
 
 struct RenderTarget {

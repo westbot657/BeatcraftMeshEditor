@@ -356,7 +356,9 @@ fn draw_map_gl(
         ViewStyle::Edit => {
 
         },
-        ViewStyle::Beatcraft { .. } => todo!(),
+        ViewStyle::Beatcraft { .. } => {
+
+        },
     }
 }
 

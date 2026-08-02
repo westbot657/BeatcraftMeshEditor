@@ -22,6 +22,11 @@ impl GridStepSpacing {
 pub struct BeatmapRenderer {
     grid_shader: glow::NativeProgram,
     grid_vao: glow::VertexArray,
+
+    placement_grid_shader: glow::NativeProgram,
+    placement_grid_vao: glow::VertexArray,
+
+
     pub beat_spacing: f32,
     pub step_spacing: GridStepSpacing,
     pub beat_offset: (u16, f32),
@@ -33,6 +38,9 @@ pub struct BeatmapRenderer {
     thick_line_px: f32,
     thin_line_px: f32,
     digits_tex: glow::Texture,
+
+    pub placement_z: f32,
+    pub hovered_placement_cell: u32,
 }
 
 
@@ -50,7 +58,17 @@ impl BeatmapRenderer {
                 include_str!("../assets/shaders/beatmap_grid/beat_grid.fsh"),
             )?;
 
+            tracing::debug!(target: DB_RENDER, "Compiling beatmap placement grid shader");
+            let placement_grid_shader = Renderer::build_program(
+                gl,
+                include_str!("../assets/shaders/beatmap_grid/placement_grid.vsh"),
+                include_str!("../assets/shaders/beatmap_grid/placement_grid.fsh"),
+            )?;
+
+
             let grid_vao = gl.create_vertex_array()?;
+            let placement_grid_vao = gl.create_vertex_array()?;
+
 
             tracing::debug!(target: DB_RENDER, "Uploading digit texture to GPU");
             let digits_tex = {
@@ -95,31 +113,40 @@ impl BeatmapRenderer {
             Ok(Self {
                 grid_shader,
                 grid_vao,
+
+                placement_grid_shader,
+                placement_grid_vao,
+
+
                 beat_spacing: 8.,
                 step_spacing: GridStepSpacing::Quarters,
                 beat_offset: (0, 0.),
                 beats_before: 4,
                 visible_beat_count: 20,
-                grid_width: 3.,
-                digit_size: Vec2::splat(1.),
+                grid_width: 2.5,
+                digit_size: Vec2::splat(0.75),
                 digit_position: Vec2::new(0., 0.),
                 thick_line_px: 2.,
                 thin_line_px: 1.,
                 digits_tex,
+
+                placement_z: 0.,
+                hovered_placement_cell: 12,
             })
         }
     }
 
     pub fn render_grid(&self, renderer: &Renderer, gl: &glow::Context, view: &Mat4, proj: &Mat4) {
         unsafe {
-            let grid = self.grid_shader;
             let vp = *proj * *view;
-            gl.use_program(Some(grid));
-            gl.bind_vertex_array(Some(self.grid_vao));
             gl.blend_func_separate(
                 glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA,
                 glow::ZERO, glow::ONE,
             );
+            // timeline markers
+            let grid = self.grid_shader;
+            gl.use_program(Some(grid));
+            gl.bind_vertex_array(Some(self.grid_vao));
             renderer.set_mat4(gl, grid, "u_view_proj", &vp);
             renderer.set_float(gl, grid, "u_beat_spacing", self.beat_spacing);
             renderer.set_float(gl, grid, "u_step_spacing", self.step_spacing.value());
@@ -133,6 +160,17 @@ impl BeatmapRenderer {
             renderer.set_float(gl, grid, "u_thin_line_px", self.thin_line_px);
             renderer.set_sampler(gl, grid, "u_digit_tex", Some(self.digits_tex), 0);
             gl.draw_arrays(glow::POINTS, 0, self.visible_beat_count as i32);
+
+            // placement grid
+            let grid = self.placement_grid_shader;
+            gl.use_program(Some(grid));
+            gl.bind_vertex_array(Some(self.placement_grid_vao));
+            renderer.set_mat4(gl, grid, "u_view_proj", &vp);
+            renderer.set_float(gl, grid, "u_z", self.placement_z);
+            renderer.set_uint(gl, grid, "u_hovered_cell", self.hovered_placement_cell);
+
+            gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
+
             gl.bind_vertex_array(None);
             gl.blend_func_separate(
                 glow::ONE, glow::ONE_MINUS_SRC_ALPHA,

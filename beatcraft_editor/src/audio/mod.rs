@@ -4,6 +4,8 @@ use std::{ptr, thread};
 use std::sync::{Arc, mpsc};
 
 use parking_lot::RwLock;
+use rustfft::FftPlanner;
+use rustfft::num_complex::Complex;
 use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
 use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::formats::probe::Hint;
@@ -58,6 +60,19 @@ pub struct AudioInfo {
     channels: u16,
     sample_count: Option<usize>,
     track_id: u32,
+}
+
+struct SpectrogramState {
+    data: Arc<RwLock<Vec<i16>>>,       // same buffer the decoder writes into
+    decode_cursor: Arc<RwLock<usize>>, // same cursor, read-only from here
+    columns_done: usize,               // how many STFT columns we've produced so far
+    window_size: usize,
+    hop: usize,
+    channels: u16,
+    hann: Vec<f32>,
+    fft: Arc<dyn rustfft::Fft<f32>>,
+    tex_data: Arc<RwLock<Vec<f32>>>,   // flat buffer, uploaded to GL on the main thread
+    tex_dirty_range: Arc<RwLock<Option<(usize, usize)>>>, // [start_col, end_col) needing re-upload
 }
 
 impl AudioSystem {
@@ -407,8 +422,28 @@ impl Audio {
 
                 audio_sys.audio_refs.push(Arc::clone(&audio));
 
+                let data2 = Arc::clone(&data);
+                let decode_cursor = Arc::clone(&load_pos);
                 audio_sys.add_task(Box::new(move || {
-                    Self::load_full(&data, &loaded, &load_pos, &mut audio_info, &sample_count)
+                    Self::load_full(&data2, &loaded, &load_pos, &mut audio_info, &sample_count)
+                }));
+
+                let mut planner = FftPlanner::new();
+                let fft = planner.plan_fft_forward(1024);
+                let mut state = SpectrogramState {
+                    data,
+                    decode_cursor,
+                    columns_done: 0,
+                    window_size: 1024,
+                    hop: 256,
+                    channels,
+                    hann: Vec::new(),
+                    fft,
+                    tex_data: Arc::default(),
+                    tex_dirty_range: Arc::default(),
+                };
+                audio_sys.add_task(Box::new(move || {
+                    Self::spectrogram_task_loop(&mut state)
                 }));
 
                 Ok(audio)
@@ -837,6 +872,53 @@ impl Audio {
             ranges.push((start, end));
             Self::merge_ranges(&mut ranges);
         }
+
+        TaskAction::None
+    }
+
+    fn spectrogram_task_loop(state: &mut SpectrogramState) -> TaskAction {
+        let decoded_samples = *state.decode_cursor.read();
+        let decoded_frames = decoded_samples / state.channels as usize;
+
+        let next_window_start = state.columns_done * state.hop;
+        if next_window_start + state.window_size > decoded_frames {
+            return TaskAction::None;
+        }
+
+        let data = state.data.read();
+        let mut buf: Vec<Complex<f32>> = (0..state.window_size)
+            .map(|i| {
+                let frame_idx = next_window_start + i;
+                let sample_idx = frame_idx * state.channels as usize;
+                let s: f32 = (0..state.channels as usize)
+                    .map(|c| data[sample_idx + c] as f32 / i16::MAX as f32)
+                    .sum::<f32>() / state.channels as f32;
+                Complex::new(s * state.hann[i], 0.0)
+            })
+            .collect();
+        drop(data);
+
+        state.fft.process(&mut buf);
+
+        let mag_db_norm: Vec<f32> = buf[..state.window_size / 2]
+            .iter()
+            .map(|c| {
+                let db = 20.0 * c.norm().max(1e-8).log10();
+                ((db - (-80.0)) / 80.0f32).clamp(0.0, 1.0)
+            })
+            .collect();
+
+        let mut tex = state.tex_data.write();
+        let col_height = mag_db_norm.len();
+        let col_start = state.columns_done * col_height;
+        if tex.len() < col_start + col_height {
+            tex.resize(col_start + col_height, 0.0);
+        }
+        tex[col_start..col_start + col_height].copy_from_slice(&mag_db_norm);
+        drop(tex);
+
+        *state.tex_dirty_range.write() = Some((state.columns_done, state.columns_done + 1));
+        state.columns_done += 1;
 
         TaskAction::None
     }
