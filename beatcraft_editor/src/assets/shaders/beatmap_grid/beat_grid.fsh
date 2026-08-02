@@ -14,29 +14,31 @@ out vec4 fragColor;
 void main() {
     if (v_uv.x < -0.5) {
         vec2 remap = v_uv + vec2(2.0); // both in [0,1]: remap.x = across track, remap.y = along beat span
+        float world_z = remap.y * u_beat_spacing;
 
-        float world_z = remap.y * u_beat_spacing; // fragment's distance from this quad's start (z0)
-
-        // distance to the nearest beat boundary (start or end of this span)
         float dist_to_boundary = min(world_z, u_beat_spacing - world_z);
 
-        // distance to the nearest minor subdivision line
-        float step_pos = mod(world_z, u_step_spacing);
-        float dist_to_step = min(step_pos, u_step_spacing - step_pos);
+        float safe_step = max(u_step_spacing, 1e-5);
+        float step_pos_norm = mod(remap.y, safe_step);
+        float dist_to_step_norm = min(step_pos_norm, safe_step - step_pos_norm);
+        float dist_to_step = dist_to_step_norm * u_beat_spacing;
 
-        // fwidth(world_z) ~ world units per screen pixel at this fragment —
-        // multiplying by this converts your hard-coded "line weight in pixels"
-        // into the correct world-space threshold at this specific distance/angle
-        float px = fwidth(world_z);
+        float px = max(fwidth(world_z), 1e-6);
 
         float thick = 1.0 - smoothstep(0.0, u_thick_line_px * px, dist_to_boundary);
         float thin  = 1.0 - smoothstep(0.0, u_thin_line_px  * px, dist_to_step);
-        float line = max(thick, thin);
 
-        if (line <= 0.001) discard;
-        fragColor = vec4(1.0, 1.0, 1.0, line); // white line, antialiased alpha falloff
+        // draw thick (beat boundary) at full brightness, thin (subdivision) dimmer;
+        // where they overlap, let the brighter one win rather than adding
+        vec3 thick_color = vec3(1.0);
+        vec3 thin_color  = vec3(0.35); // tweak to taste — lower = dimmer subdivisions
+
+        float alpha = max(thick, thin);
+        if (alpha <= 0.001) discard;
+
+        vec3 color = mix(thin_color, thick_color, thick); // thick, when present, overrides thin's color
+        fragColor = vec4(color, alpha);
     } else {
         fragColor = texture(u_digit_tex, v_uv);
     }
 }
-

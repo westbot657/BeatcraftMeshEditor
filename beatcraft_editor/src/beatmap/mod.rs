@@ -80,7 +80,8 @@ pub struct BeatmapMeshSet {
 
 pub struct BeatmapEditor {
     pub map: Option<BeatmapProject>,
-    pub mesh_set: BeatmapMeshSet
+    pub mesh_set: BeatmapMeshSet,
+    pub scroll_step: f32,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -160,6 +161,7 @@ impl BeatmapEditor {
         let mut s = Self {
             map: None,
             mesh_set: BeatmapMeshSet::new(gl, renderer)?,
+            scroll_step: 0.25,
         };
 
         if let Some(map) = map {

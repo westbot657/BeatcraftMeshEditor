@@ -6,6 +6,7 @@ use eframe::glow::{self, HasContext, NativeProgram, SHADER_STORAGE_BUFFER};
 use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 
+use crate::beatmap::render::BeatmapRenderer;
 use crate::{DB_RENDER, RefDuper, data};
 use crate::data::{MaterialData, MaterialType, ShaderSettingsData};
 use crate::light_mesh::{LightMesh, Part, Triangle, Vertex};
@@ -789,6 +790,7 @@ pub struct Renderer {
     /// maps a path to its UV rect (x0, y0, x1, y1) within the atlas
     pub atlas_map: HashMap<PathBuf, Vec4>,
     pub bloomfog: BloomfogRenderer,
+    pub beatmap: BeatmapRenderer,
 }
 
 impl Renderer {
@@ -805,7 +807,7 @@ impl Renderer {
         }
     }
 
-    fn build_program(
+    pub(crate) fn build_program(
         gl: &glow::Context,
         vs: &str,
         fs: &str,
@@ -828,7 +830,7 @@ impl Renderer {
         }
     }
 
-    fn build_geo_program(
+    pub(crate) fn build_geo_program(
         gl: &glow::Context,
         vs: &str,
         gs: &str,
@@ -992,6 +994,7 @@ impl Renderer {
                 atlas: None,
                 atlas_map: HashMap::new(),
                 bloomfog: BloomfogRenderer::new(gl)?,
+                beatmap: BeatmapRenderer::new(gl)?,
             })
         }
     }
@@ -1140,19 +1143,7 @@ impl Renderer {
         view: &Mat4,
         proj: &Mat4,
     ) {
-        unsafe {
-            //
-            gl.blend_func_separate(
-                glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA,
-                glow::ZERO, glow::ONE,
-            );
-
-
-            gl.blend_func_separate(
-                glow::ONE, glow::ONE_MINUS_SRC_ALPHA,
-                glow::ONE_MINUS_SRC_COLOR, glow::ONE,
-            );
-        }
+        self.beatmap.render_grid(self, gl, view, proj);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1254,7 +1245,7 @@ impl Renderer {
         }
     }
 
-    fn set_sampler(
+    pub(crate) fn set_sampler(
         &self,
         gl: &glow::Context,
         prog: glow::NativeProgram,
@@ -1269,7 +1260,7 @@ impl Renderer {
         }
     }
 
-    fn set_mat4(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, m: &Mat4) {
+    pub(crate) fn set_mat4(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, m: &Mat4) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_matrix_4_f32_slice(Some(&l), false, &m.to_cols_array());
@@ -1284,28 +1275,28 @@ impl Renderer {
     //     }
     // }
 
-    fn set_vec3(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec3) {
+    pub(crate) fn set_vec3(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec3) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_3_f32(Some(&l), v.x, v.y, v.z);
             }
         }
     }
-    fn set_float(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: f32) {
+    pub(crate) fn set_float(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: f32) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_1_f32(Some(&l), v);
             }
         }
     }
-    fn set_vec2(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec2) {
+    pub(crate) fn set_vec2(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec2) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_2_f32(Some(&l), v.x, v.y);
             }
         }
     }
-    fn set_int(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: i32) {
+    pub(crate) fn set_int(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: i32) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_1_i32(Some(&l), v);

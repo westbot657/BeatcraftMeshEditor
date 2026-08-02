@@ -11,8 +11,7 @@ flat out float v_x0;
 void main() {
     int beat_offset = gl_VertexID - u_beats_before;
     v_beat_number = u_beat_i + beat_offset;
-    v_x0 = (float(beat_offset) + u_beat_f) * u_beat_spacing;
+    v_x0 = (float(beat_offset) - u_beat_f) * u_beat_spacing;
     gl_Position = vec4(0.0);
 }
-
 

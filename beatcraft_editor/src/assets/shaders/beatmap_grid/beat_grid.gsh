@@ -49,8 +49,8 @@ void main() {
         float dx1 = dx0 - u_digit_size.x;
         float dz0 = z0 + u_digit_offset.y;
         float dz1 = dz0 + u_digit_size.y;
-        float u0 = float(digits[i]) / 11.0;
-        emit_quad(dx0, dx1, dz0, dz1, vec4(u0, 0.0, u0 + (1.0/11.0), 1.0));
+        float u0 = float(digits[i]) / 10.0;
+        emit_quad(dx0, dx1, dz1, dz0, vec4(u0, 0.0, u0 + (1.0/11.0), 1.0));
 
     }
 

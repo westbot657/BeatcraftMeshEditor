@@ -1477,6 +1477,7 @@ impl App {
         let pointer = ctx.input(|i| i.pointer.clone());
         let shift = ctx.input(|i| i.modifiers.shift);
         let ctrl = ctx.input(|i| i.modifiers.ctrl);
+        let alt = ctx.input(|i| i.modifiers.alt);
         let primary_pressed = resp.drag_started_by(egui::PointerButton::Primary);
         let primary_clicked = resp.clicked_by(egui::PointerButton::Primary);
         let secondary_pressed = resp.drag_started_by(egui::PointerButton::Secondary);
@@ -1497,6 +1498,7 @@ impl App {
         };
 
         if resp.hovered() {
+            let is_timeline_scroll = matches!(self.context, EditorContext::Map(MapEditorContext::Beatmap)) && !alt;
             let scroll = ctx.input(|i| {
                 if shift {
                     i.raw_scroll_delta.x
@@ -1505,14 +1507,18 @@ impl App {
                 }
             });
             if scroll != 0. {
-                let factor = if scroll > 0. {
-                    if shift { 0.44 } else { 0.88 }
-                } else if shift {
-                    2.24
+                if is_timeline_scroll {
+                    self.render.renderer.beatmap.scroll(scroll.signum() * self.map_editor.scroll_step);
                 } else {
-                    1.12
-                };
-                self.cam().dist = (self.cam().dist * factor).clamp(0.05, 5000.);
+                    let factor = if scroll > 0. {
+                        if shift { 0.44 } else { 0.88 }
+                    } else if shift {
+                        2.24
+                    } else {
+                        1.12
+                    };
+                    self.cam().dist = (self.cam().dist * factor).clamp(0.05, 5000.);
+                }
             }
 
             #[allow(clippy::single_match)]
