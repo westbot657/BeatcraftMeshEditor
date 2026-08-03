@@ -287,6 +287,7 @@ impl App {
                         tracing::debug!(target: DB_LOGIC, "Returning to menu");
                         self.context = EditorContext::None;
                         self.map_editor.map = None;
+                        self.render.renderer.beatmap.seek(0.);
                     }
                 });
             });
