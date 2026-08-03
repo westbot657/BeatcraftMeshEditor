@@ -21,10 +21,22 @@ layout(location = 15) in vec4  c7;
 
 // Flags:
 // 31 : bool : Editor render mode (aka override black)
-// 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10  9  8
+// 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11
+// 10  9  8 : [bool; 3] : wall-[top,back,right]-vertex
 //  7  6  5  4 : u4 : shader style
 //  3  2  1  0 : u4 : billboard index
 //
+
+// Overrides:
+// ColorNote/Bomb/Arrow/Dot/Obstacle
+// c0: color
+// c1: /,/,/,/
+// c2: /,/,/,/
+// c3: /,/,/,/
+// c4: /,/,/,/
+// c5: wall-size(vec3),/
+// c6: dissolve,index,/,/
+// c7: cut-plane(vec4)
 
 struct BillboardDesc {
     vec4 origin;
@@ -151,6 +163,10 @@ void main() {
 
             pos = vec4(world_pos, 1.0);
         }
+    } else if (v_material == MAT_NOTE) {
+        v_color = c0;
+    } else if (v_material == MAT_ARROW) {
+        v_color = vec4(1.0);
     }
 
     pos = u_view * pos;

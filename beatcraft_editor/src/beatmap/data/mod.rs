@@ -1,6 +1,7 @@
 
 use std::fmt::{Debug, Display};
 
+use glam::{Quat, Vec4};
 use num_traits::{Num, Zero};
 use serde::{Deserialize, Serialize};
 
@@ -118,6 +119,22 @@ pub enum CutDirection {
     DownLeft  = 6,
     DownRight = 7,
     Dot       = 8,
+}
+
+impl CutDirection {
+    pub fn to_quat(&self) -> Quat {
+        Quat::from_rotation_z(match self {
+            CutDirection::Up => 180f32,
+            CutDirection::Down => 0.,
+            CutDirection::Left => 90.,
+            CutDirection::Right => -90.,
+            CutDirection::UpLeft => 135.,
+            CutDirection::UpRight => -135.,
+            CutDirection::DownLeft => 45.,
+            CutDirection::DownRight => -45.,
+            CutDirection::Dot => 0.,
+        }.to_radians())
+    }
 }
 
 fn is_value<const N: i16>(v: &(impl Num + From<i16>)) -> bool {
@@ -737,6 +754,24 @@ pub enum InfoFile {
 pub enum BeatmapFile {
     V2(BeatmapFileV2),
 }
+
+impl InfoFile {
+    pub fn bpm(&self) -> f32 {
+        match self {
+            Self::V2(v2) => v2.bpm,
+        }
+    }
+}
+
+impl Color {
+    pub fn to_default_color(&self) -> Vec4 {
+        match self {
+            Color::Red => Vec4::new(0.749, 0.184, 0.184, 1.),
+            Color::Blue => Vec4::new(0.122, 0.388, 0.655, 1.),
+        }
+    }
+}
+
 
 // extra helpers
 

@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fmt::Display;
 use std::path::Path;
 use std::{ptr, thread};
@@ -282,16 +283,21 @@ pub enum AudioMode {
 #[derive(Debug)]
 enum AudioSource {
     Stream {
-        loaded_ranges: Arc<RwLock<Vec<(usize, usize)>>>, // interleaved-sample ranges, sorted+merged
-        decode_cursor: Arc<RwLock<usize>>,                 // where the decoder has written up to
-        seek_target: Arc<RwLock<Option<usize>>>,           // pending seek, consumed by the decode task
+        loaded_ranges: Arc<RwLock<Vec<(usize, usize)>>>,
+        decode_cursor: Arc<RwLock<usize>>,
+        seek_target: Arc<RwLock<Option<usize>>>,
         playback_position: usize,
         free_buffers: Vec<u32>,
+        queued_sizes: VecDeque<usize>,
+        played_samples: Arc<RwLock<usize>>,
     },
     Full {
         load_position: Arc<RwLock<usize>>,
         playback_position: usize,
         free_buffers: Vec<u32>,
+        all_buffers: Vec<u32>,
+        queued_sizes: VecDeque<usize>,
+        played_samples: Arc<RwLock<usize>>,
     },
 }
 
@@ -332,6 +338,8 @@ impl Audio {
                     seek_target: Arc::clone(&seek_target),
                     playback_position: 0,
                     free_buffers: buffers,
+                    queued_sizes: VecDeque::new(),
+                    played_samples: Arc::default(),
                 }));
                 let loaded = Arc::new(RwLock::new(true));
 
@@ -392,7 +400,10 @@ impl Audio {
                 let source = Arc::new(RwLock::new(AudioSource::Full {
                     load_position: Arc::clone(&load_pos),
                     playback_position: 0,
-                    free_buffers: buffers,
+                    free_buffers: buffers.clone(),
+                    all_buffers: buffers,
+                    queued_sizes: VecDeque::new(),
+                    played_samples: Arc::default(),
                 }));
 
                 let loaded = Arc::new(RwLock::new(true));
@@ -442,9 +453,9 @@ impl Audio {
                     tex_data: Arc::default(),
                     tex_dirty_range: Arc::default(),
                 };
-                audio_sys.add_task(Box::new(move || {
-                    Self::spectrogram_task_loop(&mut state)
-                }));
+                // audio_sys.add_task(Box::new(move || {
+                //     Self::spectrogram_task_loop(&mut state)
+                // }));
 
                 Ok(audio)
             },
@@ -484,7 +495,7 @@ impl Audio {
                     *playback_position += take;
                 }
             },
-            AudioSource::Full { load_position, playback_position, free_buffers } => {
+            AudioSource::Full { load_position, playback_position, free_buffers, queued_sizes, played_samples, all_buffers } => {
                 unsafe {
                     let mut processed = [0i32];
                     al::alGetSourcei(self.src_handle, al::AL_BUFFERS_PROCESSED, processed.as_mut_ptr());
@@ -493,38 +504,32 @@ impl Audio {
                         al::alSourceUnqueueBuffers(self.src_handle, 1, buf.as_mut_ptr());
                         check_al_error("alSourceUnqueueBuffers");
                         free_buffers.push(buf[0]);
+                        // buffers are queued/unqueued FIFO, so the front of queued_sizes
+                        // corresponds to whichever buffer just finished playing
+                        if let Some(consumed) = queued_sizes.pop_front() {
+                            *played_samples.write() += consumed;
+                        }
                     }
                 }
- 
+
                 let available = *load_position.read();
                 let dat = self.data.read();
- 
+
                 while let Some(buf) = free_buffers.pop() {
                     let remaining = available.saturating_sub(*playback_position);
-                    if remaining == 0 {
-                        free_buffers.push(buf);
-                        break;
-                    }
- 
+                    if remaining == 0 { free_buffers.push(buf); break; }
                     let take = remaining.min(FULL_CHUNK_SAMPLES);
                     let slice = &dat[*playback_position..*playback_position + take];
- 
                     unsafe {
                         let format = if self.channels == 1 { al::AL_FORMAT_MONO16 } else { al::AL_FORMAT_STEREO16 };
-                        al::alBufferData(
-                            buf, format,
-                            slice.as_ptr() as *const _,
-                            std::mem::size_of_val(slice) as i32,
-                            self.sample_rate as i32,
-                        );
+                        al::alBufferData(buf, format, slice.as_ptr() as *const _, std::mem::size_of_val(slice) as i32, self.sample_rate as i32);
                         al::alSourceQueueBuffers(self.src_handle, 1, &buf);
                         check_al_error("alBufferData/QueueBuffers");
                     }
- 
+                    queued_sizes.push_back(take); // NEW — remember this buffer's size for later unqueue accounting
                     *playback_position += take;
                 }
                 drop(dat);
- 
             },
         }
 
@@ -559,6 +564,34 @@ impl Audio {
                 Err(PlaybackError::NotReady)
             }
         }
+    }
+
+    pub fn is_playing(&self) -> bool {
+        unsafe {
+            let mut state = [0];
+            al::alGetSourcei(self.src_handle, al::AL_SOURCE_STATE, state.as_mut_ptr());
+            state[0] == al::AL_PLAYING
+        }
+    }
+    pub fn position_seconds(&self) -> f32 {
+        let source = self.source.read();
+        let played_samples = match &*source {
+            AudioSource::Full { played_samples, .. } => *played_samples.read(),
+            AudioSource::Stream { played_samples, .. } => *played_samples.read(),
+        };
+        drop(source);
+
+        let mut offset_frames = [0i32];
+        unsafe {
+            al::alGetSourcei(self.src_handle, al::AL_SAMPLE_OFFSET, offset_frames.as_mut_ptr());
+        }
+
+        // played_samples is interleaved (all channels); AL_SAMPLE_OFFSET is
+        // already in frames (per OpenAL spec), so only the former needs /channels
+        let played_frames = played_samples / self.channels as usize;
+        let total_frames = played_frames + offset_frames[0].max(0) as usize;
+
+        total_frames as f32 / self.sample_rate as f32
     }
 
     pub fn queue_play(&self) {
@@ -609,7 +642,7 @@ impl Audio {
         self.set_speed(1.);
     }
 
-    pub fn seek(&mut self, target: f32) -> Result<(), PlaybackError> {
+    pub fn seek(&self, target: f32) -> Result<(), PlaybackError> {
         if target < 0.0 {
             return Err(PlaybackError::InvalidSeekPosition(target));
         }
@@ -617,7 +650,7 @@ impl Audio {
 
         let mut source = self.source.write();
         match &mut *source {
-            AudioSource::Full { load_position, playback_position, free_buffers } => {
+            AudioSource::Full { load_position, playback_position, free_buffers, queued_sizes, played_samples, all_buffers } => {
                 let loaded = *load_position.read();
                 if target_sample > loaded {
                     return Err(PlaybackError::InvalidSeekPosition(target));
@@ -629,15 +662,14 @@ impl Audio {
 
                 unsafe {
                     al::alSourceStop(self.src_handle);
-                    let mut queued = [0i32];
-                    al::alGetSourcei(self.src_handle, al::AL_BUFFERS_QUEUED, queued.as_mut_ptr());
-                    for _ in 0..queued[0] {
-                        let mut buf = [0u32];
-                        al::alSourceUnqueueBuffers(self.src_handle, 1, buf.as_mut_ptr());
-                        check_al_error("seek: unqueue");
-                        free_buffers.push(buf[0]);
-                    }
+                    al::alSourcei(self.src_handle, al::AL_BUFFER, 0);
+                    check_al_error("seek: flush buffers");
                 }
+                free_buffers.clear();
+                free_buffers.extend_from_slice(all_buffers);
+
+                queued_sizes.clear();
+                *played_samples.write() = target_sample;
 
                 *playback_position = target_sample;
                 drop(source);
@@ -655,10 +687,10 @@ impl Audio {
         }
     }
 
-    fn seek_stream(&mut self, target: f32) -> Result<(), PlaybackError> {
+    fn seek_stream(&self, target: f32) -> Result<(), PlaybackError> {
         let target_sample = (target * self.sample_rate as f32) as usize * self.channels as usize;
         let mut source = self.source.write();
-        if let AudioSource::Stream { loaded_ranges, playback_position, seek_target, free_buffers, .. } = &mut *source {
+        if let AudioSource::Stream { loaded_ranges, playback_position, seek_target, free_buffers, queued_sizes, played_samples, .. } = &mut *source {
             let already_loaded = Self::contiguous_loaded_end(&loaded_ranges.read(), target_sample) > target_sample;
 
             unsafe {
@@ -671,6 +703,9 @@ impl Audio {
                     free_buffers.push(buf[0]);
                 }
             }
+
+            queued_sizes.clear();
+            *played_samples.write() = target_sample;
 
             *playback_position = target_sample;
             if !already_loaded {

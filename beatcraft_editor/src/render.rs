@@ -28,13 +28,124 @@ pub struct InstanceData {
     pub colors: [Vec4; 8],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GameObjectInstanceData {
+    pub clipping_plane: Vec4,
+    pub model: Mat4,
+    pub color: Vec4,
+    _r0: [Vec4; 4],
+    pub wall_size: Vec3,
+    _r1: f32,
+    pub dissolve: f32,
+    pub index: u32, // gets sent to gpu as bit-reinterpreted f32
+    _r2: [f32; 2],
+    pub cut_plane: Vec4,
+}
+
+const _: () = assert!(
+    std::mem::size_of::<GameObjectInstanceData>()
+    == std::mem::size_of::<InstanceData>()
+);
+const _: () = assert!(
+    std::mem::align_of::<GameObjectInstanceData>()
+    == std::mem::align_of::<InstanceData>()
+);
+
 impl InstanceData {
-    pub fn new(clipping_plane: Vec4, model: Mat4, colors: [Vec4; 8]) -> Self {
+    pub fn new(
+        clipping_plane: Vec4,
+        model: Mat4,
+        colors: [Vec4; 8]
+    ) -> Self {
         Self {
             clipping_plane,
             model,
             colors
         }
+    }
+}
+
+impl GameObjectInstanceData {
+    pub fn new(
+        clipping_plane: Vec4,
+        model: Mat4,
+        color: Vec4,
+        wall_size: Vec3,
+        dissolve: f32,
+        index: u32,
+        cut_plane: Vec4,
+    ) -> Self {
+        Self {
+            clipping_plane,
+            model,
+            color,
+            _r0: Default::default(),
+            wall_size,
+            _r1: Default::default(),
+            dissolve,
+            index,
+            _r2: Default::default(),
+            cut_plane,
+        }
+    }
+
+    pub fn color_note(
+        clipping_plane: Vec4,
+        model: Mat4,
+        color: Vec4,
+        dissolve: f32,
+        index: u32,
+        cut_plane: Vec4,
+    ) -> Self {
+        Self::new(
+            clipping_plane, model,
+            color, Vec3::ZERO,
+            dissolve, index, cut_plane
+        )
+    }
+
+    pub fn bomb_note(
+        clipping_plane: Vec4,
+        model: Mat4,
+        color: Vec4,
+        dissolve: f32,
+        index: u32,
+        cut_plane: Vec4,
+    ) -> Self {
+        Self::color_note(
+            clipping_plane, model,
+            color,
+            dissolve, index, cut_plane
+        )
+    }
+
+    pub fn obstacle(
+        clipping_plane: Vec4,
+        model: Mat4,
+        color: Vec4,
+        dissolve: f32,
+        index: u32,
+        wall_size: Vec3,
+    ) -> Self {
+        Self::new(
+            clipping_plane, model,
+            color,
+            wall_size, dissolve,
+            index, Vec4::ZERO,
+        )
+    }
+}
+
+impl From<GameObjectInstanceData> for InstanceData {
+    fn from(value: GameObjectInstanceData) -> Self {
+        unsafe { std::mem::transmute::<GameObjectInstanceData, Self>(value) }
+    }
+}
+
+impl From<InstanceData> for GameObjectInstanceData {
+    fn from(value: InstanceData) -> Self {
+        unsafe { std::mem::transmute::<InstanceData, Self>(value) }
     }
 }
 

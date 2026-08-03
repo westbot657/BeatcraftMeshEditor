@@ -3,18 +3,19 @@ use std::sync::mpsc;
 use std::thread;
 
 use eframe::glow::{self, Context, HasContext};
-use egui::Response;
-use glam::Mat4;
+use egui::TextBuffer;
+use glam::{Mat4, Vec4};
 
-use crate::audio::Audio;
+use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
 use crate::data::LightMeshData;
 use crate::light_mesh::LightMesh;
-use crate::render::{GpuMesh, Renderer};
+use crate::render::{GpuMesh, MeshDrawCall, Renderer};
 use crate::{DB_DATA, DB_LOGIC, DB_MAIN, RefDuper, UnsafeMutRef, editor, get_data_folder};
-use crate::editor::{App, EditorContext, RoutineAction, ViewMesh, ViewStyle};
+use crate::editor::{App, EditorContext, RoutineAction, ViewStyle};
 
 use self::data::v2::{CharacteristicSetV2, DifficultyBeatmapV2};
-use self::data::{InfoFile, MapCharacteristic, MapDifficulty};
+use self::data::{BeatmapFile, InfoFile, MapCharacteristic, MapDifficulty};
+use self::object::{BeatmapController, GameObject};
 
 pub mod event;
 pub mod object;
@@ -48,6 +49,8 @@ impl From<&CharacteristicSetV2> for BeatmapProjectSet {
 
 impl From<&DifficultyBeatmapV2> for BeatmapProjectDiff {
     fn from(value: &DifficultyBeatmapV2) -> Self {
+        let path = &value.beatmap_filename;
+        tracing::debug!(target: DB_DATA, ?path, "Loaded Beatmap difficulty: {}", value.difficulty);
         Self {
             difficulty: value.difficulty.clone(),
             rank: value.difficulty_rank,
@@ -62,9 +65,12 @@ impl From<&DifficultyBeatmapV2> for BeatmapProjectDiff {
 pub struct BeatmapProject {
     pub folder: PathBuf,
     pub info_path: Option<PathBuf>,
+    pub info: Option<InfoFile>,
+    pub audio_info_path: Option<PathBuf>,
     pub audio: Option<std::sync::Arc<Audio>>,
     pub cover_image: Option<PathBuf>,
-    pub sets: Vec<BeatmapProjectSet>
+    pub sets: Vec<BeatmapProjectSet>,
+    pub controller: Option<BeatmapController>,
 }
 
 pub struct BeatmapMeshSet {
@@ -92,6 +98,8 @@ pub enum MapLoadError {
     IOError(#[from] std::io::Error),
     #[error("JSON Parse Error: {0}")]
     SerdeError(#[from] serde_json::Error),
+    #[error("Audio Error: {0}")]
+    AudioError(#[from] AudioError),
 }
 
 static DEFAULT_NOTE: &[u8] = include_bytes!("../assets/meshes/color_note.json");
@@ -120,6 +128,8 @@ impl BeatmapMeshSet {
 
         renderer.texture_paths.insert("builtin:color_note".to_string(), note_tex);
         renderer.texture_paths.insert("builtin:arrow".to_string(), arrow_tex);
+
+        renderer.rebuild_atlases(gl);
 
         macro_rules! setup_mesh {
             ($data:ident) => {
@@ -156,7 +166,7 @@ impl BeatmapMeshSet {
 }
 
 impl BeatmapEditor {
-    pub fn new(map: Option<PathBuf>, gl: &Context, renderer: &mut Renderer) -> Result<Self, MapLoadError> {
+    pub fn new(audio_system: &mut AudioSystem, map: Option<PathBuf>, gl: &Context, renderer: &mut Renderer) -> Result<Self, MapLoadError> {
 
         let mut s = Self {
             map: None,
@@ -165,13 +175,13 @@ impl BeatmapEditor {
         };
 
         if let Some(map) = map {
-            s.load(map, gl, renderer)?
+            s.load(audio_system, map, gl, renderer)?
         }
 
         Ok(s)
     }
 
-    pub fn load(&mut self, map: PathBuf, gl: &Context, renderer: &mut Renderer) -> Result<(), MapLoadError> {
+    pub fn load(&mut self, s: &mut AudioSystem, map: PathBuf, gl: &Context, renderer: &mut Renderer) -> Result<(), MapLoadError> {
         let span = tracing::debug_span!("load beatmap");
         let _guard = span.enter();
 
@@ -193,26 +203,39 @@ impl BeatmapEditor {
 
         let mut sets = Vec::new();
         let mut cover_image = None;
+        let audio_info_path = None;
+        let mut info_data = None;
+        let mut audio_path = None;
 
         if let Some(path) = info_file.as_deref() {
             let data = std::fs::read(path)?;
             let info: InfoFile = serde_json::from_slice(&data)?;
 
-            match info {
+            match &info {
                 InfoFile::V2(v2) => {
                     sets = v2.difficulty_beatmap_sets.iter().map(Into::into).collect();
-                    cover_image = Some(PathBuf::from(v2.cover_image_filename));
+                    cover_image = Some(PathBuf::from(&v2.cover_image_filename));
+                    audio_path = Some(PathBuf::from(&v2.song_filename));
                 }
             }
 
+            info_data = Some(info);
+        }
+
+        let mut audio = None;
+        if let Some(path) = audio_path {
+            audio = Some(Audio::new(s, &map.join(path), AudioMode::Full)?);
         }
 
         let project = BeatmapProject {
             folder: map,
             info_path: info_file,
-            audio: None,
+            info: info_data,
+            audio_info_path,
+            audio,
             cover_image,
             sets,
+            controller: None,
         };
 
         self.map = Some(project);
@@ -251,7 +274,7 @@ impl App {
                                 Ok(folder) => {
                                     let rd = RefDuper;
                                     let s2 = unsafe { rd.detach_mut_ref(s) };
-                                    if let Err(e) = s.load_beatmap(folder, gl, &mut s2.render.renderer) {
+                                    if let Err(e) = s.load_beatmap(&mut s2.audio_system, folder, gl, &mut s2.render.renderer) {
                                         s.set_status(None, "Failed to load beatmap", 2.);
                                         tracing::error!(target: DB_MAIN, "Failed to load beatmap: {e}");
                                     }
@@ -263,6 +286,7 @@ impl App {
                     if ui.button("Menu      \u{2502}").clicked() {
                         tracing::debug!(target: DB_LOGIC, "Returning to menu");
                         self.context = EditorContext::None;
+                        self.map_editor.map = None;
                     }
                 });
             });
@@ -270,6 +294,7 @@ impl App {
 
         egui::TopBottomPanel::bottom("scrub_controls")
             .exact_height(150.)
+            .resizable(false)
             .show(ctx, |ui| {
 
                 ui.label("Seek controls")
@@ -278,69 +303,144 @@ impl App {
 
         egui::SidePanel::left("left_panel")
             .exact_width(300.)
+            .resizable(false)
             .show(ctx, |ui| {
                 //
             });
 
         egui::SidePanel::right("right_panel")
             .exact_width(300.)
+            .resizable(false)
             .show(ctx, |ui| {
                 //
             });
 
         egui::CentralPanel::default()
             .show(ctx, |ui| {
-                let rect = ui.available_rect_before_wrap();
-                self.state.vp_rect = rect;
+                let rd = RefDuper;
+                let self2 = unsafe { rd.detach_mut_ref(self) };
+                match self2.map_editor.map.as_mut() {
+                    None => {
+                        // No map selected
+                        ui.label("TODO: recent map selector");
+                    },
+                    Some(map) => {
+                        if map.controller.is_none() {
+                            ui.label(map.folder.to_string_lossy().as_str());
 
-                let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
-                self.handle_3d_input(&resp, ctx, gl);
-
-                let s = unsafe { UnsafeMutRef::new(self) };
-
-                ui.painter().add(egui::PaintCallback {
-                    rect,
-                    callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
-                        move |_info, painter| {
-                            let gl = painter.gl();
-                            unsafe {
-                                let w = rect.width();
-                                let h = rect.height();
-                                let view = s.ref_mut().cam().view_mat();
-                                let proj = s.ref_mut().cam().proj_mat(w, h);
-
-                                match s.state.view_style {
-                                    editor::ViewStyle::Beatcraft { blackout_sky: true } => {
-                                        gl.clear_color(0., 0., 0., 1.);
+                            #[allow(clippy::single_match)]
+                            match map.info.as_mut() {
+                                Some(i) => {
+                                    match i {
+                                        InfoFile::V2(v2) => {
+                                            ui.label("Info V2");
+                                            ui.label(&v2.song_name);
+                                            ui.label(&v2.song_sub_name);
+                                            ui.horizontal(|ui| {
+                                                ui.label(format!(
+                                                    "Artist: {}  BPM: {:.2}  Mappers: {}",
+                                                    v2.song_author_name,
+                                                    v2.bpm,
+                                                    v2.level_author_name
+                                                ));
+                                            });
+                                        },
                                     }
-                                    _ => {
-                                        gl.clear_color(0.07, 0.08, 0.11, 1.);
-                                        gl.bind_framebuffer(glow::FRAMEBUFFER, None);
-                                    }
-                                }
-
-                                gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
-                                gl.enable(glow::DEPTH_TEST);
-                                gl.depth_mask(true);
-
-
-                                draw_map_gl(&s, gl, &view, &proj, (w as i32, h as i32));
-
-                                if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
-                                    s.render.renderer.draw_map_grid(gl, &view, &proj);
-                                }
+                                    ui.add_space(15.);
+                                },
+                                None => {},
                             }
 
-                        }
-                    ))
-                })
+                            ui.horizontal(|ui| {
+                                for set in map.sets.iter_mut() {
+                                    ui.allocate_ui_with_layout(
+                                        [200., 50.].into(), egui::Layout::top_down(egui::Align::Min),
+                                        |ui| {
+                                            ui.label(set.set.display_name());
+                                            ui.separator();
+                                            for diff in set.diffs.iter_mut() {
+                                                if ui.button(diff.difficulty.display_name()).clicked() {
+                                                    let path = diff.beatmap_file.as_deref().unwrap();
+                                                    let path = map.folder.join(path);
+                                                    let data = std::fs::read(path).unwrap();
+                                                    let diff2: BeatmapFile = serde_json::from_slice(&data).unwrap();
+                                                    map.controller = Some(BeatmapController::new(
+                                                        map.info.as_ref().unwrap(),
+                                                        diff,
+                                                        &diff2
+                                                    ).unwrap());
+                                                }
+                                            }
+                                        }
+                                    );
+                                }
+                            });
 
+                            // no difficulty selected
+                        } else {
+                            let rect = ui.available_rect_before_wrap();
+                            self.state.vp_rect = rect;
+
+                            let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
+                            self.handle_3d_input(&resp, ctx, gl);
+
+                            if let Some(audio) = map.audio.as_ref()
+                                && audio.is_playing() {
+                                    let sec = audio.position_seconds();
+                                    let beat = sec * (map.info.as_ref().unwrap().bpm() / 60.);
+                                    self.render.renderer.beatmap.seek(beat);
+                                }
+
+                            let s = unsafe { UnsafeMutRef::new(self) };
+
+                            ui.painter().add(egui::PaintCallback {
+                                rect,
+                                callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
+                                    move |_info, painter| {
+                                        let gl = painter.gl();
+                                        unsafe {
+                                            let w = rect.width();
+                                            let h = rect.height();
+                                            let view = s.ref_mut().cam().view_mat();
+                                            let proj = s.ref_mut().cam().proj_mat(w, h);
+
+                                            match s.state.view_style {
+                                                editor::ViewStyle::Beatcraft { blackout_sky: true } => {
+                                                    gl.clear_color(0., 0., 0., 1.);
+                                                }
+                                                _ => {
+                                                    gl.clear_color(0.07, 0.08, 0.11, 1.);
+                                                    gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+                                                }
+                                            }
+
+                                            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+                                            gl.enable(glow::DEPTH_TEST);
+                                            gl.depth_mask(true);
+
+
+                                            draw_map_gl(&s, gl, &view, &proj, (w as i32, h as i32));
+
+                                            if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
+                                                s.render.renderer.draw_map_grid(gl, &view, &proj);
+                                            }
+                                        }
+
+                                    }
+                                ))
+                            });
+
+
+                        }
+                    },
+                }
+                
             });
 
     }
 
-    pub fn load_beatmap(&mut self, folder: PathBuf, gl: &Context, renderer: &mut Renderer) -> Result<(), MapLoadError> {
-        self.map_editor.load(folder, gl, renderer)
+    pub fn load_beatmap(&mut self, audio_system: &mut AudioSystem, folder: PathBuf, gl: &Context, renderer: &mut Renderer) -> Result<(), MapLoadError> {
+        self.map_editor.load(audio_system, folder, gl, renderer)
     }
 }
 
@@ -350,7 +450,86 @@ fn draw_map_gl(
     window: (i32, i32),
 ) {
 
-    
+    let controller = s.ref_mut().map_editor.map.as_mut().unwrap().controller.as_mut().unwrap();
+
+    let rd = RefDuper;
+    let controller = unsafe { rd.detach_mut_ref(controller) };
+
+    let mut note_instances = Vec::new();
+    let mut arrow_instances = Vec::new();
+    let mut dot_instances = Vec::new();
+    let mut chain_dot_instances = Vec::new();
+
+    for note in controller.color_notes.iter() {
+        let beatmap = &s.render.renderer.beatmap;
+        if let Some(mat) = note.animate_simple(beatmap.beat(), &controller.runtime_data, beatmap) {
+            let inst = note.get_instance(Vec4::ZERO, mat);
+            note_instances.push(inst.into());
+            match note.arrow_type() {
+                object::ArrowType::None => {},
+                object::ArrowType::Arrow => arrow_instances.push(inst.into()),
+                object::ArrowType::Dot => dot_instances.push(inst.into()),
+                object::ArrowType::ChainDot => chain_dot_instances.push(inst.into()),
+            }
+        }
+        
+    }
+
+    let m = &s.map_editor.mesh_set.note_mesh;
+    let a = &s.map_editor.mesh_set.arrow_mesh;
+    let d = &s.map_editor.mesh_set.dot_mesh;
+    let cd = &s.map_editor.mesh_set.chain_dot_mesh;
+
+    let calls = vec![
+        MeshDrawCall {
+            mesh: m, 
+            instances: note_instances.clone(),
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: true,
+            bloom: false,
+            mirror: false
+        },
+        MeshDrawCall {
+            mesh: a,
+            instances: arrow_instances,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: true,
+            bloom: false,
+            mirror: false,
+        },
+        MeshDrawCall {
+            mesh: d,
+            instances: dot_instances,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: true,
+            bloom: false,
+            mirror: false,
+        },
+        MeshDrawCall {
+            mesh: cd,
+            instances: chain_dot_instances,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: true,
+            bloom: false,
+            mirror: false,
+        }
+    ];
+
+    s.ref_mut().render.renderer.draw_meshes(
+        gl, view, proj,
+        &calls,
+        None,
+        false,
+        false
+    );
 
     match s.state.view_style {
         ViewStyle::Edit => {

@@ -123,8 +123,8 @@ impl BeatmapRenderer {
                 beat_offset: (0, 0.),
                 beats_before: 4,
                 visible_beat_count: 20,
-                grid_width: 2.5,
-                digit_size: Vec2::splat(0.75),
+                grid_width: 1.5,
+                digit_size: Vec2::splat(0.5),
                 digit_position: Vec2::new(0., 0.),
                 thick_line_px: 2.,
                 thin_line_px: 1.,
@@ -195,6 +195,14 @@ impl BeatmapRenderer {
 
         *b = new_b.min(u16::MAX as f64) as u16;
         *o = new_f;
+    }
+
+    pub fn seek(&mut self, beat: f32) {
+        self.beat_offset = (beat.trunc() as u16, beat.fract());
+    }
+
+    pub fn beat(&self) -> f32 {
+        self.beat_offset.0 as f32 + self.beat_offset.1
     }
 
 }

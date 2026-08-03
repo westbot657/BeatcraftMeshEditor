@@ -13,7 +13,7 @@ use tracing::Level;
 
 use crate::audio::{Audio, AudioSystem};
 use crate::beatmap::BeatmapEditor;
-use crate::{DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
+use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
 use crate::config::AppData;
 use crate::data::{
     EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData, MeshType, NormalId, SessionData, SpectrogramData, TypeData, UvId, VertexId
@@ -1067,7 +1067,9 @@ impl App {
             }
         };
 
-        let map_editor = BeatmapEditor::new(None, &gl2, &mut renderer).unwrap();
+        let mut audio_system = AudioSystem::new().unwrap();
+
+        let map_editor = BeatmapEditor::new(&mut audio_system, None, &gl2, &mut renderer).unwrap();
 
         let mut s = Self {
             title: "Beatcraft Mesh Editor",
@@ -1152,7 +1154,7 @@ impl App {
                 limit: 200,
             },
             data: load_app_data().unwrap_or_else(|_| Default::default()),
-            audio_system: AudioSystem::new().unwrap(),
+            audio_system,
         };
 
         // let test_audio = PathBuf::from("/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/11f9c (Tenebrous - Swifter1243)/song.egg");
@@ -1166,11 +1168,12 @@ impl App {
             let mut add = IndexMap::new();
             add.insert(name, p.clone());
             if s.load_meshes(add, &gl2).is_err() {
-                let _ = s.map_editor.load(p, &gl2, &mut s.render.renderer);
+                let _ = s.map_editor.load(&mut s.audio_system, p, &gl2, &mut s.render.renderer);
             }
         }
 
         tracing::info!(target: DB_MAIN, "Initialized.");
+        s.rebuild_meshes(&gl2);
         s
     }
 
@@ -1347,126 +1350,150 @@ impl App {
             self.upload_selection_points(gl);
         }
 
-        match self.mode {
-            EditorMode::View => {
-                if input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace) {
-                    let mut to_remove = std::mem::take(&mut self.state.ui.mirror_editor.selected);
-                    if !to_remove.is_empty() {
-                        tracing::debug!(target: DB_RENDER, ?to_remove, "Deleting mirror vertices");
-                    }
-                    to_remove.sort();
-                    to_remove.reverse();
-                    for r in to_remove {
-                        self.view.mirror_geometry.remove(r.0 * 3 + r.1);
-                    }
-                }
+        match self.context {
+            EditorContext::Model(_) => {
 
-            }
-            EditorMode::Assembly => {
-                if input.key_pressed(Key::E) {
-                    self.last_mode = self.mode;
-                    self.selection = Selection::None;
-                    self.upload_selection_points(gl);
-                    self.mode = EditorMode::Edit;
-                    if self.editor.part.is_none()
-                        && let Some(sel) = self.editor.mesh.as_deref()
-                        && let Some(Some(mesh)) = self.view.meshes.get(sel)
-                        && !mesh.data.parts.is_empty()
-                    {
-                        self.editor.part = Some(0);
+                match self.mode {
+                    EditorMode::View => {
+                        if input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace) {
+                            let mut to_remove = std::mem::take(&mut self.state.ui.mirror_editor.selected);
+                            if !to_remove.is_empty() {
+                                tracing::debug!(target: DB_RENDER, ?to_remove, "Deleting mirror vertices");
+                            }
+                            to_remove.sort();
+                            to_remove.reverse();
+                            for r in to_remove {
+                                self.view.mirror_geometry.remove(r.0 * 3 + r.1);
+                            }
+                        }
+
+                    }
+                    EditorMode::Assembly => {
+                        if input.key_pressed(Key::E) {
+                            self.last_mode = self.mode;
+                            self.selection = Selection::None;
+                            self.upload_selection_points(gl);
+                            self.mode = EditorMode::Edit;
+                            if self.editor.part.is_none()
+                                && let Some(sel) = self.editor.mesh.as_deref()
+                                    && let Some(Some(mesh)) = self.view.meshes.get(sel)
+                                    && !mesh.data.parts.is_empty()
+                            {
+                                self.editor.part = Some(0);
+                            }
+                        }
+                    }
+                    EditorMode::Edit => {
+                        if input.key_pressed(Key::E) {
+                            self.last_mode = self.mode;
+                            self.selection = Selection::None;
+                            self.upload_selection_points(gl);
+                            self.mode = EditorMode::Assembly;
+                        }
+                        if input.key_pressed(Key::A)
+                            && let Some(sel) = self.editor.mesh.as_deref()
+                                && let Some(Some(mesh)) = self.view.meshes.get(sel)
+                        {
+                            if mesh.data.part_names.is_empty() {
+                                self.editor.part = None;
+                            } else {
+                                let l = mesh.data.part_names.len();
+                                self.editor.part =
+                                    Some(self.editor.part.map(|x| (x + l - 1) % l).unwrap_or(0));
+                            }
+                            self.selection = Selection::None;
+                            self.upload_selection_points(gl);
+                        }
+                        if input.key_pressed(Key::D)
+                            && let Some(sel) = self.editor.mesh.as_deref()
+                                && let Some(Some(mesh)) = self.view.meshes.get(sel)
+                        {
+                            if mesh.data.part_names.is_empty() {
+                                self.editor.part = None;
+                            } else {
+                                self.editor.part = Some(
+                                    self.editor
+                                    .part
+                                    .map(|x| (x + 1) % mesh.data.part_names.len())
+                                    .unwrap_or(0),
+                                );
+                            }
+                            self.selection = Selection::None;
+                            self.upload_selection_points(gl);
+                        }
+                        if (input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace))
+                            && let Selection::Vertices(_) = self.selection
+                        {
+                            let Selection::Vertices(verts) = self.selection.take() else {
+                                unreachable!()
+                            };
+                            let rd = RefDuper;
+                            let self2 = unsafe { rd.detach_mut_ref(self) };
+                            if let Some(part) = self.get_current_part_mut() {
+                                self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
+                                    id: self2.get_current_mesh_id().unwrap().to_string(),
+                                    name: self2.get_current_part_name().unwrap().to_string(),
+                                    part: Box::new(part.clone()),
+                                }));
+                                part.delete_vertices(verts);
+                                self.rebuild_meshes(gl);
+                            }
+                        }
+                        if input.key_pressed(Key::N)
+                            && let Selection::Vertices(ref verts) = self.selection
+                        {
+                            let rd = RefDuper;
+                            let verts = unsafe { rd.detach_ref(verts) };
+                            let self2 = unsafe { rd.detach_mut_ref(self) };
+                            let eye = self.cam().eye();
+                            if let Some(part) = self.get_current_part_mut() {
+                                self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
+                                    id: self2.get_current_mesh_id().unwrap().to_string(),
+                                    name: self2.get_current_part_name().unwrap().to_string(),
+                                    part: Box::new(part.clone()),
+                                }));
+                                part.toggle_triangles(verts, eye);
+                                self.rebuild_meshes(gl);
+                            }
+                        }
+                        if input.key_pressed(Key::R)
+                            && let Selection::Vertices(ref verts) = self.selection
+                        {
+                            let rd = RefDuper;
+                            let verts = unsafe { rd.detach_ref(verts) };
+                            let self2 = unsafe { rd.detach_mut_ref(self) };
+                            if let Some(part) = self.get_current_part_mut() {
+                                self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
+                                    id: self2.get_current_mesh_id().unwrap().to_string(),
+                                    name: self2.get_current_part_name().unwrap().to_string(),
+                                    part: Box::new(part.clone()),
+                                }));
+                                part.flip_triangles(verts);
+                                self.rebuild_meshes(gl);
+                            }
+                        }
                     }
                 }
-            }
-            EditorMode::Edit => {
-                if input.key_pressed(Key::E) {
-                    self.last_mode = self.mode;
-                    self.selection = Selection::None;
-                    self.upload_selection_points(gl);
-                    self.mode = EditorMode::Assembly;
-                }
-                if input.key_pressed(Key::A)
-                    && let Some(sel) = self.editor.mesh.as_deref()
-                    && let Some(Some(mesh)) = self.view.meshes.get(sel)
-                {
-                    if mesh.data.part_names.is_empty() {
-                        self.editor.part = None;
-                    } else {
-                        let l = mesh.data.part_names.len();
-                        self.editor.part =
-                            Some(self.editor.part.map(|x| (x + l - 1) % l).unwrap_or(0));
-                    }
-                    self.selection = Selection::None;
-                    self.upload_selection_points(gl);
-                }
-                if input.key_pressed(Key::D)
-                    && let Some(sel) = self.editor.mesh.as_deref()
-                    && let Some(Some(mesh)) = self.view.meshes.get(sel)
-                {
-                    if mesh.data.part_names.is_empty() {
-                        self.editor.part = None;
-                    } else {
-                        self.editor.part = Some(
-                            self.editor
-                                .part
-                                .map(|x| (x + 1) % mesh.data.part_names.len())
-                                .unwrap_or(0),
-                        );
-                    }
-                    self.selection = Selection::None;
-                    self.upload_selection_points(gl);
-                }
-                if (input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace))
-                    && let Selection::Vertices(_) = self.selection
-                {
-                    let Selection::Vertices(verts) = self.selection.take() else {
-                        unreachable!()
-                    };
-                    let rd = RefDuper;
-                    let self2 = unsafe { rd.detach_mut_ref(self) };
-                    if let Some(part) = self.get_current_part_mut() {
-                        self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
-                            id: self2.get_current_mesh_id().unwrap().to_string(),
-                            name: self2.get_current_part_name().unwrap().to_string(),
-                            part: Box::new(part.clone()),
-                        }));
-                        part.delete_vertices(verts);
-                        self.rebuild_meshes(gl);
+            },
+            #[allow(clippy::collapsible_match, clippy::collapsible_if)]
+            EditorContext::Map(MapEditorContext::Beatmap) => {
+                if input.key_pressed(Key::Space) {
+                    if let Some(map) = self.map_editor.map.as_ref()
+                    && let Some(audio) = map.audio.as_ref() {
+                        if audio.is_playing() {
+                            audio.pause();
+                        } else {
+                            tracing::debug!(target: DB_AUDIO, "seeking to map");
+                            let beat = self.render.renderer.beatmap.beat();
+                            let sec = beat / (map.info.as_ref().unwrap().bpm() / 60.);
+                            if audio.seek(sec).is_ok() {
+                                let _ = audio.play();
+                            }
+                        }
                     }
                 }
-                if input.key_pressed(Key::N)
-                    && let Selection::Vertices(ref verts) = self.selection
-                {
-                    let rd = RefDuper;
-                    let verts = unsafe { rd.detach_ref(verts) };
-                    let self2 = unsafe { rd.detach_mut_ref(self) };
-                    let eye = self.cam().eye();
-                    if let Some(part) = self.get_current_part_mut() {
-                        self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
-                            id: self2.get_current_mesh_id().unwrap().to_string(),
-                            name: self2.get_current_part_name().unwrap().to_string(),
-                            part: Box::new(part.clone()),
-                        }));
-                        part.toggle_triangles(verts, eye);
-                        self.rebuild_meshes(gl);
-                    }
-                }
-                if input.key_pressed(Key::R)
-                    && let Selection::Vertices(ref verts) = self.selection
-                {
-                    let rd = RefDuper;
-                    let verts = unsafe { rd.detach_ref(verts) };
-                    let self2 = unsafe { rd.detach_mut_ref(self) };
-                    if let Some(part) = self.get_current_part_mut() {
-                        self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
-                            id: self2.get_current_mesh_id().unwrap().to_string(),
-                            name: self2.get_current_part_name().unwrap().to_string(),
-                            part: Box::new(part.clone()),
-                        }));
-                        part.flip_triangles(verts);
-                        self.rebuild_meshes(gl);
-                    }
-                }
-            }
+            },
+            _ => {}
         }
         (shift, ctrl)
     }
@@ -1553,8 +1580,8 @@ impl App {
                 EditorContext::Map(MapEditorContext::Beatmap) => {
                     let beatmap = &self.render.renderer.beatmap;
                     let placement_z = beatmap.placement_z;
-                    let half_width = 2.;
-                    let grid_height = 3.;
+                    let half_width = 2. * 0.6;
+                    let grid_height = 3. * 0.6;
                     const COLS: u32 = 4;
                     const ROWS: u32 = 3;
 

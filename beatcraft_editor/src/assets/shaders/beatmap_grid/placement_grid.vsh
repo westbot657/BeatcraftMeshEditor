@@ -13,6 +13,6 @@ void main() {
     float x = 2.0 - (u * 4.0);
     float y = (v * 3.0);
 
-    gl_Position = u_view_proj * vec4(x, y, u_z, 1.0);
+    gl_Position = u_view_proj * vec4(x * 0.6, y * 0.6, u_z, 1.0);
 }
 

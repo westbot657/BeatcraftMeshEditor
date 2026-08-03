@@ -251,6 +251,10 @@ pub enum MaterialType {
     SolidLight,
     TranslucentLight,
     TintedSolid,
+    Note,
+    Arrow,
+    Obstacle,
+    Arc,
 }
 
 impl MaterialType {
@@ -260,6 +264,10 @@ impl MaterialType {
             MaterialType::SolidLight => "Solid Light",
             MaterialType::TranslucentLight => "Translucent Light",
             MaterialType::TintedSolid => "Tinted Solid",
+            MaterialType::Note => "Note",
+            MaterialType::Arrow => "Arrow",
+            MaterialType::Obstacle => "Obstacle",
+            MaterialType::Arc => "Arc",
         }
     }
     pub fn iter_all() -> impl Iterator<Item = Self> {
@@ -280,6 +288,10 @@ impl From<u8> for MaterialType {
             1 => Self::SolidLight,
             2 => Self::TranslucentLight,
             3 => Self::TintedSolid,
+            4 => Self::Note,
+            5 => Self::Arrow,
+            6 => Self::Obstacle,
+            7 => Self::Arc,
             _ => Self::Solid,
         }
     }
