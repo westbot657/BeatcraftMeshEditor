@@ -3,9 +3,11 @@ use std::fmt::Display;
 use std::ops::Not;
 use std::path::PathBuf;
 
+use bitflags::bitflags;
 use glam::{Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+use num_traits::Zero;
 
 use crate::easing::Easing;
 use crate::editor::{ActionType, Camera, ViewPlacement};
@@ -76,19 +78,45 @@ impl AsRef<NormalId> for NormalId {
     }
 }
 
+bitflags! {
+    #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(from = "[u32; 1]", into = "[u32; 1]")]
+    pub struct MaterialFlags: u32 {
+        const OVERRIDE_BLACK = 0x7000_0000;
+
+        const OBSTACLE_TOP   = 0b100_0000_0000;
+        const OBSTACLE_BACK  = 0b010_0000_0000;
+        const OBSTACLE_RIGHT = 0b001_0000_0000;
+
+        const _ = !0;
+    }
+}
+
+impl From<[u32; 1]> for MaterialFlags {
+    fn from(value: [u32; 1]) -> Self {
+        Self::from_bits_retain(unsafe { *value.get_unchecked(0) })
+    }
+}
+
+impl From<MaterialFlags> for [u32; 1] {
+    fn from(value: MaterialFlags) -> Self {
+        [value.bits()]
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum VertRefData {
-    Full(VertexId, UvId, NormalId),
-    WithUv(VertexId, UvId),
-    Bare(VertexId),
+    Full(VertexId, UvId, NormalId, Option<MaterialFlags>),
+    WithUv(VertexId, UvId, Option<MaterialFlags>),
+    Bare(VertexId, Option<MaterialFlags>),
 }
 
 impl VertRefData {
-    pub(crate) fn take_all(self) -> (VertexId, Option<UvId>, Option<NormalId>) {
+    pub(crate) fn take_all(self) -> (VertexId, Option<UvId>, Option<NormalId>, Option<MaterialFlags>) {
         match self {
-            Self::Full(v, u, n) => (v, Some(u), Some(n)),
-            Self::WithUv(v, u) => (v, Some(u), None),
-            Self::Bare(v) => (v, None, None),
+            Self::Full(v, u, n, flags) => (v, Some(u), Some(n), flags),
+            Self::WithUv(v, u, flags) => (v, Some(u), None, flags),
+            Self::Bare(v, flags) => (v, None, None, flags),
         }
     }
 }
@@ -109,6 +137,7 @@ pub struct StateSet {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum TriangleEntry {
     Triangle(#[serde(with = "triangle_data_serde")] TriangleData),
     StateSet(StateSet),
@@ -296,6 +325,7 @@ impl From<u8> for MaterialType {
         }
     }
 }
+
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
 #[serde(default)]
@@ -963,7 +993,7 @@ impl<'de> Deserialize<'de> for TypeData {
 mod triangle_data_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    use super::{NormalId, TriangleData, UvId, VertRefData, VertexId};
+    use super::{MaterialFlags, NormalId, TriangleData, UvId, VertRefData, VertexId};
 
     #[derive(Serialize, Deserialize)]
     #[serde(untagged)]
@@ -1029,21 +1059,29 @@ mod triangle_data_serde {
     #[derive(Serialize, Deserialize)]
     #[serde(untagged)]
     pub(crate) enum IdInner {
-        Full([Id; 3]),
-        Uv([Id; 2]),
+        Full(Id, Id, Id, #[serde(default, skip_serializing_if="Option::is_none")] Option<MaterialFlags>),
+        Uv(Id, Id, #[serde(default, skip_serializing_if="Option::is_none")] Option<MaterialFlags>),
+        BareFlagged(Id, #[serde(default, skip_serializing_if="Option::is_none")] Option<MaterialFlags>),
         Bare(Id),
     }
 
     impl From<&VertRefData> for IdInner {
         fn from(value: &VertRefData) -> Self {
             match value {
-                VertRefData::Full(vert_id, uv_id, normal_id) => {
-                    IdInner::Full([Id::from(vert_id), Id::from(uv_id), Id::from(normal_id)])
+                VertRefData::Full(vert_id, uv_id, normal_id, flags) => {
+                    IdInner::Full(Id::from(vert_id), Id::from(uv_id), Id::from(normal_id), *flags)
                 }
-                VertRefData::WithUv(vert_id, uv_id) => {
-                    IdInner::Uv([Id::from(vert_id), Id::from(uv_id)])
+                VertRefData::WithUv(vert_id, uv_id, flags) => {
+                    IdInner::Uv(Id::from(vert_id), Id::from(uv_id), *flags)
                 }
-                VertRefData::Bare(n) => IdInner::Bare(Id::from(n)),
+                VertRefData::Bare(n, flags) => {
+                    match flags {
+                        Some(f) if !f.is_empty() => {
+                            IdInner::BareFlagged(Id::from(n), *flags)
+                        },
+                        _ => IdInner::Bare(Id::from(n))
+                    }
+                },
             }
         }
     }
@@ -1051,9 +1089,10 @@ mod triangle_data_serde {
     impl From<IdInner> for VertRefData {
         fn from(value: IdInner) -> Self {
             match value {
-                IdInner::Full([v, u, n]) => VertRefData::Full(v.into(), u.into(), n.into()),
-                IdInner::Uv([v, u]) => VertRefData::WithUv(v.into(), u.into()),
-                IdInner::Bare(v) => VertRefData::Bare(v.into()),
+                IdInner::Full(v, u, n, flags) => VertRefData::Full(v.into(), u.into(), n.into(), flags),
+                IdInner::Uv(v, u, flags) => VertRefData::WithUv(v.into(), u.into(), flags),
+                IdInner::BareFlagged(v, flags) => VertRefData::Bare(v.into(), flags),
+                IdInner::Bare(v) => VertRefData::Bare(v.into(), None)
             }
         }
     }
@@ -1174,9 +1213,9 @@ mod data_tests {
                         }),
                         TriangleEntry::Triangle(TriangleData {
                             verts: [
-                                VertRefData::Bare(VertexId::Named("v0".to_string())),
-                                VertRefData::WithUv(VertexId::Named("v1".to_string()), UvId::Index(1)),
-                                VertRefData::WithUv(VertexId::Named("v2".to_string()), UvId::Index(2)),
+                                VertRefData::Bare(VertexId::Named("v0".to_string()), None),
+                                VertRefData::WithUv(VertexId::Named("v1".to_string()), UvId::Index(1), None),
+                                VertRefData::WithUv(VertexId::Named("v2".to_string()), UvId::Index(2), None),
                             ],
                             mat: None
                         })

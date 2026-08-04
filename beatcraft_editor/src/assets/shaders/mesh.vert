@@ -21,8 +21,8 @@ layout(location = 15) in vec4  c7;
 
 // Flags:
 // 31 : bool : Editor render mode (aka override black)
-// 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11
-// 10  9  8 : [bool; 3] : wall-[top,back,right]-vertex
+// 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12
+// 11 10  9  8 : [bool; 4] : wall-[left,top,back,right]-vertex
 //  7  6  5  4 : u4 : shader style
 //  3  2  1  0 : u4 : billboard index
 //
@@ -54,6 +54,8 @@ uniform mat4 u_projection;
 uniform mat4 u_view;
 uniform mat4 u_camera_pos;
 
+uniform float u_beat_distance;
+
 uniform int u_render_mode;
 
 out vec2 v_uv;
@@ -84,6 +86,7 @@ const int PASS_NORMAL      = 0;
 const int PASS_BLOOM       = 1;
 const int PASS_BLOOMFOG    = 2;
 const int PASS_LATE_LIGHTS = 3;
+const int PASS_OBSTACLE    = 4;
 
 
 const int MODE_BEATCRAFT        = 0;
@@ -166,7 +169,31 @@ void main() {
     } else if (v_material == MAT_NOTE) {
         v_color = c0;
     } else if (v_material == MAT_ARROW) {
-        v_color = vec4(1.0);
+        if (passType == PASS_BLOOM) {
+            v_color = c0;
+        } else {
+            v_color = vec4(1.0);
+        }
+    } else if (v_material == MAT_OBSTACLE) {
+        int flags = (v_flags >> 8) & 0xF;
+        float left = float((flags >> 3) & 1) * 0.5;
+        float top = float((flags >> 2) & 1);
+        float back = float((flags >> 1) & 1);
+        float right = float(flags & 1) * 0.5;
+        vec3 wall_size = c5.xyz;
+
+        vec3 wall_vert = vec3(
+            (left + right) * wall_size.x * in_position.x * 0.6,
+            top * wall_size.y * 0.6,
+            back * wall_size.z * u_beat_distance * 0.6
+        );
+
+        pos = instance_model * vec4(wall_vert, 1.0);
+        if (passType == PASS_OBSTACLE) {
+            v_color = c0;
+        } else {
+            v_color = vec4(c0.xyz, 0.1);
+        }
     }
 
     pos = u_view * pos;

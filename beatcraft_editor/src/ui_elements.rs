@@ -253,6 +253,56 @@ pub fn multi_vec3_row<T: 'static + Clone + Send + Sync>(
     }
 }
 
+pub fn value_opt_row<T: 'static + Clone + Send + Sync>(
+    ui: &mut Ui,
+    v: &mut Option<u32>,
+    w: f32,
+    vars: &mut HashMap<String, f32>,
+    snapshot_provider: impl Fn() -> T,
+    mut history_pusher: impl FnMut(T),
+    mut on_change: impl FnMut(),
+) {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        let mut current = *v;
+        ui.allocate_ui_with_layout(
+            (w, 20.).into(),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                let id = ui.next_auto_id();
+                let resp = ui.add_sized(
+                    [w, 20.],
+                    MathDragValueOpt::<u32, _>::new(&mut current, vars),
+                );
+
+                changed |= resp.changed();
+
+                if resp.drag_started() || (resp.gained_focus() && !resp.dragged()) {
+                    ui.memory_mut(|m| {
+                        m.data.insert_temp(id, *v);
+                        m.data.insert_temp(id, snapshot_provider());
+                    });
+                    changed = true;
+                }
+                if (resp.drag_stopped() || (resp.lost_focus() && !resp.dragged()))
+                    && let Some((old, t)) = ui.memory_mut(|m| {
+                        let o = m.data.get_temp::<Option<u32>>(id)?;
+                        let t = m.data.get_temp::<T>(id)?;
+                        Some((o, t))
+                    })
+                    && old != current
+                {
+                    history_pusher(t);
+                }
+            },
+        );
+        *v = current;
+        if changed {
+            on_change();
+        }
+    });
+}
+
 pub fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
     ui: &mut Ui,
     mut v: [&mut Option<f32>; 3],
@@ -282,7 +332,7 @@ pub fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
                     let id = ui.next_auto_id();
                     let resp = ui.add_sized(
                         [w3, 20.],
-                        MathDragValueOpt::new(val, vars).speed(0.01).max_decimals(3),
+                        MathDragValueOpt::<f32, _>::new(val, vars).speed(0.01).max_decimals(3),
                     );
 
                     changed |= resp.changed();
@@ -340,7 +390,7 @@ pub fn delta_function_row<T: 'static + Clone + Send + Sync>(
                 let id = ui.next_auto_id();
                 let resp = ui.add_sized(
                     [w2, 20.],
-                    MathDragValueOpt::new(delta, vars)
+                    MathDragValueOpt::<f32, _>::new(delta, vars)
                         .speed(0.01)
                         .max_decimals(3),
                 );

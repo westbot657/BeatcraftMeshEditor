@@ -108,7 +108,7 @@ static DEFAULT_DOT: &[u8] = include_bytes!("../assets/meshes/color_note_dot.json
 static DEFAULT_CHAIN_HEAD: &[u8] = include_bytes!("../assets/meshes/chain_note_head.json");
 static DEFAULT_CHAIN_LINK: &[u8] = include_bytes!("../assets/meshes/chain_note_link.json");
 static DEFAULT_CHAIN_DOT: &[u8] = include_bytes!("../assets/meshes/chain_note_link_dot.json");
-static CUBE: &[u8] = include_bytes!("../assets/meshes/cube.json");
+static OBSTACLE: &[u8] = include_bytes!("../assets/meshes/obstacle.json");
 
 static NOTE_TEXTURE: &[u8] = include_bytes!("../assets/textures/color_note.png");
 static ARROW_TEXTURE: &[u8] = include_bytes!("../assets/textures/arrow.png");
@@ -132,8 +132,9 @@ impl BeatmapMeshSet {
         renderer.rebuild_atlases(gl);
 
         macro_rules! setup_mesh {
-            ($data:ident) => {
+            ($data:ident, $name:literal) => {
                 {
+                    tracing::debug!(target: DB_MAIN, "Loading default mesh for {}", $name);
                     let lm: LightMeshData = serde_json::from_slice($data)?;
                     let lm: LightMesh = lm.into();
                     let mut mesh = GpuMesh::empty(gl);
@@ -143,14 +144,14 @@ impl BeatmapMeshSet {
             };
         }
 
-        let note_mesh = setup_mesh!(DEFAULT_NOTE);
-        let bomb_mesh = setup_mesh!(DEFAULT_NOTE);
-        let chain_head_mesh = setup_mesh!(DEFAULT_CHAIN_HEAD);
-        let chain_body_mesh = setup_mesh!(DEFAULT_CHAIN_LINK);
-        let arrow_mesh = setup_mesh!(DEFAULT_ARROW);
-        let dot_mesh = setup_mesh!(DEFAULT_DOT);
-        let chain_dot_mesh = setup_mesh!(DEFAULT_CHAIN_DOT);
-        let obstacle_mesh = setup_mesh!(CUBE);
+        let note_mesh = setup_mesh!(DEFAULT_NOTE, "Color Note");
+        let bomb_mesh = setup_mesh!(DEFAULT_NOTE, "Bomb Note");
+        let chain_head_mesh = setup_mesh!(DEFAULT_CHAIN_HEAD, "Chain Note Head");
+        let chain_body_mesh = setup_mesh!(DEFAULT_CHAIN_LINK, "Chain Note Link");
+        let arrow_mesh = setup_mesh!(DEFAULT_ARROW, "Arrow");
+        let dot_mesh = setup_mesh!(DEFAULT_DOT, "Dot");
+        let chain_dot_mesh = setup_mesh!(DEFAULT_CHAIN_DOT, "Chain Dot");
+        let obstacle_mesh = setup_mesh!(OBSTACLE, "Obstacle");
 
         Ok(Self {
             note_mesh,
@@ -166,22 +167,22 @@ impl BeatmapMeshSet {
 }
 
 impl BeatmapEditor {
-    pub fn new(audio_system: &mut AudioSystem, map: Option<PathBuf>, gl: &Context, renderer: &mut Renderer) -> Result<Self, MapLoadError> {
+    pub fn new(audio_system: &mut AudioSystem, map: Option<PathBuf>, gl: &Context, renderer: &mut Renderer, volume: f32) -> Result<Self, MapLoadError> {
 
         let mut s = Self {
             map: None,
             mesh_set: BeatmapMeshSet::new(gl, renderer)?,
-            scroll_step: 0.25,
+            scroll_step: 0.125,
         };
 
         if let Some(map) = map {
-            s.load(audio_system, map, gl, renderer)?
+            s.load(audio_system, map, gl, renderer, volume)?
         }
 
         Ok(s)
     }
 
-    pub fn load(&mut self, s: &mut AudioSystem, map: PathBuf, gl: &Context, renderer: &mut Renderer) -> Result<(), MapLoadError> {
+    pub fn load(&mut self, s: &mut AudioSystem, map: PathBuf, gl: &Context, renderer: &mut Renderer, volume: f32) -> Result<(), MapLoadError> {
         let span = tracing::debug_span!("load beatmap");
         let _guard = span.enter();
 
@@ -224,7 +225,9 @@ impl BeatmapEditor {
 
         let mut audio = None;
         if let Some(path) = audio_path {
-            audio = Some(Audio::new(s, &map.join(path), AudioMode::Full)?);
+            let ad = Audio::new(s, &map.join(path), AudioMode::Full)?;
+            ad.set_volume(volume);
+            audio = Some(ad);
         }
 
         let project = BeatmapProject {
@@ -274,7 +277,14 @@ impl App {
                                 Ok(folder) => {
                                     let rd = RefDuper;
                                     let s2 = unsafe { rd.detach_mut_ref(s) };
-                                    if let Err(e) = s.load_beatmap(&mut s2.audio_system, folder, gl, &mut s2.render.renderer) {
+                                    if let Some(map) = s.map_editor.map.take()
+                                    && let Some(audio) = map.audio {
+                                        audio.stop();
+                                        drop(audio);
+                                        s.audio_system.remove_dead_audio();
+                                    }
+                                    s.render.renderer.beatmap.seek(0.);
+                                    if let Err(e) = s.load_beatmap(&mut s2.audio_system, folder, gl, &mut s2.render.renderer, s2.data.audio_volume) {
                                         s.set_status(None, "Failed to load beatmap", 2.);
                                         tracing::error!(target: DB_MAIN, "Failed to load beatmap: {e}");
                                     }
@@ -286,8 +296,14 @@ impl App {
                     if ui.button("Menu      \u{2502}").clicked() {
                         tracing::debug!(target: DB_LOGIC, "Returning to menu");
                         self.context = EditorContext::None;
-                        self.map_editor.map = None;
                         self.render.renderer.beatmap.seek(0.);
+                        if let Some(map) = self.map_editor.map.take()
+                            && let Some(audio) = map.audio {
+                                audio.stop();
+                                drop(audio);
+                                self.audio_system.remove_dead_audio();
+                                self.state.playback_speed = 1.;
+                            }
                     }
                 });
             });
@@ -298,7 +314,38 @@ impl App {
             .resizable(false)
             .show(ctx, |ui| {
 
-                ui.label("Seek controls")
+                ui.label("Audio volume");
+
+                let vol = (self.data.audio_volume * 100.) as u32;
+                let mut volume = vol;
+                ui.add_sized(
+                    [150., 20.],
+                    egui::Slider::new(&mut volume, 0..=100).suffix("%")
+                );
+                if volume != vol {
+                    let vol = volume as f32 / 100.;
+                    self.data.audio_volume = vol;
+                    if let Some(map) = self.map_editor.map.as_ref()
+                    && let Some(audio) = map.audio.as_ref() {
+                        audio.set_volume(vol);
+                    }
+                }
+
+                ui.label("Playback speed");
+                let spd = (self.state.playback_speed * 100.) as u32;
+                let mut speed = spd;
+                ui.add_sized(
+                    [150., 20.],
+                    egui::Slider::new(&mut speed, 0..=200).suffix("%")
+                );
+                if speed != spd {
+                    let spd = speed as f32 / 100.;
+                    self.state.playback_speed = spd;
+                    if let Some(map) = self.map_editor.map.as_ref()
+                    && let Some(audio) = map.audio.as_ref() {
+                        audio.set_speed(spd);
+                    }
+                }
 
             });
 
@@ -317,6 +364,7 @@ impl App {
             });
 
         egui::CentralPanel::default()
+            .frame(egui::Frame::default().fill(ctx.theme().default_visuals().panel_fill).inner_margin(0.))
             .show(ctx, |ui| {
                 let rd = RefDuper;
                 let self2 = unsafe { rd.detach_mut_ref(self) };
@@ -364,12 +412,18 @@ impl App {
                                                     let path = diff.beatmap_file.as_deref().unwrap();
                                                     let path = map.folder.join(path);
                                                     let data = std::fs::read(path).unwrap();
-                                                    let diff2: BeatmapFile = serde_json::from_slice(&data).unwrap();
-                                                    map.controller = Some(BeatmapController::new(
-                                                        map.info.as_ref().unwrap(),
-                                                        diff,
-                                                        &diff2
-                                                    ).unwrap());
+                                                    match serde_json::from_slice::<BeatmapFile>(&data) {
+                                                        Ok(diff2) => {
+                                                            map.controller = Some(BeatmapController::new(
+                                                                map.info.as_ref().unwrap(),
+                                                                diff,
+                                                                &diff2
+                                                            ).unwrap());
+                                                        }
+                                                        Err(e) => {
+                                                            tracing::error!(target: DB_DATA, "Error loading beatmap file:\n{}", e);
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -377,7 +431,6 @@ impl App {
                                 }
                             });
 
-                            // no difficulty selected
                         } else {
                             let rect = ui.available_rect_before_wrap();
                             self.state.vp_rect = rect;
@@ -422,7 +475,7 @@ impl App {
 
                                             draw_map_gl(&s, gl, &view, &proj, (w as i32, h as i32));
 
-                                            if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
+                                            if s.state.show_grid {
                                                 s.render.renderer.draw_map_grid(gl, &view, &proj);
                                             }
                                         }
@@ -435,13 +488,13 @@ impl App {
                         }
                     },
                 }
-                
+
             });
 
     }
 
-    pub fn load_beatmap(&mut self, audio_system: &mut AudioSystem, folder: PathBuf, gl: &Context, renderer: &mut Renderer) -> Result<(), MapLoadError> {
-        self.map_editor.load(audio_system, folder, gl, renderer)
+    pub fn load_beatmap(&mut self, audio_system: &mut AudioSystem, folder: PathBuf, gl: &Context, renderer: &mut Renderer, volume: f32) -> Result<(), MapLoadError> {
+        self.map_editor.load(audio_system, folder, gl, renderer, volume)
     }
 }
 
@@ -460,26 +513,42 @@ fn draw_map_gl(
     let mut arrow_instances = Vec::new();
     let mut dot_instances = Vec::new();
     let mut chain_dot_instances = Vec::new();
+    let mut bomb_instances = Vec::new();
+    let mut obstacle_instances = Vec::new();
 
-    for note in controller.color_notes.iter() {
+    for (t, object) in controller.color_notes.iter().map(|x| (0, x as &dyn GameObject))
+        .chain(controller.bomb_notes.iter().map(|x| (1, x as &dyn GameObject)))
+        .chain(controller.obstacles.iter().map(|x| (2, x as &dyn GameObject))) {
         let beatmap = &s.render.renderer.beatmap;
-        if let Some(mat) = note.animate_simple(beatmap.beat(), &controller.runtime_data, beatmap) {
-            let inst = note.get_instance(Vec4::ZERO, mat);
-            note_instances.push(inst.into());
-            match note.arrow_type() {
+
+        let wp = Mat4::IDENTITY;
+
+        if let Some(mat) = match s.state.view_style {
+            ViewStyle::Edit => object.animate_simple(wp, beatmap.beat(), &controller.runtime_data, beatmap),
+            ViewStyle::Beatcraft { .. } => object.animate_complex(wp, beatmap.beat(), &controller.runtime_data),
+        } {
+            let inst = object.get_instance(Vec4::ZERO, mat);
+            match t {
+                0 => note_instances.push(inst.into()),
+                1 => bomb_instances.push(inst.into()),
+                2 => obstacle_instances.push(inst.into()),
+                _ => {}
+            }
+            match object.arrow_type() {
                 object::ArrowType::None => {},
                 object::ArrowType::Arrow => arrow_instances.push(inst.into()),
                 object::ArrowType::Dot => dot_instances.push(inst.into()),
                 object::ArrowType::ChainDot => chain_dot_instances.push(inst.into()),
             }
         }
-        
     }
 
     let m = &s.map_editor.mesh_set.note_mesh;
     let a = &s.map_editor.mesh_set.arrow_mesh;
     let d = &s.map_editor.mesh_set.dot_mesh;
     let cd = &s.map_editor.mesh_set.chain_dot_mesh;
+    let b = &s.map_editor.mesh_set.bomb_mesh;
+    let o = &s.map_editor.mesh_set.obstacle_mesh;
 
     let calls = vec![
         MeshDrawCall {
@@ -490,7 +559,8 @@ fn draw_map_gl(
             bloomfog: false,
             solid: true,
             bloom: false,
-            mirror: false
+            mirror: false,
+            obstacle: false,
         },
         MeshDrawCall {
             mesh: a,
@@ -499,8 +569,9 @@ fn draw_map_gl(
             cull: true,
             bloomfog: false,
             solid: true,
-            bloom: false,
+            bloom: true,
             mirror: false,
+            obstacle: false,
         },
         MeshDrawCall {
             mesh: d,
@@ -509,8 +580,9 @@ fn draw_map_gl(
             cull: true,
             bloomfog: false,
             solid: true,
-            bloom: false,
+            bloom: true,
             mirror: false,
+            obstacle: false,
         },
         MeshDrawCall {
             mesh: cd,
@@ -519,18 +591,55 @@ fn draw_map_gl(
             cull: true,
             bloomfog: false,
             solid: true,
+            bloom: true,
+            mirror: false,
+            obstacle: false,
+        },
+        MeshDrawCall {
+            mesh: b,
+            instances: bomb_instances,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: true,
             bloom: false,
             mirror: false,
+            obstacle: false,
+        },
+        MeshDrawCall {
+            mesh: o,
+            instances: obstacle_instances,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: false,
+            bloom: false,
+            mirror: false,
+            obstacle: true,
         }
     ];
 
-    s.ref_mut().render.renderer.draw_meshes(
-        gl, view, proj,
-        &calls,
-        None,
-        false,
-        false
-    );
+    match s.state.view_style {
+        ViewStyle::Edit => {
+            s.ref_mut().render.renderer.draw_meshes(
+                gl, view, proj,
+                &calls,
+                None,
+                false,
+                false
+            );
+        },
+        ViewStyle::Beatcraft { .. } => {
+            s.ref_mut().render.renderer.draw_meshes_fancy(
+                gl, view, proj,
+                &calls,
+                window, false,
+                s.render.mirror.as_ref(), false,
+                s.view.fog_heights.unwrap_or([-50., -30.]),
+                true,
+            );
+        },
+    }
 
     match s.state.view_style {
         ViewStyle::Edit => {

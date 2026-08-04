@@ -8,7 +8,7 @@ use indexmap::IndexMap;
 
 use crate::beatmap::render::BeatmapRenderer;
 use crate::{DB_RENDER, RefDuper, data};
-use crate::data::{MaterialData, MaterialType, ShaderSettingsData};
+use crate::data::{MaterialData, MaterialFlags, MaterialType, ShaderSettingsData};
 use crate::light_mesh::{LightMesh, Part, Triangle, Vertex};
 
 static MISSING_TEXTURE_BYTES: &[u8] = include_bytes!("./assets/textures/missing.png");
@@ -51,6 +51,36 @@ const _: () = assert!(
     std::mem::align_of::<GameObjectInstanceData>()
     == std::mem::align_of::<InstanceData>()
 );
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(i32)]
+pub enum RenderPass {
+    Normal   = 0,
+    Bloom    = 1,
+    Bloomfog = 2,
+    Lights   = 3,
+    Obstacle = 4,
+}
+
+impl From<RenderPass> for i32 {
+    fn from(value: RenderPass) -> Self {
+        unsafe { std::mem::transmute::<RenderPass, Self>(value) }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(i32)]
+pub enum RenderMode {
+    Beatcraft       = 0,
+    Editor          = 1,
+    EditorWireframe = 2,
+}
+
+impl From<RenderMode> for i32 {
+    fn from(value: RenderMode) -> Self {
+        unsafe { std::mem::transmute::<RenderMode, Self>(value) }
+    }
+}
 
 impl InstanceData {
     pub fn new(
@@ -167,6 +197,7 @@ pub struct MeshDrawCall<'a> {
     pub solid: bool,
     pub bloom: bool,
     pub mirror: bool,
+    pub obstacle: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -399,7 +430,7 @@ impl GpuMesh {
             gl.bind_buffer_base(glow::SHADER_STORAGE_BUFFER, 0, self.billboard_ssbo);
             gl.draw_arrays_instanced(glow::TRIANGLES, 0, self.vertex_count as i32, n);
             if wireframe {
-                renderer.set_int(gl, shader, "u_render_mode", 2);
+                renderer.set_int(gl, shader, "u_render_mode", RenderMode::EditorWireframe.into());
                 gl.polygon_mode(glow::FRONT_AND_BACK, glow::LINE);
                 gl.line_width(0.5);
                 gl.draw_arrays_instanced(glow::TRIANGLES, 0, self.vertex_count as i32, n);
@@ -521,16 +552,19 @@ impl GpuMesh {
                         vertex: v0,
                         uv: u0,
                         normal: n0,
+                        flags: f0,
                     },
                     Vertex {
                         vertex: v1,
                         uv: u1,
                         normal: n1,
+                        flags: f1,
                     },
                     Vertex {
                         vertex: v2,
                         uv: u2,
                         normal: n2,
+                        flags: f2,
                     },
                 ],
             material,
@@ -609,6 +643,10 @@ impl GpuMesh {
                 None => None,
             };
 
+            let f0 = (*f0).unwrap_or(MaterialFlags::empty()).bits() as i32;
+            let f1 = (*f1).unwrap_or(MaterialFlags::empty()).bits() as i32;
+            let f2 = (*f2).unwrap_or(MaterialFlags::empty()).bits() as i32;
+
             if let Some(MaterialData {
                 material,
                 texture: _,
@@ -616,11 +654,15 @@ impl GpuMesh {
             }) = data.get(material.unwrap_or("default"))
                 && *material != MaterialType::Solid
             {
-                let mat = IVec3::new(*color as i32, *material as i32, flags);
-                materials.extend_from_slice(&[mat; 3]);
+                let mat0 = IVec3::new(*color as i32, *material as i32, flags | f0);
+                let mat1 = IVec3::new(*color as i32, *material as i32, flags | f1);
+                let mat2 = IVec3::new(*color as i32, *material as i32, flags | f2);
+                materials.extend_from_slice(&[mat0, mat1, mat2]);
             } else {
-                let mat = IVec3::new(8, 0, flags);
-                materials.extend_from_slice(&[mat; 3]);
+                let mat0 = IVec3::new(8, 0, flags | f0);
+                let mat1 = IVec3::new(8, 0, flags | f1);
+                let mat2 = IVec3::new(8, 0, flags | f2);
+                materials.extend_from_slice(&[mat0, mat1, mat2]);
             }
         }
     }
@@ -1296,7 +1338,7 @@ impl Renderer {
             if draw_mirror && let Some(mirror_mesh) = mirror_mesh {
                 self.bloomfog.draw_mirror(
                     self2, gl, view, proj, calls, mirror_mesh,
-                    1, wireframe, [-50., -30.]
+                    RenderMode::Editor, wireframe, [-50., -30.]
                 );
             }
         }
@@ -1312,17 +1354,19 @@ impl Renderer {
             let cam_pos = view.inverse().transform_point3(Vec3::ZERO);
             let cam_rot = Quat::from_mat4(view);
             gl.use_program(Some(self.mesh));
-            self.set_int(gl, self.mesh, "passType", 0);
+            self.set_int(gl, self.mesh, "passType", RenderPass::Normal.into());
             self.set_mat4(gl, self.mesh, "u_view", view);
             self.set_mat4(gl, self.mesh, "u_projection", proj);
             let tex = self.atlas.or(Some(self.missing_texture));
             self.set_sampler(gl, self.mesh, "u_texture", tex, 0);
             self.set_sampler(gl, self.mesh, "u_noise", Some(self.blue_noise), 1);
+            // TODO: change this uniform for fancy render mode
+            self.set_float(gl, self.mesh, "u_beat_distance", self.beatmap.beat_spacing);
             let mut u_camera_pos = Mat4::from_translation(cam_pos);
             u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());
             self.set_mat4(gl, self.mesh, "u_camera_pos", &u_camera_pos);
             for call in calls {
-                self.set_int(gl, self.mesh, "u_render_mode", 1);
+                self.set_int(gl, self.mesh, "u_render_mode", RenderMode::Editor.into());
                 call.mesh
                     .draw_tris(gl, &call.instances, call.wireframe, self, self.mesh);
             }
@@ -1684,7 +1728,7 @@ impl BloomfogRenderer {
         proj: &Mat4,
         calls: &[MeshDrawCall<'_>],
         mirror: &GpuMesh,
-        render_mode: i32,
+        render_mode: RenderMode,
         wireframe: bool,
         fog_heights: [f32; 2],
     ) {
@@ -1712,7 +1756,7 @@ impl BloomfogRenderer {
             let view_f = *view;
 
             gl.enable(glow::CLIP_DISTANCE0);
-            if render_mode == 0 {
+            if render_mode == RenderMode::Beatcraft {
                 self.render_solid(
                     renderer, gl, &view_f, proj, &mirrored,
                     fog_heights
@@ -1735,7 +1779,7 @@ impl BloomfogRenderer {
             renderer.set_vec3(gl, renderer.mirror, "u_worldPos", Vec3::ZERO);
             renderer.set_mat4(gl, renderer.mirror, "u_view", view);
             renderer.set_mat4(gl, renderer.mirror, "u_projection", proj);
-            renderer.set_int(gl, renderer.mirror, "u_render_mode", render_mode);
+            renderer.set_int(gl, renderer.mirror, "u_render_mode", render_mode.into());
             mirror.draw_tris(
                 gl,
                 &[InstanceData::new(
@@ -1800,7 +1844,7 @@ impl BloomfogRenderer {
             if draw_mirror && let Some(mirror_mesh) = mirror_mesh {
                 self.draw_mirror(
                     renderer, gl, view, proj, calls, mirror_mesh,
-                    0, wireframe, fog_heights,
+                    RenderMode::Beatcraft, wireframe, fog_heights,
                 );
             }
             //   draw maps
@@ -1852,6 +1896,8 @@ impl BloomfogRenderer {
             let tex = renderer.atlas.or(Some(renderer.missing_texture));
             renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
             renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.extra_buffer.color), 1);
+            // TODO: change this uniform for fancy render mode
+            renderer.set_float(gl, renderer.mesh, "u_beat_distance", renderer.beatmap.beat_spacing);
             renderer.set_int(gl, renderer.mesh, "passType", 2);
             renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
 
@@ -1905,7 +1951,8 @@ impl BloomfogRenderer {
             renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.blurred_buffer.color), 1);
             renderer.set_int(gl, renderer.mesh, "passType", 0);
             renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
-
+            // TODO: change this uniform for fancy render mode
+            renderer.set_float(gl, renderer.mesh, "u_beat_distance", renderer.beatmap.beat_spacing);
             let mut u_camera_pos = Mat4::from_translation(cam_pos);
             u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());
             renderer.set_mat4(gl, renderer.mesh, "u_camera_pos", &u_camera_pos);
@@ -1972,6 +2019,8 @@ impl BloomfogRenderer {
             renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.blurred_buffer.color), 1);
             renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
             renderer.set_sampler(gl, renderer.mesh, "u_depth", Some(self.light_depth.depth), 2);
+            // TODO: change this uniform for fancy render mode
+            renderer.set_float(gl, renderer.mesh, "u_beat_distance", renderer.beatmap.beat_spacing);
             renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
             renderer.set_int(gl, renderer.mesh, "passType", 0);
             for call in calls {
@@ -2030,7 +2079,16 @@ impl BloomfogRenderer {
             if main_target.is_none() {
                 gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
             }
+
+            gl.blend_func(glow::ONE, glow::ONE);
+
             self.apply_effect_pass(renderer, gl, &self.bloom_output, None, PassType::Blit, false, false, window, 11., 1.);
+
+            gl.blend_func_separate(
+                glow::ONE, glow::ONE_MINUS_SRC_ALPHA,
+                glow::ONE_MINUS_SRC_COLOR, glow::ONE,
+            );
+
         }
     }
 

@@ -8,11 +8,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize)]
 pub struct RawAppData {
     recents: RawRecentProjects,
+    audio_volume: f32,
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct AppData {
     pub recents: RecentProjects,
+    pub audio_volume: f32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -62,6 +64,7 @@ impl From<RawAppData> for AppData {
     fn from(value: RawAppData) -> Self {
         Self {
             recents: value.recents.into(),
+            audio_volume: value.audio_volume,
         }
     }
 }
@@ -100,6 +103,7 @@ impl From<&AppData> for RawAppData {
     fn from(value: &AppData) -> Self {
         Self {
             recents: (&value.recents).into(),
+            audio_volume: value.audio_volume,
         }
     }
 }

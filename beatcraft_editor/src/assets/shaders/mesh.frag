@@ -41,6 +41,7 @@ const int PASS_NORMAL      = 0;
 const int PASS_BLOOM       = 1;
 const int PASS_BLOOMFOG    = 2;
 const int PASS_LATE_LIGHTS = 3;
+const int PASS_OBSTACLE    = 4;
 
 
 const int MODE_BEATCRAFT        = 0;
@@ -95,6 +96,9 @@ void main() {
         vec4 vColor = v_color;
         vec3 N = normalize(v_normal);
         if (!gl_FrontFacing) {
+            if (v_material == MAT_OBSTACLE) {
+                discard;
+            }
             if (vColor.r > 0.99 && vColor.g > 0.99 && vColor.b > 0.99) {
                 vColor = vec4(0.2, 0.3, 0.8, 1.0);
             }
@@ -153,6 +157,8 @@ void main() {
         } else if (passType == PASS_LATE_LIGHTS && v_material == MAT_TRANSPARENT_LIGHT) {
             float fadeHeight = clamp((v_pos.y - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0);
             fragColor = lerpColor(tex_sample * fadeHeight, vec4(0.0), clampF(abs(screenUV.z)));
+        } else if (passType == PASS_OBSTACLE) {
+
         } else {
             discard;
         }

@@ -99,7 +99,7 @@ pub enum AppDataError {
 }
 
 pub fn load_app_data() -> Result<AppData, AppDataError> {
-    let path = get_data_folder().ok_or(AppDataError::MissingDataDirectory)?;
+    let path = get_data_file().ok_or(AppDataError::MissingDataDirectory)?;
     if path.exists() {
         let json = fs::read_to_string(&path)?;
         let data: RawAppData = serde_json::from_str(&json)?;
@@ -2056,6 +2056,7 @@ fn draw_view_gl(
                     bloom: vm.data.do_bloom,
                     solid: vm.data.do_solid,
                     mirror: vm.data.do_mirroring,
+                    obstacle: false,
                 })
             }
         }
@@ -2070,6 +2071,7 @@ fn draw_view_gl(
             solid: true,
             bloom: false,
             mirror: true,
+            obstacle: false,
         })
     }
     match s.state.view_style {
@@ -2766,6 +2768,7 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                             bloom: vm.data.do_bloom,
                             solid: vm.data.do_solid,
                             mirror: vm.data.do_mirroring,
+                            obstacle: false,
                         }],
                         s.render.mirror.as_ref(), s.state.wireframe, false
                     );
@@ -2783,6 +2786,7 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                             bloom: vm.data.do_bloom,
                             solid: vm.data.do_solid,
                             mirror: vm.data.do_mirroring,
+                            obstacle: false,
                         }],
                         window,
                         s.state.show_grid,
@@ -3729,6 +3733,7 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
             bloom: vm.data.do_bloom,
             solid: vm.data.do_solid,
             mirror: vm.data.do_mirroring,
+            obstacle: false,
         }];
 
         match s.state.view_style {

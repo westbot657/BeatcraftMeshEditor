@@ -1,3 +1,5 @@
+use num_traits::Num;
+
 use crate::math_interp::MapIndexable;
 
 pub struct MathDragValue<'a, T: MapIndexable> {
@@ -212,16 +214,16 @@ impl<'a, 'b, 'c, 'd, T: MapIndexable> egui::Widget for MultiMathValue<'a, 'b, 'c
     }
 }
 
-pub struct MathDragValueOpt<'a, T: MapIndexable> {
-    value: &'a mut Option<f32>,
+pub struct MathDragValueOpt<'a, V: Num, T: MapIndexable> {
+    value: &'a mut Option<V>,
     vars: &'a mut T,
-    speed: f64,
+    speed: V,
     max_decimals: usize,
     suffix: Option<&'a str>,
     degrees: bool,
 }
 
-impl<'a, T: MapIndexable> MathDragValueOpt<'a, T> {
+impl<'a, T: MapIndexable> MathDragValueOpt<'a, f32, T> {
     pub fn new(value: &'a mut Option<f32>, vars: &'a mut T) -> Self {
         Self {
             value,
@@ -232,7 +234,7 @@ impl<'a, T: MapIndexable> MathDragValueOpt<'a, T> {
             degrees: false,
         }
     }
-    pub fn speed(mut self, speed: f64) -> Self {
+    pub fn speed(mut self, speed: f32) -> Self {
         self.speed = speed;
         self
     }
@@ -250,7 +252,7 @@ impl<'a, T: MapIndexable> MathDragValueOpt<'a, T> {
     }
 }
 
-impl<'a, T: MapIndexable> egui::Widget for MathDragValueOpt<'a, T> {
+impl<'a, T: MapIndexable> egui::Widget for MathDragValueOpt<'a, f32, T> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         let id = ui.next_auto_id();
 
@@ -324,6 +326,131 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValueOpt<'a, T> {
             }
 
             if (*v - prev).abs() > f32::EPSILON {
+                drag_response.mark_changed();
+            }
+
+            drag_response
+        };
+
+        let wants_focus = editing
+            && !ui.memory(|m| {
+                m.data
+                    .get_temp::<bool>(id.with("had_focus"))
+                    .unwrap_or(false)
+            });
+
+        ui.memory_mut(|m| {
+            m.data.insert_temp(id, editing);
+            m.data.insert_temp(id, text);
+            m.data.insert_temp(id.with("had_focus"), editing);
+        });
+
+        if wants_focus {
+            response.request_focus();
+        }
+
+        response
+    }
+}
+
+impl<'a, T: MapIndexable> MathDragValueOpt<'a, u32, T> {
+    pub fn new(value: &'a mut Option<u32>, vars: &'a mut T) -> Self {
+        Self {
+            value,
+            vars,
+            speed: 1,
+            max_decimals: 0,
+            suffix: None,
+            degrees: false,
+        }
+    }
+    pub fn speed(mut self, speed: u32) -> Self {
+        self.speed = speed;
+        self
+    }
+    pub fn max_decimals(mut self, d: usize) -> Self {
+        self.max_decimals = d;
+        self
+    }
+    pub fn suffix(mut self, s: &'a str) -> Self {
+        self.suffix = Some(s);
+        self
+    }
+    pub fn degrees(mut self) -> Self {
+        self.degrees = true;
+        self
+    }
+}
+
+impl<'a, T: MapIndexable> egui::Widget for MathDragValueOpt<'a, u32, T> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        let id = ui.next_auto_id();
+
+        let (mut editing, mut text) = ui.memory_mut(|m| {
+            let editing = m.data.get_temp::<bool>(id).unwrap_or(false);
+            let text = m
+                .data
+                .get_temp::<String>(id)
+                .unwrap_or_else(|| match self.value {
+                    Some(v) => format!("{v}"),
+                    None => String::new(),
+                });
+            (editing, text)
+        });
+
+        let response = if editing || self.value.is_none() {
+            let edit_response = ui.add(
+                egui::TextEdit::singleline(&mut text)
+                    .desired_width(ui.available_width())
+                    .clip_text(true)
+                    .font(egui::TextStyle::Monospace),
+            );
+
+            let commit =
+                edit_response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+            if commit {
+                if text.trim().is_empty() {
+                    *self.value = None;
+                } else if let Some(result) =
+                    crate::math_interp::eval_inner(&text, self.vars, self.degrees)
+                {
+                    let rounded = result.round().max(0.0) as u32;
+                    *self.value = Some(rounded);
+                    text = format!("{rounded}");
+                }
+                editing = false;
+                let mut r = edit_response;
+                r.mark_changed();
+                r
+            } else if cancel {
+                text = match self.value {
+                    Some(v) => format!("{v}"),
+                    None => String::new(),
+                };
+                editing = false;
+                edit_response
+            } else {
+                edit_response
+            }
+        } else {
+            let v = self.value.as_mut().unwrap();
+            let prev = *v;
+
+            let display = match self.suffix {
+                Some(s) => format!("{v}{s}"),
+                None => format!("{v}"),
+            };
+
+            let drag = egui::DragValue::new(v)
+                .speed(self.speed)
+                .custom_formatter(move |_, _| display.clone())
+                .custom_parser(|s| s.parse::<f64>().ok());
+
+            let mut drag_response = ui.add(drag);
+
+            if *v != prev {
                 drag_response.mark_changed();
             }
 

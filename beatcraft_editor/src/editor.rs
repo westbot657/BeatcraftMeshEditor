@@ -557,6 +557,7 @@ pub struct State {
     pub wireframe: bool,
     pub show_grid: bool,
     pub show_verts: bool,
+    pub playback_speed: f32,
     pub euler_swizzle: EulerSwizzle,
     pub title_content: Option<String>,
     pub status: String,
@@ -1068,8 +1069,9 @@ impl App {
         };
 
         let mut audio_system = AudioSystem::new().unwrap();
+        let data = load_app_data().unwrap_or_else(|_| Default::default());
 
-        let map_editor = BeatmapEditor::new(&mut audio_system, None, &gl2, &mut renderer).unwrap();
+        let map_editor = BeatmapEditor::new(&mut audio_system, None, &gl2, &mut renderer, data.audio_volume).unwrap();
 
         let mut s = Self {
             title: "Beatcraft Mesh Editor",
@@ -1135,6 +1137,7 @@ impl App {
                 wireframe: true,
                 show_grid: true,
                 show_verts: true,
+                playback_speed: 1.,
                 euler_swizzle: EulerSwizzle::YXZ,
                 status: "".to_string(),
                 status_timer: 0.,
@@ -1153,7 +1156,7 @@ impl App {
                 future: VecDeque::new(),
                 limit: 200,
             },
-            data: load_app_data().unwrap_or_else(|_| Default::default()),
+            data,
             audio_system,
         };
 
@@ -1168,7 +1171,7 @@ impl App {
             let mut add = IndexMap::new();
             add.insert(name, p.clone());
             if s.load_meshes(add, &gl2).is_err() {
-                let _ = s.map_editor.load(&mut s.audio_system, p, &gl2, &mut s.render.renderer);
+                let _ = s.map_editor.load(&mut s.audio_system, p, &gl2, &mut s.render.renderer, s.data.audio_volume);
             }
         }
 

@@ -11,7 +11,7 @@ use indexmap::map::MutableKeys;
 
 use crate::{DB_DATA, DB_MATH, RefDuper};
 use crate::data::{
-    BillboardData, ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, MeshType, NormalId, PartData, PlacementData, ShaderSettingsData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId
+    BillboardData, ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, MaterialFlags, MeshType, NormalId, PartData, PlacementData, ShaderSettingsData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId
 };
 use crate::easing::Easing;
 use crate::editor::DataSwap;
@@ -233,15 +233,17 @@ pub struct Vertex {
     pub vertex: VertexId,
     pub uv: UvId,
     pub normal: NormalId,
+    pub flags: Option<MaterialFlags>,
 }
 
 impl VertRefData {
     pub(crate) fn resolve(self, defaults: &(UvId, NormalId)) -> Vertex {
-        let (v, u, n) = self.take_all();
+        let (v, u, n, f) = self.take_all();
         Vertex {
             vertex: v,
             uv: u.unwrap_or_else(|| defaults.0.clone()),
             normal: n.unwrap_or_else(|| defaults.1.clone()),
+            flags: f,
         }
     }
 }
@@ -303,16 +305,19 @@ impl From<Triangles> for Vec<TriangleEntry> {
                         vertex: v0,
                         uv: u0,
                         normal: n0,
+                        flags: f0,
                     },
                     Vertex {
                         vertex: v1,
                         uv: u1,
                         normal: n1,
+                        flags: f1,
                     },
                     Vertex {
                         vertex: v2,
                         uv: u2,
                         normal: n2,
+                        flags: f2,
                     },
                 ],
             material,
@@ -329,9 +334,9 @@ impl From<Triangles> for Vec<TriangleEntry> {
 
                 list.push(TriangleData {
                     verts: [
-                        VertRefData::Bare(v0),
-                        VertRefData::Bare(v1),
-                        VertRefData::Bare(v2),
+                        VertRefData::Bare(v0, f0),
+                        VertRefData::Bare(v1, f1),
+                        VertRefData::Bare(v2, f2),
                     ],
                     mat: material,
                 });
@@ -345,20 +350,20 @@ impl From<Triangles> for Vec<TriangleEntry> {
                 let list = unsafe { sections.get_mut(&key).unwrap_unchecked() };
 
                 let v2 = if u2 == *common {
-                    VertRefData::Bare(v2)
+                    VertRefData::Bare(v2, f2)
                 } else {
-                    VertRefData::WithUv(v2, u2)
+                    VertRefData::WithUv(v2, u2, f2)
                 };
                 let v0_m = u0 == *common;
                 let v1 = if u1 == *common {
-                    VertRefData::Bare(v1)
+                    VertRefData::Bare(v1, f1)
                 } else {
-                    VertRefData::WithUv(v1, u1)
+                    VertRefData::WithUv(v1, u1, f1)
                 };
                 let v0 = if v0_m {
-                    VertRefData::Bare(v0)
+                    VertRefData::Bare(v0, f0)
                 } else {
-                    VertRefData::WithUv(v0, u0)
+                    VertRefData::WithUv(v0, u0, f0)
                 };
 
                 list.push(TriangleData {
@@ -377,38 +382,38 @@ impl From<Triangles> for Vec<TriangleEntry> {
 
                 let v2 = if u2 == *uc {
                     if n2 == *nc {
-                        VertRefData::Bare(v2)
+                        VertRefData::Bare(v2, f2)
                     } else {
-                        VertRefData::Full(v2, u2, n2)
+                        VertRefData::Full(v2, u2, n2, f2)
                     }
                 } else if n2 == *nc {
-                    VertRefData::WithUv(v2, u2)
+                    VertRefData::WithUv(v2, u2, f2)
                 } else {
-                    VertRefData::Full(v2, u2, n2)
+                    VertRefData::Full(v2, u2, n2, f2)
                 };
                 let v0_u = u0 == *uc;
                 let v0_n = n0 == *nc;
                 let v1 = if u1 == *uc {
                     if n1 == *nc {
-                        VertRefData::Bare(v1)
+                        VertRefData::Bare(v1, f1)
                     } else {
-                        VertRefData::Full(v1, u1, n1)
+                        VertRefData::Full(v1, u1, n1, f1)
                     }
                 } else if n1 == *nc {
-                    VertRefData::WithUv(v1, u1)
+                    VertRefData::WithUv(v1, u1, f1)
                 } else {
-                    VertRefData::Full(v1, u1, n1)
+                    VertRefData::Full(v1, u1, n1, f1)
                 };
                 let v0 = if v0_u {
                     if v0_n {
-                        VertRefData::Bare(v0)
+                        VertRefData::Bare(v0, f0)
                     } else {
-                        VertRefData::Full(v0, u0, n0)
+                        VertRefData::Full(v0, u0, n0, f0)
                     }
                 } else if v0_n {
-                    VertRefData::WithUv(v0, u0)
+                    VertRefData::WithUv(v0, u0, f0)
                 } else {
-                    VertRefData::Full(v0, u0, n0)
+                    VertRefData::Full(v0, u0, n0, f0)
                 };
                 list.push(TriangleData {
                     verts: [v0, v1, v2],
@@ -1259,16 +1264,19 @@ impl Part {
                             vertex: a.clone(),
                             uv: UvId::Index(0),
                             normal: NormalId::Index(0),
+                            flags: None,
                         },
                         Vertex {
                             vertex: b.clone(),
                             uv: UvId::Index(0),
                             normal: NormalId::Index(0),
+                            flags: None,
                         },
                         Vertex {
                             vertex: c.clone(),
                             uv: UvId::Index(0),
                             normal: NormalId::Index(0),
+                            flags: None,
                         },
                     ],
                     material: None,
