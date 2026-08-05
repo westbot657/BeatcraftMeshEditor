@@ -59,16 +59,19 @@ impl RuntimeData {
         let mut hjd = 4.;
         let spb = 60. / bpm;
 
-        while njs * spb * hjd >= 18. {
+        let n2 = njs * spb;
+        let mut n3 = n2 * hjd;
+        while n3 >= 18. {
             hjd /= 2.;
+            n3 = n2 * hjd;
         }
 
         hjd += spawn_offset;
-
         if hjd < 0.25 {
             hjd = 0.25;
         }
-        let jd = hjd * spb * njs * 2.;
+
+        let jd = hjd * 2. * spb * njs;
 
         (hjd, jd)
     }
