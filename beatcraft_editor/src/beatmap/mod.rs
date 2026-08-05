@@ -9,9 +9,9 @@ use glam::{Mat4, Vec4};
 use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
 use crate::data::LightMeshData;
 use crate::light_mesh::LightMesh;
-use crate::render::{GpuMesh, MeshDrawCall, Renderer};
+use crate::render::{GpuMesh, GridType, MeshDrawCall, Renderer};
 use crate::{DB_DATA, DB_LOGIC, DB_MAIN, RefDuper, UnsafeMutRef, editor, get_data_folder};
-use crate::editor::{App, EditorContext, RoutineAction, ViewStyle};
+use crate::editor::{App, EditorContext, EditorMode, RoutineAction, ViewStyle};
 
 use self::data::v2::{CharacteristicSetV2, DifficultyBeatmapV2};
 use self::data::{BeatmapFile, InfoFile, MapCharacteristic, MapDifficulty};
@@ -363,6 +363,8 @@ impl App {
                 //
             });
 
+        let screen = ctx.content_rect().size();
+        let screen = (screen.x, screen.y);
         egui::CentralPanel::default()
             .frame(egui::Frame::default().fill(ctx.theme().default_visuals().panel_fill).inner_margin(0.))
             .show(ctx, |ui| {
@@ -473,9 +475,9 @@ impl App {
                                             gl.depth_mask(true);
 
 
-                                            draw_map_gl(&s, gl, &view, &proj, (w as i32, h as i32));
+                                            draw_map_gl(&s, gl, &view, &proj, (w as i32, h as i32), screen);
 
-                                            if s.state.show_grid {
+                                            if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
                                                 s.render.renderer.draw_map_grid(gl, &view, &proj);
                                             }
                                         }
@@ -502,6 +504,7 @@ fn draw_map_gl(
     s: &UnsafeMutRef<App>, gl: &glow::Context,
     view: &Mat4, proj: &Mat4,
     window: (i32, i32),
+    screen: (f32, f32),
 ) {
 
     let controller = s.ref_mut().map_editor.map.as_mut().unwrap().controller.as_mut().unwrap();
@@ -610,7 +613,7 @@ fn draw_map_gl(
             mesh: o,
             instances: obstacle_instances,
             wireframe: false,
-            cull: true,
+            cull: false,
             bloomfog: false,
             solid: false,
             bloom: false,
@@ -626,14 +629,14 @@ fn draw_map_gl(
                 &calls,
                 None,
                 false,
-                false
+                false,
             );
         },
         ViewStyle::Beatcraft { .. } => {
             s.ref_mut().render.renderer.draw_meshes_fancy(
                 gl, view, proj,
                 &calls,
-                window, false,
+                window, GridType::BeatGrid,
                 s.render.mirror.as_ref(), false,
                 s.view.fog_heights.unwrap_or([-50., -30.]),
                 true,

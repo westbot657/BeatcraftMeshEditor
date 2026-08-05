@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::f32;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
+use chrono::Duration;
 use eframe::glow::{self, HasContext, NativeProgram, SHADER_STORAGE_BUFFER};
 use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
@@ -250,7 +252,6 @@ impl GpuMesh {
     }
 
     fn upload_instances(gl: &glow::Context, vbo: glow::NativeBuffer, instances: &[InstanceData]) {
-        tracing::trace!(target: DB_RENDER, ?vbo, ?instances, "Uploading mesh instances");
         unsafe {
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
             gl.buffer_data_u8_slice(
@@ -946,6 +947,13 @@ pub struct Renderer {
     pub beatmap: BeatmapRenderer,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum GridType {
+    None,
+    WorldGrid,
+    BeatGrid,
+}
+
 impl Renderer {
 
     fn compile_shader(gl: &glow::Context, kind: u32, src: &str) -> Result<glow::Shader, String> {
@@ -1307,7 +1315,7 @@ impl Renderer {
         proj: &Mat4,
         calls: &[MeshDrawCall<'_>],
         window: (i32, i32),
-        draw_grid: bool,
+        draw_grid: GridType,
         mirror_mesh: Option<&GpuMesh>,
         wireframe: bool,
         fog_heights: [f32; 2],
@@ -1315,9 +1323,10 @@ impl Renderer {
     ) {
         let rd = RefDuper;
         let self2 = unsafe { rd.detach_mut_ref(self) };
+        let self3 = unsafe { rd.detach_ref(self) };
         self.bloomfog.draw_meshes(
             self2, gl, view, proj, calls, window, draw_grid,
-            None, mirror_mesh, wireframe, fog_heights, draw_mirror,
+            Some(&self3.bloomfog.grab_target), mirror_mesh, wireframe, fog_heights, draw_mirror,
         );
     }
 
@@ -1333,12 +1342,14 @@ impl Renderer {
     ) {
         unsafe {
             self.draw_meshes_internal(gl, view, proj, calls);
+
             let rd = RefDuper;
             let self2 = rd.detach_mut_ref(self);
             if draw_mirror && let Some(mirror_mesh) = mirror_mesh {
                 self.bloomfog.draw_mirror(
                     self2, gl, view, proj, calls, mirror_mesh,
-                    RenderMode::Editor, wireframe, [-50., -30.]
+                    RenderMode::Editor, wireframe, [-50., -30.],
+                    None
                 );
             }
         }
@@ -1512,8 +1523,8 @@ impl RenderTarget {
                 glow::DEPTH_COMPONENT, glow::UNSIGNED_INT,
                 glow::PixelUnpackData::Slice(None),
             );
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32);
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
             gl.framebuffer_texture_2d(
                 glow::FRAMEBUFFER, glow::DEPTH_ATTACHMENT,
                 glow::TEXTURE_2D, Some(depth), 0,
@@ -1592,6 +1603,8 @@ pub struct BloomfogRenderer {
     vao: glow::VertexArray,
     vbo: glow::Buffer,
     mirror_target: RenderTarget,
+    grab_target: RenderTarget,
+    inst: Instant,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -1695,6 +1708,8 @@ impl BloomfogRenderer {
                 vao,
                 vbo,
                 mirror_target: RenderTarget::new(gl, 1920, 1080),
+                grab_target: RenderTarget::new(gl, 1920, 1080),
+                inst: Instant::now(),
             })
         }
     }
@@ -1708,6 +1723,7 @@ impl BloomfogRenderer {
         self.bloom_output.resize(gl, window.0, window.1);
         self.light_depth.resize(gl, window.0, window.1);
         self.mirror_target.resize(gl, window.0, window.1);
+        self.grab_target.resize(gl, window.0, window.1);
 
         let mut md = 2.;
         for rt in self.pyramid_buffers.iter_mut() {
@@ -1720,7 +1736,7 @@ impl BloomfogRenderer {
 
     /// This function flips the render calls across Y.
     #[allow(clippy::too_many_arguments)]
-    pub fn draw_mirror(
+    fn draw_mirror(
         &mut self,
         renderer: &mut Renderer,
         gl: &glow::Context,
@@ -1731,6 +1747,7 @@ impl BloomfogRenderer {
         render_mode: RenderMode,
         wireframe: bool,
         fog_heights: [f32; 2],
+        main_target: Option<&RenderTarget>,
     ) {
         unsafe {
 
@@ -1763,15 +1780,19 @@ impl BloomfogRenderer {
                 );
             } else {
                 renderer.draw_meshes_internal(gl, &view_f, proj, &mirrored);
+                gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
             }
 
             gl.front_face(glow::CCW);
             gl.disable(glow::CLIP_DISTANCE0);
 
-            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
-            gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
-
+            if let Some(t) = main_target {
+                t.bind(gl);
+            } else {
+                gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            }
             gl.use_program(Some(renderer.mirror));
+
             gl.enable(glow::CULL_FACE);
             renderer.set_sampler(gl, renderer.mirror, "u_texture", Some(self.mirror_target.color), 0);
             renderer.set_sampler(gl, renderer.mirror, "u_noise", Some(renderer.blue_noise), 1);
@@ -1804,7 +1825,7 @@ impl BloomfogRenderer {
         proj: &Mat4,
         calls: &[MeshDrawCall<'_>],
         window: (i32, i32),
-        draw_grid: bool,
+        draw_grid: GridType,
         main_target: Option<&RenderTarget>,
         mirror_mesh: Option<&GpuMesh>,
         wireframe: bool,
@@ -1823,6 +1844,12 @@ impl BloomfogRenderer {
             }
             gl.disable(glow::SCISSOR_TEST);
 
+            gl.bind_framebuffer(glow::FRAMEBUFFER, main_target.map(|t| t.fbo));
+            if let Some(t) = main_target {
+                t.bind(gl);
+                gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+            }
+
             self.framebuffer.bind(gl);
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
             self.render_bloomfog(renderer, gl, view, proj, calls, fog_heights);
@@ -1830,11 +1857,7 @@ impl BloomfogRenderer {
 
             self.apply_pyramid_blur(renderer, gl, window);
 
-            gl.bind_framebuffer(glow::FRAMEBUFFER, main_target.map(|t| t.fbo));
-            if main_target.is_none() {
-                gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
-            }
-            self.apply_effect_pass(renderer, gl, &self.blurred_buffer, None, PassType::Blit, false, true, window, 11., 2.);
+            self.apply_effect_pass(renderer, gl, &self.blurred_buffer, main_target, PassType::Blit, false, true, window, 11., 2.);
             gl.depth_mask(true);
 
             // render mirrored?
@@ -1845,6 +1868,7 @@ impl BloomfogRenderer {
                 self.draw_mirror(
                     renderer, gl, view, proj, calls, mirror_mesh,
                     RenderMode::Beatcraft, wireframe, fog_heights,
+                    main_target,
                 );
             }
             //   draw maps
@@ -1864,11 +1888,26 @@ impl BloomfogRenderer {
                 saved_vp, main_target, mirror_mesh,
                 fog_heights
             );
-            gl.enable(glow::SCISSOR_TEST);
             gl.enable(glow::DEPTH_TEST);
-            if draw_grid {
-                renderer.draw_grid(gl, view, proj);
+
+            match draw_grid {
+                GridType::None => {},
+                GridType::WorldGrid => renderer.draw_grid(gl, view, proj),
+                GridType::BeatGrid => renderer.draw_map_grid(gl, view, proj),
             }
+
+            gl.enable(glow::SCISSOR_TEST);
+
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
+            self.apply_effect_pass(renderer, gl, main_target.unwrap(), None, PassType::Blit, false, false, window, 11., 1.);
+
+            self.render_obstacles(
+                renderer,
+                gl, view, proj,
+                calls,
+            );
+
         }
     }
 
@@ -1885,10 +1924,8 @@ impl BloomfogRenderer {
             let cam_pos = view.inverse().transform_point3(Vec3::ZERO);
             let cam_rot = Quat::from_mat4(view);
 
-            // TODO: conditionally enable clipping plane
             gl.enable(glow::CLIP_DISTANCE0);
 
-            // TODO: re-set instance divisor?
 
             gl.use_program(Some(renderer.mesh));
             renderer.set_mat4(gl, renderer.mesh, "u_view", view);
@@ -1896,7 +1933,6 @@ impl BloomfogRenderer {
             let tex = renderer.atlas.or(Some(renderer.missing_texture));
             renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
             renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.extra_buffer.color), 1);
-            // TODO: change this uniform for fancy render mode
             renderer.set_float(gl, renderer.mesh, "u_beat_distance", renderer.beatmap.beat_spacing);
             renderer.set_int(gl, renderer.mesh, "passType", 2);
             renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
@@ -1937,11 +1973,9 @@ impl BloomfogRenderer {
             let cam_pos = view.inverse().transform_point3(Vec3::ZERO);
             let cam_rot = Quat::from_mat4(view);
 
-            // TODO: conditionally enable clipping plane
             gl.enable(glow::CLIP_DISTANCE0);
             gl.depth_mask(true);
 
-            // TODO: re-set instance divisor?
 
             gl.use_program(Some(renderer.mesh));
             renderer.set_mat4(gl, renderer.mesh, "u_view", view);
@@ -1949,7 +1983,7 @@ impl BloomfogRenderer {
             let tex = renderer.atlas.or(Some(renderer.missing_texture));
             renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
             renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.blurred_buffer.color), 1);
-            renderer.set_int(gl, renderer.mesh, "passType", 0);
+            renderer.set_int(gl, renderer.mesh, "passType", RenderPass::Normal.into());
             renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
             // TODO: change this uniform for fancy render mode
             renderer.set_float(gl, renderer.mesh, "u_beat_distance", renderer.beatmap.beat_spacing);
@@ -1964,14 +1998,14 @@ impl BloomfogRenderer {
                     gl.enable(glow::CULL_FACE);
                 }
                 gl.bind_vertex_array(Some(call.mesh.vao));
-                renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
+                renderer.set_int(gl, renderer.mesh, "u_render_mode", RenderMode::Beatcraft.into());
                 call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
             }
 
-            renderer.set_int(gl, renderer.mesh, "passType", 3);
+            renderer.set_int(gl, renderer.mesh, "passType", RenderPass::Lights.into());
             for call in calls.iter() {
                 if !call.solid {
                     continue;
@@ -1980,7 +2014,7 @@ impl BloomfogRenderer {
                     gl.enable(glow::CULL_FACE);
                 }
                 gl.bind_vertex_array(Some(call.mesh.vao));
-                renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
+                renderer.set_int(gl, renderer.mesh, "u_render_mode", RenderMode::Beatcraft.into());
                 call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
@@ -2075,20 +2109,76 @@ impl BloomfogRenderer {
             self.apply_effect_pass(renderer, gl, &self.bloom_input, Some(&self.bloom_swap), PassType::GaussianH, true, true, window, 3.25, 1.);
             self.apply_effect_pass(renderer, gl, &self.bloom_swap, Some(&self.bloom_output), PassType::GaussianV, true, true, window, 3.25, 1.);
 
-            gl.bind_framebuffer(glow::FRAMEBUFFER, main_target.map(|v| v.fbo));
-            if main_target.is_none() {
+            if let Some(t) = main_target {
+                t.bind(gl);
+            } else {
+                gl.bind_framebuffer(glow::FRAMEBUFFER, None);
                 gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
             }
 
             gl.blend_func(glow::ONE, glow::ONE);
 
-            self.apply_effect_pass(renderer, gl, &self.bloom_output, None, PassType::Blit, false, false, window, 11., 1.);
+            self.apply_effect_pass(renderer, gl, &self.bloom_output, main_target, PassType::Blit, false, false, window, 11., 1.);
 
             gl.blend_func_separate(
                 glow::ONE, glow::ONE_MINUS_SRC_ALPHA,
                 glow::ONE_MINUS_SRC_COLOR, glow::ONE,
             );
 
+        }
+    }
+
+    fn render_obstacles(
+        &mut self,
+        renderer: &Renderer,
+        gl: &glow::Context,
+        view: &Mat4,
+        proj: &Mat4,
+        calls: &[MeshDrawCall<'_>],
+    ) {
+        unsafe {
+            let cam_pos = view.inverse().transform_point3(Vec3::ZERO);
+            let cam_rot = Quat::from_mat4(view);
+
+            gl.enable(glow::CLIP_DISTANCE0);
+            gl.depth_mask(false);
+            gl.disable(glow::DEPTH_TEST);
+            gl.disable(glow::BLEND);
+
+            gl.use_program(Some(renderer.mesh));
+            renderer.set_mat4(gl, renderer.mesh, "u_view", view);
+            renderer.set_mat4(gl, renderer.mesh, "u_projection", proj);
+            let tex = renderer.atlas.or(Some(renderer.missing_texture));
+            renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
+            renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.grab_target.color), 1);
+            renderer.set_sampler(gl, renderer.mesh, "u_depth", Some(self.grab_target.depth), 2);
+            renderer.set_int(gl, renderer.mesh, "passType", RenderPass::Obstacle.into());
+            // TODO: change this uniform for fancy render mode
+            renderer.set_float(gl, renderer.mesh, "u_beat_distance", renderer.beatmap.beat_spacing);
+            renderer.set_float(gl, renderer.mesh, "u_time", self.inst.elapsed().as_secs_f32());
+            let mut u_camera_pos = Mat4::from_translation(cam_pos);
+            u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());
+            renderer.set_mat4(gl, renderer.mesh, "u_camera_pos", &u_camera_pos);
+            for call in calls.iter() {
+                if !call.obstacle {
+                    continue;
+                }
+                if call.cull {
+                    gl.enable(glow::CULL_FACE);
+                }
+                gl.bind_vertex_array(Some(call.mesh.vao));
+                renderer.set_int(gl, renderer.mesh, "u_render_mode", RenderMode::Beatcraft.into());
+                call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
+                if call.cull {
+                    gl.disable(glow::CULL_FACE);
+                }
+            }
+
+            gl.disable(glow::CLIP_DISTANCE0);
+            gl.use_program(None);
+            gl.enable(glow::BLEND);
+            gl.enable(glow::DEPTH_TEST);
+            gl.depth_mask(true);
         }
     }
 

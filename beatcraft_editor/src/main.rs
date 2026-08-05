@@ -39,7 +39,7 @@ use self::easing::Easing;
 use self::editor::{ActionType, App, CreateEnv, MINECRAFT_F, RingType, RoutineAction, SOURCE_CODE_F, Selection, SpinSide, ViewPlacement, ViewStyle, WorkingRenameKey, setup_fonts};
 use self::light_mesh::{BloomfogStyle, ComputeNormal, ComputeVertex, Part, Triangle};
 use self::renaming::light_mesh::rehash;
-use self::render::{HandleDrawCall, InstanceData, LIGHT_COLORS, MeshDrawCall, PointDrawCall};
+use self::render::{GridType, HandleDrawCall, InstanceData, LIGHT_COLORS, MeshDrawCall, PointDrawCall};
 use self::widgets::{MathDragValue, TextInput};
 use self::ui_elements::*;
 
@@ -752,6 +752,8 @@ impl App {
                 });
             });
 
+        let screen_size = ctx.content_rect().size();
+        let screen_size = (screen_size.x, screen_size.y);
         egui::CentralPanel::default()
             .frame(Frame::NONE)
             .show(ctx, |ui| {
@@ -791,13 +793,13 @@ impl App {
 
                                 match s.mode {
                                     editor::EditorMode::View => {
-                                        draw_view_gl(&s, gl, &view, &proj, (w as i32, h as i32));
+                                        draw_view_gl(&s, gl, &view, &proj, (w as i32, h as i32), screen_size);
                                     }
                                     editor::EditorMode::Assembly => {
-                                        draw_assembly_gl(&s, gl, &view, &proj, (w as i32, h as i32));
+                                        draw_assembly_gl(&s, gl, &view, &proj, (w as i32, h as i32), screen_size);
                                     }
                                     editor::EditorMode::Edit => {
-                                        draw_edit_gl(&s, gl, &view, &proj, (w as i32, h as i32));
+                                        draw_edit_gl(&s, gl, &view, &proj, (w as i32, h as i32), screen_size);
                                     }
                                 }
 
@@ -2040,7 +2042,8 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 fn draw_view_gl(
     s: &UnsafeMutRef<App>, gl: &glow::Context,
     view: &Mat4, proj: &Mat4,
-    window: (i32, i32)
+    window: (i32, i32),
+    screen: (f32, f32),
 ) {
     let mut calls = Vec::new();
     for (_id, vm) in s.view.meshes.iter() {
@@ -2079,16 +2082,16 @@ fn draw_view_gl(
             s.ref_mut().render.renderer.draw_meshes(
                 gl, view, proj, &calls,
                 s.render.mirror.as_ref(), s.state.wireframe,
-                true
+                true,
             );
         }
         editor::ViewStyle::Beatcraft { .. } => {
             s.ref_mut().render.renderer.draw_meshes_fancy(
                 gl, view, proj, &calls,
-                window, s.state.show_grid,
+                window, if s.state.show_grid { GridType::WorldGrid } else { GridType::None },
                 s.render.mirror.as_ref(), s.state.wireframe,
                 s.view.fog_heights.unwrap_or([-50., -30.]),
-                true
+                true,
             );
         }
     }
@@ -2747,7 +2750,7 @@ fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32)) {
+fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32), screen: (f32, f32)) {
     let vp = proj * view;
     if let Some(sel) = s.editor.mesh.as_deref()
         && let Some(Some(vm)) = s.view.meshes.get(sel)
@@ -2770,7 +2773,7 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                             mirror: vm.data.do_mirroring,
                             obstacle: false,
                         }],
-                        s.render.mirror.as_ref(), s.state.wireframe, false
+                        s.render.mirror.as_ref(), s.state.wireframe, false,
                     );
                 }
                 editor::ViewStyle::Beatcraft { .. } => {
@@ -2789,9 +2792,9 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                             obstacle: false,
                         }],
                         window,
-                        s.state.show_grid,
+                        if s.state.show_grid { GridType::WorldGrid } else { GridType::None },
                         s.render.mirror.as_ref(), s.state.wireframe,
-                        s.view.fog_heights.unwrap_or([-50., -30.]), false
+                        s.view.fog_heights.unwrap_or([-50., -30.]), false,
                     );
                 }
             }
@@ -3713,7 +3716,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32)) {
+fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32), screen: (f32, f32)) {
     let vp = proj * view;
     if let Some((_, name, _part)) = s.get_current_part()
         && let Some(sel) = s.editor.mesh.as_deref()
@@ -3740,15 +3743,15 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
             editor::ViewStyle::Edit => {
                 s.ref_mut().render.renderer.draw_meshes(
                     gl, view, proj, &calls,
-                    s.render.mirror.as_ref(), s.state.wireframe, false
+                    s.render.mirror.as_ref(), s.state.wireframe, false,
                 );
             }
             editor::ViewStyle::Beatcraft { .. } => {
                 s.ref_mut().render.renderer.draw_meshes_fancy(
                     gl, view, proj, &calls,
-                    window, s.state.show_grid,
+                    window, if s.state.show_grid { GridType::WorldGrid } else { GridType::None },
                     s.render.mirror.as_ref(), s.state.wireframe,
-                    s.view.fog_heights.unwrap_or([-50., -30.]), false
+                    s.view.fog_heights.unwrap_or([-50., -30.]), false,
                 );
             }
         }

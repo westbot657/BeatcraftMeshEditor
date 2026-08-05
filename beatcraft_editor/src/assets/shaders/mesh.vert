@@ -66,7 +66,7 @@ flat out int v_material;
 flat out int v_style;
 flat out int v_flags;
 out vec3 screenUV;
-
+out vec3 worldPos;
 
 const int MAT_SOLID             = 0;
 const int MAT_SOLID_LIGHT       = 1;
@@ -190,13 +190,14 @@ void main() {
 
         pos = instance_model * vec4(wall_vert, 1.0);
         if (passType == PASS_OBSTACLE) {
-            v_color = c0;
+            v_color = vec4(c0.rgb, 0.5);
         } else {
             v_color = vec4(c0.xyz, 0.1);
         }
     }
 
     pos = u_view * pos;
+    worldPos = pos.xyz;
     vec4 wp = u_camera_pos * pos;
     gl_ClipDistance[0] = dot(wp, clipping_plane);
 
