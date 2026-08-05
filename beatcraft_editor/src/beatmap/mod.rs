@@ -636,7 +636,7 @@ fn draw_map_gl(
             s.ref_mut().render.renderer.draw_meshes_fancy(
                 gl, view, proj,
                 &calls,
-                window, GridType::BeatGrid,
+                window, if s.state.show_grid { GridType::BeatGrid } else { GridType::None },
                 s.render.mirror.as_ref(), false,
                 s.view.fog_heights.unwrap_or([-50., -30.]),
                 true,
