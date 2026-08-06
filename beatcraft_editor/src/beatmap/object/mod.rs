@@ -3,7 +3,6 @@ use std::ops::{Add, Div, Mul, Sub};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use rand::{rngs::ThreadRng, RngExt};
 
-use crate::{DB_MAIN, DB_MATH};
 use crate::easing::Easing;
 use crate::render::GameObjectInstanceData;
 

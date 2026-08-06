@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::easing::Easing;
 
 pub mod v2;
+pub mod v3;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum VersionClass {
