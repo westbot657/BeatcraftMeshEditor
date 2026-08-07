@@ -138,12 +138,30 @@ impl CutDirection {
     }
 }
 
-fn is_value<const N: i16>(v: &(impl Num + From<i16>)) -> bool {
+
+pub(crate) fn is_value<const N: i64>(v: &(impl Num + From<i64>)) -> bool {
     *v == N.into()
 }
 
-fn def_value<T: Num + From<i16>, const N: i16>() -> T {
+pub(crate) fn is_value_f<const N: u32>(v: &f32) -> bool {
+    *v == f32::from_bits(N)
+}
+
+pub(crate) fn default_n<T: Num + From<i64>, const N: i64>() -> T {
     N.into()
+}
+
+pub(crate) fn default_f<const N: u32>() -> f32 {
+    f32::from_bits(N)
+}
+
+macro_rules! def_value {
+    (n: $val:literal) => {
+        default_n::<_, $val>
+    };
+    (f: $val:literal) => {
+        default_f::<{ $val.to_bits() }>
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -288,8 +306,8 @@ pub struct ObstacleV2 {
     #[serde(rename = "_width")]
     pub width: f32,
     #[serde(rename = "_height")]
-    #[serde(default="def_value::<_, 5>")]
-    #[serde(skip_serializing_if="is_value::<5>")]
+    #[serde(default="default_f::<{ 5f32.to_bits() }>")]
+    #[serde(skip_serializing_if="is_value_f::<{ 5f32.to_bits() }>")]
     pub height: f32,
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -538,6 +556,17 @@ pub struct SpawnRotationEventV2 {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct LegacySpawnRotationEventV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "et")]
+    pub execution_time: SpawnRotationExecutionTime,
+    #[serde(rename = "i")]
+    pub rotation_angle: SpawnRotationAngle,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpawnRotationEventV3 {
     #[serde(rename = "b")]
     pub beat: f32,
@@ -570,12 +599,21 @@ pub struct SpawnRotationEventDataV4 {
 pub struct BPMEventV2 {
     #[serde(rename = "_time")]
     pub beat: f32,
-    #[serde(rename = "_type")]
-    typ: Sentinel<100>,
+    _type: Sentinel<100>,
     #[serde(rename = "_value")]
     value: Sentinel<0>,
     #[serde(rename = "_floatValue")]
     float_value: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyBPMEventV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    et: Sentinel<100>,
+    #[serde(rename = "f")]
+    pub value: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -754,6 +792,7 @@ pub enum InfoFile {
 #[serde(untagged)]
 pub enum BeatmapFile {
     V2(BeatmapFileV2),
+    V3(BeatmapFileV3),
 }
 
 impl InfoFile {
@@ -827,6 +866,7 @@ use serde::{Deserializer, Serializer};
 use serde::de::Error as _;
 
 use self::v2::{BeatmapFileV2, InfoV2};
+use self::v3::BeatmapFileV3;
 
 impl<const N: u8> Serialize for Sentinel<N> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

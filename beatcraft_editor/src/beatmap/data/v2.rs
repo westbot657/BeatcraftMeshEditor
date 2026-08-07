@@ -16,7 +16,7 @@ pub enum V2Event {
     Light(LightEventV2),
     ColorBoost(ColorBoostV2),
     Ring(RingLightEventV2),
-    RotatingLights(SpiningLaserEventV2),
+    RotatingLights(SpinningLaserEventV2),
     Hydraulics(HydraulicsEventV2),
     Gaga(GagaEventV2),
     BPM(BPMEventV2),
@@ -122,7 +122,7 @@ pub struct RingLightEventV2 {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SpiningLaserEventV2 {
+pub struct SpinningLaserEventV2 {
     #[serde(rename = "_time")]
     pub beat: f32,
     #[serde(rename = "_type")]
@@ -162,6 +162,15 @@ pub struct GagaEventV2 {
     pub custom_data: Option<serde_json::Value>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+#[repr(u8)]
+pub enum ColorBoostValueV2 {
+    Disable = 0,
+    Enable  = 1,
+}
+convert_u8! { ColorBoostValueV2 : 0 | 1 }
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColorBoostV2 {
@@ -170,7 +179,7 @@ pub struct ColorBoostV2 {
     #[serde(rename = "_type")]
     typ: Sentinel<5>,
     #[serde(rename = "_value")]
-    value: u32,
+    value: ColorBoostValueV2,
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
@@ -308,6 +317,13 @@ pub struct DifficultyBeatmapV2 {
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
+
+    #[serde(rename = "_beatmapColorSchemeIdx")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beatmap_color_scheme_index: Option<u32>,
+    #[serde(rename = "_environmentNameIdx")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment_name_index: Option<u32>,
 }
 
 

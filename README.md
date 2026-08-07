@@ -1,7 +1,7 @@
 
 # Beatcraft Editor
 
-An app for editing Beatcraft's Mesh format, along with some other useful tools.
+An app for editing Beatcraft's Mesh format, along with some other useful tools for Beat Saber.
 
 
 ## Feature roadmap

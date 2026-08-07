@@ -11,7 +11,7 @@ use crate::data::LightMeshData;
 use crate::light_mesh::LightMesh;
 use crate::render::{GpuMesh, GridType, MeshDrawCall, Renderer};
 use crate::{DB_DATA, DB_LOGIC, DB_MAIN, RefDuper, UnsafeMutRef, editor, get_data_folder};
-use crate::editor::{App, EditorContext, EditorMode, RoutineAction, ViewStyle};
+use crate::editor::{App, EditorContext, RoutineAction, ViewStyle};
 
 use self::data::v2::{CharacteristicSetV2, DifficultyBeatmapV2};
 use self::data::{BeatmapFile, InfoFile, MapCharacteristic, MapDifficulty};

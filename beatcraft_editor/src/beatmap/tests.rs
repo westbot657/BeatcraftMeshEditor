@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow};
 use egui::TextBuffer;
 
-use crate::beatmap::data::v2::BeatmapFileV2;
+use crate::beatmap::data::v2::{BeatmapFileV2, DifficultyBeatmapV2};
+use crate::beatmap::data::v3::BeatmapFileV3;
 
 use super::data::MapCharacteristic;
 use super::data::v2::InfoV2;
@@ -57,7 +58,11 @@ static CHEAT_CODES: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/29341 (Cheat Codes - Avexus)",
     "Standard", "ExpertPlus"
 );
-
+// 2.0.0 | 3.0.0
+static ASCENT: MapSelection = (
+    "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/2a629 (Ascent - nitronik.exe)",
+    "Standard", "ExpertPlus"
+);
 
 
 static TEST_MAPS_V2: [MapSelection; 6] = [
@@ -69,10 +74,11 @@ static TEST_MAPS_V2: [MapSelection; 6] = [
     CHEAT_CODES,
 ];
 
-static TEST_MAPS_V3: [MapSelection; 3] = [
+static TEST_MAPS_V3: [MapSelection; 4] = [
     ILL_SHARP_MINOR,
     SPIN_ETERNALLY,
     GHOST,
+    ASCENT,
 ];
 
 static TEST_MAPS: [MapSelection; 9] = [
@@ -93,7 +99,7 @@ static NOODLE_V2_MAPS: [MapSelection; 3] = [
     SOMEWHERE_OUT_THERE,
 ];
 
-fn open_info_v2(folder: &Path) -> Result<InfoV2> {
+fn open_info<V: serde::de::DeserializeOwned>(folder: &Path) -> Result<V> {
     let files = fs::read_dir(folder)?;
     let mut info_file = None;
     for file in files {
@@ -110,13 +116,14 @@ fn open_info_v2(folder: &Path) -> Result<InfoV2> {
     let file = info_file.ok_or(anyhow!("no info file found"))?;
     let path = &file.path();
     let data = fs::read(path)?;
-    let info: InfoV2 = serde_json::from_slice(&data)?;
+    let info: V = serde_json::from_slice(&data)?;
     Ok(info)
 }
 
-fn open_char_diff<S>(folder: &Path, info: &InfoV2, set: S, difficulty: &str) -> Result<BeatmapFileV2>
+fn open_char_diff<S, V>(folder: &Path, info: &InfoV2, set: S, difficulty: &str) -> Result<V>
 where
-    MapCharacteristic: PartialEq<S>
+    MapCharacteristic: PartialEq<S>,
+    V: serde::de::DeserializeOwned,
 {
     let mut found = None;
     for sets in info.difficulty_beatmap_sets.iter() {
@@ -131,19 +138,53 @@ where
     let map = found.ok_or(anyhow!("set/difficutly not found"))?;
     let file = folder.join(&map.beatmap_filename);
     let data = fs::read(file)?;
-    let map: BeatmapFileV2 = serde_json::from_slice(&data)?;
+    let map: V = serde_json::from_slice(&data)?;
     Ok(map)
+}
+
+#[test]
+fn deserialize_vanilla_map_files_v3() -> Result<()> {
+
+    let path = PathBuf::from(ASCENT.0);
+    let info: InfoV2 = open_info(&path)?;
+
+    println!("Ascent Info.dat:\n{info:#?}");
+
+    let exp = open_char_diff::<_, BeatmapFileV3>(
+        &path, &info,
+        CHEAT_CODES.1, CHEAT_CODES.2
+    )?;
+
+    println!("Ascent data:\n{exp:#?}");
+
+    Ok(())
+}
+
+#[test]
+fn test_deserialize_all_v3() -> Result<()> {
+    for (file, set, diff) in TEST_MAPS_V3 {
+        println!("parsing {}", file);
+
+        let path = PathBuf::from(file);
+        let info: InfoV2 = open_info(&path)?;
+        println!("Info for {}:\n{:#?}", file, info);
+
+        let exp: BeatmapFileV3 = open_char_diff(&path, &info, set, diff)?;
+
+        println!("map for {}:\n{:?}", file, exp);
+    }
+    Ok(())
 }
 
 #[test]
 pub fn deserialize_vanilla_map_files_v2() -> Result<()> {
 
     let path = PathBuf::from(CHEAT_CODES.0);
-    let info = open_info_v2(&path)?;
+    let info: InfoV2 = open_info(&path)?;
 
     println!("Cheat Codes Info.dat:\n{info:#?}");
 
-    let mut exp = open_char_diff(
+    let mut exp = open_char_diff::<_, BeatmapFileV2>(
         &path, &info,
         CHEAT_CODES.1, CHEAT_CODES.2
     )?;
@@ -160,11 +201,11 @@ pub fn deserialize_noodle_map_files_v2() -> Result<()> {
         println!("parsing {}", file);
 
         let path = PathBuf::from(file);
-        let info = open_info_v2(&path)?;
+        let info: InfoV2 = open_info(&path)?;
 
         println!("Info for {}:\n{:#?}", file, info);
 
-        let exp = open_char_diff(
+        let exp = open_char_diff::<_, BeatmapFileV2>(
             &path, &info,
             set, diff
         )?;

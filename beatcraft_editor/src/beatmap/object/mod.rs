@@ -380,6 +380,42 @@ impl BeatmapFile {
                         size,
                     })
                 }
+            },
+            Self::V3(v3) => {
+                for note in v3.color_notes.iter() {
+                    let index = color_notes.len() as u32;
+                    color_notes.push(ColorNote {
+                        spawn_orientation: get_random_spawn_quat(&mut rng),
+                        beat: note.beat,
+                        color: note.color.to_default_color(),
+                        cut_direction: note.cut_direction,
+                        angle_offset: 0.,
+                        grid_pos: Vec2::new(note.line_index, note.line_layer),
+                        dissolve: 0.,
+                        index,
+                    });
+                }
+                for bomb in v3.bomb_notes.iter() {
+                    let index = bomb_notes.len() as u32;
+                    bomb_notes.push(BombNote {
+                        beat: bomb.beat,
+                        color: Vec4::new(0.2, 0.2, 0.2, 1.),
+                        grid_pos: Vec2::new(bomb.line_index, bomb.line_layer),
+                        dissolve: 0.,
+                        index,
+                    });
+                }
+                for obst in v3.obstacles.iter() {
+                    let index = obstacles.len() as u32;
+                    obstacles.push(Obstacle {
+                        beat: obst.beat,
+                        color: Vec4::new(1., 0.184, 0.184, 1.),
+                        grid_pos: Vec2::new(obst.line_index, obst.line_layer - 0.8),
+                        dissolve: 0.,
+                        index,
+                        size: Vec3::new(obst.width, obst.height, obst.duration),
+                    });
+                }
             }
         }
 
