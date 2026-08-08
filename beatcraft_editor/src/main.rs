@@ -74,6 +74,7 @@ pub static SMALL_R_ARROW: &str = "→";
 pub static ENVIRONMENT_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/environment_editor.png");
 pub static SABER_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/saber_editor.png");
 pub static NOTE_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/note_editor.png");
+pub static BEATMAP_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/beatmap_editor.png");
 
 pub static MISSING_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/svg/missing_editor.svg");
 
@@ -374,7 +375,7 @@ impl App {
                         self.draw_context_selector(
                             ctx, ui,
                             "beatmap_edit_scale".into(),
-                            MISSING_EDITOR_ICON.clone(),
+                            BEATMAP_EDITOR_ICON.clone(),
                             &["Beatmap", "Editor"],
                             |s| s.context = editor::EditorContext::Map(editor::MapEditorContext::Beatmap),
                         );
@@ -384,7 +385,7 @@ impl App {
                             "lightshow_edit_scale".into(),
                             MISSING_EDITOR_ICON.clone(),
                             &["Lightshow", "Editor"],
-                            |s| s.context = editor::EditorContext::Map(editor::MapEditorContext::Lightshow),
+                            |s| ()//s.context = editor::EditorContext::Map(editor::MapEditorContext::Lightshow),
                         );
                     });
 

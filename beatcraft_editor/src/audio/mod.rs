@@ -972,8 +972,9 @@ impl Audio {
         let mag_db_norm: Vec<f32> = buf[..state.window_size / 2]
             .iter()
             .map(|c| {
-                let db = 20.0 * c.norm().max(1e-8).log10();
-                ((db - (-80.0)) / 80.0f32).clamp(0.0, 1.0)
+                let mag = c.norm() / state.window_size as f32;
+                let db = 20.0 * mag.max(1e-8).log10();
+                ((db - (-120.0)) / 120.0f32).clamp(0.0, 1.0)
             })
             .collect();
 

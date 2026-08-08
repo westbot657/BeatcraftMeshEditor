@@ -9,6 +9,7 @@ use crate::easing::Easing;
 
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum VersionClass {
@@ -59,7 +60,7 @@ pub enum InfoVersion {
 }
 
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MapCharacteristic {
     Standard,
     NoArrows,
@@ -77,7 +78,7 @@ pub enum MapCharacteristic {
     Unknown(String)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MapDifficulty {
     Easy,
     Normal,
@@ -91,12 +92,18 @@ pub enum MapDifficulty {
 
 // Color notes
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 #[serde(try_from = "u8", into = "u8")]
 pub enum Color {
+    #[default]
     Red = 0,
     Blue = 1,
+}
+impl Color {
+    pub fn is_red(&self) -> bool {
+        *self == Self::Red
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -107,10 +114,11 @@ pub struct RGBAColor {
     pub a: f32,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 #[serde(try_from = "u8", into = "u8")]
 pub enum CutDirection {
+    #[default]
     Up        = 0,
     Down      = 1,
     Left      = 2,
@@ -120,6 +128,11 @@ pub enum CutDirection {
     DownLeft  = 6,
     DownRight = 7,
     Dot       = 8,
+}
+impl CutDirection {
+    pub fn is_default(&self) -> bool {
+        *self == Self::Up
+    }
 }
 
 impl CutDirection {
@@ -139,10 +152,10 @@ impl CutDirection {
 }
 
 
-pub(crate) fn is_value_i<const N: i64>(v: &(impl Num + From<i64>)) -> bool {
+pub(crate) fn is_value_i<const N: i8>(v: &(impl Num + From<i8>)) -> bool {
     *v == N.into()
 }
-pub(crate) fn is_value_u<const N: u64>(v: &(impl Num + From<u64>)) -> bool {
+pub(crate) fn is_value_u<const N: u8>(v: &(impl Num + From<u8>)) -> bool {
     *v == N.into()
 }
 
@@ -150,11 +163,11 @@ pub(crate) fn is_value_f<const N: u32>(v: &f32) -> bool {
     *v == f32::from_bits(N)
 }
 
-pub(crate) fn default_i<T: Num + From<i64>, const N: i64>() -> T {
+pub(crate) fn default_i<T: Num + From<i8>, const N: i8>() -> T {
     N.into()
 }
 
-pub(crate) fn default_u<T: Num + From<u64>, const N: u64>() -> T {
+pub(crate) fn default_u<T: Num + From<u8>, const N: u8>() -> T {
     N.into()
 }
 
@@ -203,24 +216,32 @@ pub struct ColorNoteV3 {
 #[serde(deny_unknown_fields)]
 pub struct ColorNoteV4 {
     #[serde(rename = "b")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub beat: f32,
     #[serde(rename = "r")]
+    #[serde(default, skip_serializing_if = "is_value_i::<0>")]
     pub rotation_lane: i32,
     #[serde(rename = "i")]
+    #[serde(default, skip_serializing_if = "is_value_u::<0>")]
     pub metadata_index: u32,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColorNoteDataV4 {
     #[serde(rename = "x")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub line_index: f32,
     #[serde(rename = "y")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub line_layer: f32,
     #[serde(rename = "c")]
+    #[serde(default, skip_serializing_if = "Color::is_red")]
     pub color: Color,
     #[serde(rename = "d")]
+    #[serde(default, skip_serializing_if = "CutDirection::is_default")]
     pub cut_direction: CutDirection,
     #[serde(rename = "a")]
+    #[serde(default, skip_serializing_if = "is_value_i::<0>")]
     pub angle_offset: i32,
 }
 
@@ -260,18 +281,23 @@ pub struct BombNoteV3 {
 #[serde(deny_unknown_fields)]
 pub struct BombNoteV4 {
     #[serde(rename = "b")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub beat: f32,
     #[serde(rename = "r")]
+    #[serde(default, skip_serializing_if = "is_value_i::<0>")]
     pub rotation_lane: i32,
     #[serde(rename = "i")]
+    #[serde(default, skip_serializing_if = "is_value_u::<0>")]
     pub metadata_index: u32,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BombNoteDataV4 {
     #[serde(rename = "x")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub line_index: f32,
     #[serde(rename = "y")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub line_layer: f32,
 }
 
@@ -333,10 +359,13 @@ pub struct ObstacleV3 {
 #[serde(deny_unknown_fields)]
 pub struct ObstacleV4 {
     #[serde(rename = "b")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub beat: f32,
     #[serde(rename = "r")]
-    pub rotation_lane: f32,
+    #[serde(default, skip_serializing_if = "is_value_i::<0>")]
+    pub rotation_lane: i32,
     #[serde(rename = "i")]
+    #[serde(default, skip_serializing_if = "is_value_u::<0>")]
     pub metadata_index: u32,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -345,8 +374,10 @@ pub struct ObstacleDataV4 {
     #[serde(rename = "d")]
     pub duration: f32,
     #[serde(rename = "x")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub line_index: f32,
     #[serde(rename = "y")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub line_layer: f32,
     #[serde(rename = "w")]
     pub width: f32,
@@ -356,13 +387,19 @@ pub struct ObstacleDataV4 {
 
 // Arcs
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 #[serde(try_from = "u8", into = "u8")]
 pub enum ArcMidAnchorMode {
+    #[default]
     Straight         = 0,
     Clockwise        = 1,
     CounterClockwise = 2,
+}
+impl ArcMidAnchorMode {
+    pub fn is_default(&self) -> bool {
+        *self == Self::Straight
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -434,28 +471,38 @@ pub struct ArcV3 {
 #[serde(deny_unknown_fields)]
 pub struct ArcV4 {
     #[serde(rename = "hb")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub head_beat: f32,
     #[serde(rename = "tb")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub tail_beat: f32,
     #[serde(rename = "hr")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub head_rotation_lane: f32,
     #[serde(rename = "tr")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub tail_rotation_lane: f32,
     #[serde(rename = "hi")]
+    #[serde(default, skip_serializing_if = "is_value_u::<0>")]
     pub head_note_metadata_index: u32,
     #[serde(rename = "ti")]
+    #[serde(default, skip_serializing_if = "is_value_u::<0>")]
     pub tail_note_metadata_index: u32,
     #[serde(rename = "ai")]
+    #[serde(default, skip_serializing_if = "is_value_u::<0>")]
     pub metadata_index: u32,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArcDataV4 {
     #[serde(rename = "m")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub head_ctrl_magnitude: f32,
     #[serde(rename = "tm")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub tail_ctrl_magnitude: f32,
     #[serde(rename = "a")]
+    #[serde(default, skip_serializing_if = "ArcMidAnchorMode::is_default")]
     pub mid_anchor_mode: ArcMidAnchorMode,
 }
 
@@ -490,28 +537,38 @@ pub struct ChainV3 {
 #[serde(deny_unknown_fields)]
 pub struct ChainV4 {
     #[serde(rename = "hb")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub head_beat: f32,
     #[serde(rename = "tb")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub tail_beat: f32,
     #[serde(rename = "hr")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub head_rotation_lane: f32,
     #[serde(rename = "tr")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub tail_rotation_lane: f32,
     #[serde(rename = "i")]
+    #[serde(default, skip_serializing_if = "is_value_u::<0>")]
     pub head_note_metadata_index: u32,
     #[serde(rename = "ci")]
+    #[serde(default, skip_serializing_if = "is_value_u::<0>")]
     pub metadata_index: u32,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChainDataV4 {
     #[serde(rename = "tx")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub tail_line_index: f32,
     #[serde(rename = "ty")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub tail_line_layer: f32,
     #[serde(rename = "c")]
+    #[serde(default, skip_serializing_if = "is_value_u::<0>")]
     pub slice_count: u8,
     #[serde(rename = "s")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub squish_factor: f32,
 }
 
@@ -791,6 +848,7 @@ impl VersionClass {
 #[serde(untagged)]
 pub enum InfoFile {
     V2(InfoV2),
+    V4(InfoV4),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -799,12 +857,14 @@ pub enum InfoFile {
 pub enum BeatmapFile {
     V2(BeatmapFileV2),
     V3(BeatmapFileV3),
+    V4(BeatmapFileV4),
 }
 
 impl InfoFile {
     pub fn bpm(&self) -> f32 {
         match self {
             Self::V2(v2) => v2.bpm,
+            Self::V4(v4) => v4.audio.bpm,
         }
     }
 }
@@ -873,6 +933,7 @@ use serde::de::Error as _;
 
 use self::v2::{BeatmapFileV2, InfoV2};
 use self::v3::BeatmapFileV3;
+use self::v4::{BeatmapFileV4, InfoV4};
 
 impl<const N: u8> Serialize for Sentinel<N> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

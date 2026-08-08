@@ -521,6 +521,45 @@ impl BeatmapFile {
                         index,
                     });
                 }
+            },
+            Self::V4(v4) => {
+                for note in v4.color_notes.iter() {
+                    let index = color_notes.len() as u32;
+                    let Some(data) = v4.color_notes_data.get(note.metadata_index as usize) else { continue };
+                    color_notes.push(ColorNote {
+                        spawn_orientation: get_random_spawn_quat(&mut rng),
+                        beat: note.beat,
+                        color: data.color.into(),
+                        cut_direction: data.cut_direction,
+                        angle_offset: data.angle_offset as f32,
+                        grid_pos: Vec2::new(data.line_index, data.line_layer),
+                        dissolve: 0.,
+                        index,
+                    });
+                }
+                for bomb in v4.bomb_notes.iter() {
+                    let index = bomb_notes.len() as u32;
+                    let Some(data) = v4.bomb_notes_data.get(bomb.metadata_index as usize) else { continue };
+                    bomb_notes.push(BombNote {
+                        beat: bomb.beat,
+                        color: ObjectColor::default(),
+                        grid_pos: Vec2::new(data.line_index, data.line_layer),
+                        dissolve: 0.,
+                        index
+                    });
+                }
+                for obst in v4.obstacles.iter() {
+                    let index = obstacles.len() as u32;
+                    let Some(data) = v4.obstacles_data.get(obst.metadata_index as usize) else { continue };
+                    obstacles.push(Obstacle {
+                        beat: obst.beat,
+                        color: ObjectColor::default(),
+                        grid_pos: Vec2::new(data.line_index + ((data.width / 2.) - 0.5), data.line_layer - 0.8),
+                        size: Vec3::new(data.width, data.height, data.duration),
+                        dissolve: 0.,
+                        index,
+                    });
+                }
             }
         }
 

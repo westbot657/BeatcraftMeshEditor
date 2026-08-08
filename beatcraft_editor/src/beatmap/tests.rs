@@ -7,6 +7,7 @@ use egui::TextBuffer;
 
 use crate::beatmap::data::v2::{BeatmapFileV2, DifficultyBeatmapV2};
 use crate::beatmap::data::v3::BeatmapFileV3;
+use crate::beatmap::data::v4::{BeatmapFileV4, InfoV4};
 
 use super::data::MapCharacteristic;
 use super::data::v2::InfoV2;
@@ -69,6 +70,12 @@ static REALITY_CHECK: MapSelection = (
     "Standard", "ExpertPlus"
 );
 
+// 4.0.0 | 4.0.0
+static MOONBEAM: MapSelection = (
+    "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/Moonbeam",
+    "Standard", "ExpertPlus"
+);
+
 
 static TEST_MAPS_V2: [MapSelection; 7] = [
     SOMEWHERE_OUT_THERE,
@@ -87,7 +94,11 @@ static TEST_MAPS_V3: [MapSelection; 4] = [
     ASCENT,
 ];
 
-static TEST_MAPS: [MapSelection; 11] = [
+static TEST_MAPS_V4: [MapSelection; 1] = [
+    MOONBEAM,
+];
+
+static TEST_MAPS: [MapSelection; 12] = [
     SOMEWHERE_OUT_THERE,
     RINGED_GENESIS,
     HEADHUNTER,
@@ -99,6 +110,7 @@ static TEST_MAPS: [MapSelection; 11] = [
     GHOST,
     ASCENT,
     REALITY_CHECK,
+    MOONBEAM,
 ];
 
 static NOODLE_V2_MAPS: [MapSelection; 3] = [
@@ -128,7 +140,25 @@ fn open_info<V: serde::de::DeserializeOwned>(folder: &Path) -> Result<V> {
     Ok(info)
 }
 
-fn open_char_diff<S, V>(folder: &Path, info: &InfoV2, set: S, difficulty: &str) -> Result<V>
+fn open_char_diff_v4<S, V>(folder: &Path, info: &InfoV4, set: S, difficulty: &str) -> Result<V>
+where
+    MapCharacteristic: PartialEq<S>,
+    V: serde::de::DeserializeOwned,
+{
+    let mut found = None;
+    for diff in info.difficulty_beatmaps.iter() {
+        if diff.characteristic == set && diff.difficulty == difficulty {
+            found = Some(diff);
+        }
+    }
+    let map = found.ok_or(anyhow!("set/difficutly not found"))?;
+    let file = folder.join(&map.beatmap_data_filename);
+    let data = fs::read(file)?;
+    let map: V = serde_json::from_slice(&data)?;
+    Ok(map)
+}
+
+fn open_char_diff_v2<S, V>(folder: &Path, info: &InfoV2, set: S, difficulty: &str) -> Result<V>
 where
     MapCharacteristic: PartialEq<S>,
     V: serde::de::DeserializeOwned,
@@ -158,13 +188,29 @@ fn deserialize_vanilla_map_files_v3() -> Result<()> {
 
     println!("Ascent Info.dat:\n{info:#?}");
 
-    let exp = open_char_diff::<_, BeatmapFileV3>(
+    let exp = open_char_diff_v2::<_, BeatmapFileV3>(
         &path, &info,
         CHEAT_CODES.1, CHEAT_CODES.2
     )?;
 
     println!("Ascent data:\n{exp:#?}");
 
+    Ok(())
+}
+
+#[test]
+fn test_deserialize_all_v4() -> Result<()> {
+    for (file, set, diff) in TEST_MAPS_V4 {
+        println!("parsing {}", file);
+
+        let path = PathBuf::from(file);
+        let info: InfoV4 = open_info(&path)?;
+        println!("Info for {}:\n{:#?}", file, info);
+
+        let exp: BeatmapFileV4 = open_char_diff_v4(&path, &info, set, diff)?;
+
+        println!("map for {}:\n{:?}", file, exp);
+    }
     Ok(())
 }
 
@@ -177,7 +223,7 @@ fn test_deserialize_all_v3() -> Result<()> {
         let info: InfoV2 = open_info(&path)?;
         println!("Info for {}:\n{:#?}", file, info);
 
-        let exp: BeatmapFileV3 = open_char_diff(&path, &info, set, diff)?;
+        let exp: BeatmapFileV3 = open_char_diff_v2(&path, &info, set, diff)?;
 
         println!("map for {}:\n{:?}", file, exp);
     }
@@ -193,7 +239,7 @@ fn test_deserialize_all_v2() -> Result<()> {
         let info: InfoV2 = open_info(&path)?;
         println!("Info for {}:\n{:#?}", file, info);
 
-        let exp: BeatmapFileV2 = open_char_diff(&path, &info, set, diff)?;
+        let exp: BeatmapFileV2 = open_char_diff_v2(&path, &info, set, diff)?;
 
         println!("map for {}:\n{:?}", file, exp);
     }
@@ -208,7 +254,7 @@ pub fn deserialize_vanilla_map_files_v2() -> Result<()> {
 
     println!("Cheat Codes Info.dat:\n{info:#?}");
 
-    let mut exp = open_char_diff::<_, BeatmapFileV2>(
+    let mut exp = open_char_diff_v2::<_, BeatmapFileV2>(
         &path, &info,
         CHEAT_CODES.1, CHEAT_CODES.2
     )?;
@@ -229,7 +275,7 @@ pub fn deserialize_noodle_map_files_v2() -> Result<()> {
 
         println!("Info for {}:\n{:#?}", file, info);
 
-        let exp = open_char_diff::<_, BeatmapFileV2>(
+        let exp = open_char_diff_v2::<_, BeatmapFileV2>(
             &path, &info,
             set, diff
         )?;

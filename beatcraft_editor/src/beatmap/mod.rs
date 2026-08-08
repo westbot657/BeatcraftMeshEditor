@@ -5,6 +5,7 @@ use std::thread;
 use eframe::glow::{self, Context, HasContext};
 use egui::TextBuffer;
 use glam::{Mat4, Vec4};
+use indexmap::IndexMap;
 
 use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
 use crate::data::LightMeshData;
@@ -26,7 +27,6 @@ pub mod tests;
 
 pub struct BeatmapProjectDiff {
     pub difficulty: MapDifficulty,
-    pub rank: u8,
     pub beatmap_file: Option<PathBuf>,
     pub njs: f32,
     pub njs_offset: f32,
@@ -53,7 +53,6 @@ impl From<&DifficultyBeatmapV2> for BeatmapProjectDiff {
         tracing::debug!(target: DB_DATA, ?path, "Loaded Beatmap difficulty: {}", value.difficulty);
         Self {
             difficulty: value.difficulty.clone(),
-            rank: value.difficulty_rank,
             beatmap_file: Some(PathBuf::from(&value.beatmap_filename)),
             njs: value.note_jump_movement_speed,
             njs_offset: value.note_jump_start_beat_offset,
@@ -217,6 +216,27 @@ impl BeatmapEditor {
                     sets = v2.difficulty_beatmap_sets.iter().map(Into::into).collect();
                     cover_image = Some(PathBuf::from(&v2.cover_image_filename));
                     audio_path = Some(PathBuf::from(&v2.song_filename));
+                },
+                InfoFile::V4(v4) => {
+                    let mut sts = IndexMap::new();
+                    for diff in v4.difficulty_beatmaps.iter() {
+                        let entry = sts.entry(&diff.characteristic).or_insert(Vec::new());
+                        entry.push(BeatmapProjectDiff {
+                            difficulty: diff.difficulty.clone(),
+                            beatmap_file: Some(PathBuf::from(&diff.beatmap_data_filename)),
+                            njs: diff.note_jump_movement_speed,
+                            njs_offset: diff.note_jump_start_beat_offset,
+                            custom_data: None,
+                        });
+                    }
+                    for (ch, diffs) in sts.into_iter() {
+                        sets.push(BeatmapProjectSet {
+                            set: ch.clone(),
+                            diffs,
+                        });
+                    }
+                    cover_image = Some(PathBuf::from(&v4.cover_image_filename));
+                    audio_path = Some(PathBuf::from(&v4.audio.song_filename));
                 }
             }
 
@@ -466,6 +486,16 @@ impl App {
                                                 ));
                                             });
                                         },
+                                        InfoFile::V4(v4) => {
+                                            ui.label("Info V4");
+                                            ui.label(&v4.song.title);
+                                            ui.label(&v4.song.sub_title);
+                                            ui.label(format!(
+                                                "Artist: {}  BPM: {:.2}",
+                                                v4.song.author,
+                                                v4.audio.bpm,
+                                            ));
+                                        }
                                     }
                                     ui.add_space(15.);
                                 },
