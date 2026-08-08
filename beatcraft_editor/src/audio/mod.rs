@@ -3,7 +3,9 @@ use std::fmt::Display;
 use std::path::Path;
 use std::{ptr, thread};
 use std::sync::{Arc, mpsc};
+use glow::{Context, HasContext};
 
+use eframe::glow;
 use parking_lot::RwLock;
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
@@ -14,7 +16,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::audio::sample::Sample;
 
-use crate::DB_AUDIO;
+use crate::{DB_AUDIO, DB_RENDER};
 
 pub mod al;
 
@@ -22,6 +24,7 @@ type AudioTask = Box<dyn FnMut() -> TaskAction + Send>;
 
 const FULL_BUFFER_COUNT: usize = 4;
 const FULL_CHUNK_SAMPLES: usize = 8192;
+const SPECTROGRAM_UPLOAD_BATCH: usize = 128;
 
 pub enum AudioThreadCommand {
     AddTask(AudioTask),
@@ -52,6 +55,8 @@ pub struct AudioSystem {
     pub context: *mut al::ALCcontext,
     pub thread_commands: mpsc::Sender<AudioThreadCommand>,
     pub audio_refs: Vec<Arc<Audio>>,
+
+    gl: Arc<glow::Context>,
 }
 
 pub struct AudioInfo {
@@ -64,20 +69,21 @@ pub struct AudioInfo {
 }
 
 struct SpectrogramState {
-    data: Arc<RwLock<Vec<i16>>>,       // same buffer the decoder writes into
-    decode_cursor: Arc<RwLock<usize>>, // same cursor, read-only from here
-    columns_done: usize,               // how many STFT columns we've produced so far
+    data: Arc<RwLock<Vec<i16>>>,
+    decode_cursor: Arc<RwLock<usize>>,
+    columns_done: Arc<RwLock<usize>>,
+    decode_finished: Arc<RwLock<bool>>,
     window_size: usize,
     hop: usize,
     channels: u16,
     hann: Vec<f32>,
     fft: Arc<dyn rustfft::Fft<f32>>,
-    tex_data: Arc<RwLock<Vec<f32>>>,   // flat buffer, uploaded to GL on the main thread
-    tex_dirty_range: Arc<RwLock<Option<(usize, usize)>>>, // [start_col, end_col) needing re-upload
+    tex_data: Arc<RwLock<Vec<f32>>>,
+    finished: Arc<RwLock<bool>>,
 }
 
 impl AudioSystem {
-    pub fn new() -> Result<Self, AudioError> {
+    pub fn new(gl: Arc<glow::Context>) -> Result<Self, AudioError> {
         unsafe {
             let device = al::alcOpenDevice(ptr::null());
             if device.is_null() {
@@ -117,6 +123,7 @@ impl AudioSystem {
                 context,
                 thread_commands: sx,
                 audio_refs: Vec::new(),
+                gl,
             })
         }
     }
@@ -302,6 +309,14 @@ enum AudioSource {
 }
 
 #[derive(Debug)]
+struct SpectrogramGlCache {
+    tex: glow::NativeTexture,
+    uploaded_columns: usize,
+    capacity_columns: usize,
+}
+
+
+#[derive(Debug)]
 pub struct Audio {
     data: Arc<RwLock<Vec<i16>>>,
     sample_count: Arc<RwLock<Option<usize>>>,
@@ -312,6 +327,14 @@ pub struct Audio {
     channels: u16,
     sample_rate: u32,
     fx_filter: u32,
+
+    spectrogram_tex_data: Arc<RwLock<Vec<f32>>>,
+    spectrogram_columns_done: Arc<RwLock<usize>>,
+    spectrogram_freq_bins: usize,
+    spectrogram_finished: Arc<RwLock<bool>>,
+    spectrogram_gl_cache: RwLock<Option<SpectrogramGlCache>>,
+
+    gl: Arc<glow::Context>,
 }
 
 impl Audio {
@@ -321,7 +344,7 @@ impl Audio {
         let _guard = span.enter();
         match mode {
             AudioMode::Stream => {
-                let mut audio_info = AudioSystem::open_decoder(path)?;
+                let audio_info = AudioSystem::open_decoder(path)?;
                 let data: Arc<RwLock<Vec<i16>>> = Arc::default();
                 let sections: Arc<RwLock<Vec<(usize, usize)>>> = Arc::default();
                 let pb_cursor: Arc<RwLock<usize>> = Arc::default();
@@ -357,25 +380,41 @@ impl Audio {
                     al::alFilterf(fx_filter, al::AL_LOWPASS_GAINHF, 0.1);
                 }
 
+                let decode_finished: Arc<RwLock<bool>> = Arc::default();
                 let sample_count = Arc::new(RwLock::new(audio_info.sample_count));
+                let spec_data = Arc::clone(&data);
+                let spec_cursor = Arc::clone(&pb_cursor);
+                let sample_rate = audio_info.sample_rate;
+                let (spectrogram_tex_data, spectrogram_columns_done, spectrogram_freq_bins, spectrogram_finished) =
+                    Self::spawn_spectrogram_task(audio_sys, spec_data, spec_cursor, decode_finished, audio_info.channels, sample_rate);
+
+                let data2 = Arc::clone(&data);
+                let loaded2 = Arc::clone(&loaded);
+                let mut audio_info2 = AudioSystem::open_decoder(path)?;
+                audio_sys.add_task(Box::new(move || {
+                    Self::decode_task_loop(&data2, &sections, &pb_cursor, &seek_target, &loaded2, audio_info.channels, &mut audio_info2)
+                }));
 
                 let audio = Arc::new(Self {
-                    data: Arc::clone(&data),
-                    sample_count: Arc::clone(&sample_count),
-                    source: Arc::clone(&source),
-                    loaded: Arc::clone(&loaded),
+                    data,
+                    sample_count,
+                    source,
+                    loaded,
                     pending_play: Arc::new(RwLock::new(false)),
                     src_handle,
                     channels: audio_info.channels,
                     sample_rate: audio_info.sample_rate,
                     fx_filter,
+                    spectrogram_columns_done,
+                    spectrogram_freq_bins,
+                    spectrogram_tex_data,
+                    spectrogram_finished,
+                    spectrogram_gl_cache: RwLock::default(),
+                    gl: Arc::clone(&audio_sys.gl),
                 });
 
                 audio_sys.audio_refs.push(Arc::clone(&audio));
 
-                audio_sys.add_task(Box::new(move || {
-                    Self::decode_task_loop(&data, &sections, &pb_cursor, &seek_target, &loaded, audio_info.channels, &mut audio_info)
-                }));
                 Ok(audio)
             },
             AudioMode::Full => {
@@ -419,44 +458,39 @@ impl Audio {
 
                 let sample_count = Arc::new(RwLock::new(audio_info.sample_count));
 
+                let decode_finished: Arc<RwLock<bool>> = Arc::default();
+
+                let data2 = Arc::clone(&data);
+                let decode_cursor = Arc::clone(&load_pos);
+                let loaded2 = Arc::clone(&loaded);
+                let sc2 = Arc::clone(&sample_count);
+                let dcf2 = Arc::clone(&decode_finished);
+                audio_sys.add_task(Box::new(move || {
+                    Self::load_full(&data2, &loaded2, &load_pos, &mut audio_info, &sc2, &dcf2)
+                }));
+
+                let (spectrogram_tex_data, spectrogram_columns_done, spectrogram_freq_bins, spectrogram_finished) =
+                    Self::spawn_spectrogram_task(audio_sys, Arc::clone(&data), decode_cursor, decode_finished, channels, sample_rate);
+
                 let audio = Arc::new(Self {
-                    data: Arc::clone(&data),
-                    sample_count: Arc::clone(&sample_count),
+                    data,
+                    sample_count,
                     source,
-                    loaded: Arc::clone(&loaded),
+                    loaded,
                     pending_play: Arc::new(RwLock::new(false)),
                     src_handle,
                     channels,
                     sample_rate,
                     fx_filter,
+                    spectrogram_tex_data,
+                    spectrogram_columns_done,
+                    spectrogram_freq_bins,
+                    spectrogram_finished,
+                    spectrogram_gl_cache: RwLock::default(),
+                    gl: Arc::clone(&audio_sys.gl),
                 });
 
                 audio_sys.audio_refs.push(Arc::clone(&audio));
-
-                let data2 = Arc::clone(&data);
-                let decode_cursor = Arc::clone(&load_pos);
-                audio_sys.add_task(Box::new(move || {
-                    Self::load_full(&data2, &loaded, &load_pos, &mut audio_info, &sample_count)
-                }));
-
-                let mut planner = FftPlanner::new();
-                let fft = planner.plan_fft_forward(1024);
-                let mut state = SpectrogramState {
-                    data,
-                    decode_cursor,
-                    columns_done: 0,
-                    window_size: 1024,
-                    hop: 256,
-                    channels,
-                    hann: Vec::new(),
-                    fft,
-                    tex_data: Arc::default(),
-                    tex_dirty_range: Arc::default(),
-                };
-                // audio_sys.add_task(Box::new(move || {
-                //     Self::spectrogram_task_loop(&mut state)
-                // }));
-
                 Ok(audio)
             },
         }
@@ -504,8 +538,6 @@ impl Audio {
                         al::alSourceUnqueueBuffers(self.src_handle, 1, buf.as_mut_ptr());
                         check_al_error("alSourceUnqueueBuffers");
                         free_buffers.push(buf[0]);
-                        // buffers are queued/unqueued FIFO, so the front of queued_sizes
-                        // corresponds to whichever buffer just finished playing
                         if let Some(consumed) = queued_sizes.pop_front() {
                             *played_samples.write() += consumed;
                         }
@@ -526,7 +558,7 @@ impl Audio {
                         al::alSourceQueueBuffers(self.src_handle, 1, &buf);
                         check_al_error("alBufferData/QueueBuffers");
                     }
-                    queued_sizes.push_back(take); // NEW — remember this buffer's size for later unqueue accounting
+                    queued_sizes.push_back(take);
                     *playback_position += take;
                 }
                 drop(dat);
@@ -586,8 +618,6 @@ impl Audio {
             al::alGetSourcei(self.src_handle, al::AL_SAMPLE_OFFSET, offset_frames.as_mut_ptr());
         }
 
-        // played_samples is interleaved (all channels); AL_SAMPLE_OFFSET is
-        // already in frames (per OpenAL spec), so only the former needs /channels
         let played_frames = played_samples / self.channels as usize;
         let total_frames = played_frames + offset_frames[0].max(0) as usize;
 
@@ -709,7 +739,7 @@ impl Audio {
 
             *playback_position = target_sample;
             if !already_loaded {
-                *seek_target.write() = Some(target_sample); // decode task will jump on its next tick
+                *seek_target.write() = Some(target_sample);
             }
         }
         Ok(())
@@ -736,80 +766,33 @@ impl Audio {
         Some(frames as f32 / self.sample_rate as f32)
     }
 
-    fn get_cursor(task: LoadTask, cursors: &[Arc<RwLock<usize>>; 2]) -> usize {
-        unsafe {
-            match task {
-                LoadTask::Background => *cursors.get_unchecked(0).read(),
-                LoadTask::Playback => *cursors.get_unchecked(1).read(),
-            }
-        }
-    }
-
-    fn collapse(
-        s_sections: Arc<RwLock<Vec<AudioLoadState>>>,
-        cursors: [Arc<RwLock<usize>>; 2],
-        sample_count: Option<usize>,
-    ) {
-        let mut sections = Vec::new();
-        let mut sects = s_sections.write();
-        std::mem::swap(&mut sections, &mut sects);
-        for section in sections.into_iter() {
-            if let Some(sect) = sects.last_mut() {
-                match (sect, &section) {
-                    (AudioLoadState::Empty { start, end }, AudioLoadState::Empty { start: s2, end: e2 }) if *end >= *s2 => {
-                        *end = *e2;
-                    },
-                    (AudioLoadState::Loaded { start, end }, AudioLoadState::Loaded { start: s2, end: e2 }) if *end == *s2 => {
-                        *end = *e2;
-                    },
-                    (AudioLoadState::Loaded { start, end }, AudioLoadState::Loading { start: s2, task }) if *end == *s2 => {
-                        let pos = Self::get_cursor(*task, &cursors);
-                        *end = pos;
-                        sects.push(AudioLoadState::Empty { start: pos, end: usize::MAX });
-                    }
-                    _ => {
-                        if let AudioLoadState::Loading { start, task } = section {
-                            let pos = Self::get_cursor(task, &cursors);
-                            sects.push(AudioLoadState::Loaded { start, end: pos });
-                            sects.push(AudioLoadState::Empty { start: pos, end: usize::MAX });
-                        } else {
-                            sects.push(section);
-                        }
-                    }
-                }
-            } else {
-                sects.push(section);
-            }
-        }
-        if let Some(AudioLoadState::Empty { start: _, end }) = sects.last_mut()
-            && let Some(count) = sample_count {
-            *end = count;
-        }
-        let mut bg_c = cursors[0].write();
-        *bg_c = 0;
-    }
-
     fn load_full(
         data: &Arc<RwLock<Vec<i16>>>,
         loaded: &Arc<RwLock<bool>>,
         load_pos: &Arc<RwLock<usize>>,
         info: &mut AudioInfo,
         sample_count: &Arc<RwLock<Option<usize>>>,
+        decode_finished: &Arc<RwLock<bool>>,
     ) -> TaskAction {
 
         if !{ *loaded.read() } {
+            *decode_finished.write() = true;
             return TaskAction::Remove;
         }
 
         let packet = loop {
             let packet = match info.format_reader.next_packet() {
                 Ok(Some(packet)) => packet,
-                Ok(None) => return TaskAction::Remove,
+                Ok(None) => {
+                    *decode_finished.write() = true;
+                    return TaskAction::Remove
+                },
                 Err(symphonia::core::errors::Error::ResetRequired) => {
                     unimplemented!("why do I have to deal with OGG");
                 }
                 Err(err) => {
                     tracing::error!(target: DB_AUDIO, "Audio reader encountered an unrecoverable error: {err}");
+                    *decode_finished.write() = true;
                     return TaskAction::Remove;
                 }
             };
@@ -848,6 +831,50 @@ impl Audio {
         TaskAction::None
     }
 
+    #[allow(clippy::type_complexity)]
+    fn spawn_spectrogram_task(
+        audio_sys: &AudioSystem,
+        data: Arc<RwLock<Vec<i16>>>,
+        decode_cursor: Arc<RwLock<usize>>,
+        decode_finished: Arc<RwLock<bool>>,
+        channels: u16,
+        sample_rate: u32,
+    ) -> (Arc<RwLock<Vec<f32>>>, Arc<RwLock<usize>>, usize, Arc<RwLock<bool>>) {
+        const WINDOW_SIZE: usize = 1024;
+        let freq_bins = WINDOW_SIZE / 2;
+        const TARGET_COLUMNS_PER_SEC: f32 = 16.0;
+        let hop = ((sample_rate as f32 / TARGET_COLUMNS_PER_SEC) as usize).max(WINDOW_SIZE / 4);
+
+        let hann: Vec<f32> = (0..WINDOW_SIZE)
+            .map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (WINDOW_SIZE - 1) as f32).cos())
+            .collect();
+
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(WINDOW_SIZE);
+
+        let tex_data: Arc<RwLock<Vec<f32>>> = Arc::default();
+        let columns_done: Arc<RwLock<usize>> = Arc::default();
+        let finished: Arc<RwLock<bool>> = Arc::default();
+
+        let mut state = SpectrogramState {
+            data,
+            decode_cursor,
+            decode_finished,
+            columns_done: Arc::clone(&columns_done),
+            window_size: WINDOW_SIZE,
+            hop,
+            channels,
+            hann,
+            fft,
+            tex_data: Arc::clone(&tex_data),
+            finished: Arc::clone(&finished),
+        };
+
+        audio_sys.add_task(Box::new(move || Self::spectrogram_task_loop(&mut state)));
+
+        (tex_data, columns_done, freq_bins, finished)
+    }
+
     fn decode_task_loop(
         data: &Arc<RwLock<Vec<i16>>>,
         loaded_ranges: &Arc<RwLock<Vec<(usize, usize)>>>,
@@ -872,7 +899,6 @@ impl Audio {
                 },
             ) {
                 Ok(seeked) => {
-                    // Timestamp is now an opaque newtype — .get() extracts the i64
                     let actual_frame = seeked.actual_ts.get().max(0) as usize;
                     *decode_cursor.write() = actual_frame * channels as usize;
                 }
@@ -915,8 +941,13 @@ impl Audio {
         let decoded_samples = *state.decode_cursor.read();
         let decoded_frames = decoded_samples / state.channels as usize;
 
-        let next_window_start = state.columns_done * state.hop;
+        let columns_done = *state.columns_done.read();
+        let next_window_start = columns_done * state.hop;
+
         if next_window_start + state.window_size > decoded_frames {
+            if *state.decode_finished.read() {
+                *state.finished.write() = true;
+            }
             return TaskAction::None;
         }
 
@@ -945,15 +976,14 @@ impl Audio {
 
         let mut tex = state.tex_data.write();
         let col_height = mag_db_norm.len();
-        let col_start = state.columns_done * col_height;
+        let col_start = columns_done * col_height;
         if tex.len() < col_start + col_height {
             tex.resize(col_start + col_height, 0.0);
         }
         tex[col_start..col_start + col_height].copy_from_slice(&mag_db_norm);
         drop(tex);
 
-        *state.tex_dirty_range.write() = Some((state.columns_done, state.columns_done + 1));
-        state.columns_done += 1;
+        *state.columns_done.write() = columns_done + 1;
 
         TaskAction::None
     }
@@ -969,11 +999,131 @@ impl Audio {
         }
         *ranges = merged;
     }
+
+    pub fn get_spectrogram_tex(&self, gl: &glow::Context) -> Option<glow::NativeTexture> {
+    let freq_bins = self.spectrogram_freq_bins;
+    let columns_done = *self.spectrogram_columns_done.read();
+    if columns_done == 0 {
+        return None;
+    }
+
+        let finished = *self.spectrogram_finished.read();
+        let max_tex_size = unsafe { gl.get_parameter_i32(glow::MAX_TEXTURE_SIZE) as usize };
+        let target_columns = columns_done.min(max_tex_size);
+
+        let mut cache = self.spectrogram_gl_cache.write();
+
+        let pending = match &*cache {
+            None => true,
+            Some(c) => {
+                let new_since_upload = target_columns.saturating_sub(c.uploaded_columns);
+                new_since_upload >= SPECTROGRAM_UPLOAD_BATCH || (finished && new_since_upload > 0)
+            }
+        };
+        if !pending {
+            return cache.as_ref().map(|c| c.tex);
+        }
+
+        let need_grow = match &*cache {
+            None => true,
+            Some(c) => target_columns > c.capacity_columns,
+        };
+
+        if need_grow {
+            let capacity_columns = target_columns;
+            unsafe {
+                if let Some(old) = cache.take() {
+                    gl.delete_texture(old.tex);
+                }
+                let tex = gl.create_texture().expect("failed to create spectrogram texture");
+                gl.bind_texture(glow::TEXTURE_2D, Some(tex));
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+                gl.tex_image_2d(
+                    glow::TEXTURE_2D, 0,
+                    glow::R32F as i32,
+                    freq_bins as i32, capacity_columns as i32, 0,
+                    glow::RED, glow::FLOAT,
+                    glow::PixelUnpackData::Slice(None),
+                );
+                gl.bind_texture(glow::TEXTURE_2D, None);
+                *cache = Some(SpectrogramGlCache { tex, uploaded_columns: 0, capacity_columns });
+            }
+        }
+
+        let cache_ref = cache.as_mut().expect("cache just ensured Some");
+        let upload_target = target_columns.min(cache_ref.capacity_columns);
+
+        if cache_ref.uploaded_columns < upload_target {
+            let tex_data = self.spectrogram_tex_data.read();
+            let start = cache_ref.uploaded_columns;
+            let available_cols = tex_data.len() / freq_bins;
+            let end = upload_target.min(available_cols);
+            if end > start {
+                let slice: &[f32] = &tex_data[start * freq_bins..end * freq_bins];
+                unsafe {
+                    gl.bind_texture(glow::TEXTURE_2D, Some(cache_ref.tex));
+                    gl.tex_sub_image_2d(
+                        glow::TEXTURE_2D, 0,
+                        0, start as i32,
+                        freq_bins as i32, (end - start) as i32,
+                        glow::RED, glow::FLOAT,
+                        glow::PixelUnpackData::Slice(Some(bytemuck::cast_slice(slice))),
+                    );
+                    gl.bind_texture(glow::TEXTURE_2D, None);
+                }
+                cache_ref.uploaded_columns = end;
+            }
+        }
+
+        Some(cache_ref.tex)
+    }
 }
 
 impl Drop for Audio {
     fn drop(&mut self) {
         *self.loaded.write() = false;
+
+        if std::thread::panicking() {
+            return;
+        }
+
+        if let Some(cache) = self.spectrogram_gl_cache.write().take() {
+            unsafe {
+                self.gl.delete_texture(cache.tex);
+            }
+        }
+
+        unsafe {
+            al::alSourceStop(self.src_handle);
+            al::alSourcei(self.src_handle, al::AL_BUFFER, 0);
+            check_al_error("drop: detach buffers");
+
+            al::alDeleteSources(1, &self.src_handle);
+            check_al_error("drop: delete source");
+
+            al::alDeleteFilters(1, &self.fx_filter);
+            check_al_error("drop: delete filter");
+        }
+
+        let mut all_buffers: Vec<u32> = Vec::new();
+        {
+            let source = self.source.read();
+            match &*source {
+                AudioSource::Full { all_buffers: bufs, .. } => all_buffers.extend_from_slice(bufs),
+                AudioSource::Stream { free_buffers, .. } => all_buffers.extend_from_slice(free_buffers),
+            }
+        }
+        if !all_buffers.is_empty() {
+            unsafe {
+                al::alDeleteBuffers(all_buffers.len() as i32, all_buffers.as_ptr());
+                check_al_error("drop: delete buffers");
+            }
+        }
+
+        tracing::debug!(target: DB_AUDIO, "Dropped audio resources");
     }
 }
 

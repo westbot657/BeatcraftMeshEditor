@@ -1068,7 +1068,7 @@ impl App {
             }
         };
 
-        let mut audio_system = AudioSystem::new().unwrap();
+        let mut audio_system = AudioSystem::new(Arc::clone(&gl2)).unwrap();
         let data = load_app_data().unwrap_or_else(|_| Default::default());
 
         let map_editor = BeatmapEditor::new(&mut audio_system, None, &gl2, &mut renderer, data.audio_volume).unwrap();
@@ -1275,18 +1275,19 @@ impl App {
         Ok(())
     }
 
-    pub fn handle_keys(&mut self, ctx: &egui::Context, gl: &Context) -> (bool, bool) {
+    pub fn handle_keys(&mut self, ctx: &egui::Context, gl: &Context) -> (bool, bool, bool) {
         if self.block_input() {
-            return (false, false);
+            return (false, false, false);
         }
 
         if ctx.wants_keyboard_input() {
-            return (false, false);
+            return (false, false, false);
         }
 
         let input = ctx.input(|i| i.clone());
         let ctrl = input.modifiers.ctrl;
         let shift = input.modifiers.shift;
+        let alt = input.modifiers.alt;
 
         if ctrl && input.key_pressed(Key::Z) {
             if shift {
@@ -1498,7 +1499,7 @@ impl App {
             },
             _ => {}
         }
-        (shift, ctrl)
+        (shift, ctrl, alt)
     }
 
     pub fn handle_3d_input(&mut self, resp: &Response, ctx: &egui::Context, gl: &Context) {
@@ -1510,10 +1511,7 @@ impl App {
         let w = rect.width();
         let h = rect.height();
 
-        let pointer = ctx.input(|i| i.pointer.clone());
-        let shift = ctx.input(|i| i.modifiers.shift);
-        let ctrl = ctx.input(|i| i.modifiers.ctrl);
-        let alt = ctx.input(|i| i.modifiers.alt);
+        let (pointer, shift, ctrl, alt) = ctx.input(|i| (i.pointer.clone(), i.modifiers.shift, i.modifiers.ctrl, i.modifiers.alt));
         let primary_pressed = resp.drag_started_by(egui::PointerButton::Primary);
         let primary_clicked = resp.clicked_by(egui::PointerButton::Primary);
         let secondary_pressed = resp.drag_started_by(egui::PointerButton::Secondary);
@@ -2569,6 +2567,10 @@ impl Drop for App {
             if let Err(e) = res {
                 tracing::error!(target: DB_MAIN, "Failed to save app data: {e}")
             }
+
+            self.context = EditorContext::None;
+            self.map_editor.map = None;
+            self.audio_system.audio_refs.clear();
         }
     }
 }

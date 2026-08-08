@@ -177,7 +177,7 @@ impl eframe::App for App {
             self.rebuild_meshes(gl);
         }
 
-        let (shift, ctrl) = self.handle_keys(ctx, gl);
+        let (shift, ctrl, alt) = self.handle_keys(ctx, gl);
 
         let dt = ctx.input(|i| i.unstable_dt);
         if self.state.status_timer > 0. {
@@ -226,7 +226,7 @@ impl eframe::App for App {
                 editor::ModelEditorContext::Notes => todo!(),
             },
             editor::EditorContext::Map(map_editor_context) => match map_editor_context {
-                editor::MapEditorContext::Beatmap => self.draw_beatmap_editor(ctx, frame, shift, ctrl),
+                editor::MapEditorContext::Beatmap => self.draw_beatmap_editor(ctx, frame, shift, ctrl, alt),
                 editor::MapEditorContext::Lightshow => todo!(),
                 editor::MapEditorContext::Audio => todo!(),
             },

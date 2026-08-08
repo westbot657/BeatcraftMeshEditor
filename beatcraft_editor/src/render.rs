@@ -1478,11 +1478,11 @@ impl Renderer {
     }
 }
 
-struct RenderTarget {
-    fbo: glow::NativeFramebuffer,
-    color: glow::NativeTexture,
-    depth: glow::NativeTexture,
-    size: (i32, i32),
+pub(crate) struct RenderTarget {
+    pub fbo: glow::NativeFramebuffer,
+    pub color: glow::NativeTexture,
+    pub depth: glow::NativeTexture,
+    pub size: (i32, i32),
 }
 
 impl RenderTarget {
@@ -1608,13 +1608,14 @@ pub struct BloomfogRenderer {
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
-enum PassType {
+pub(crate) enum PassType {
     DownSample,
     UpSample,
     GaussianV,
     GaussianH,
     BlueNoise,
     Blit,
+    FlippedBlit,
     Comp,
 }
 
@@ -1623,47 +1624,47 @@ impl BloomfogRenderer {
         let span = tracing::debug_span!("vfx");
         let _guard = span.enter();
 
-        let blur_vsh = include_str!("assets/shaders/core/bloomfog_blur.vsh");
+        let vsh = include_str!("assets/shaders/core/beatcraft_fx.vsh");
 
         tracing::debug!(target: DB_RENDER, "Compiling blur downsample shader");
         let blur_down = Renderer::build_program(gl,
-            blur_vsh,
+            vsh,
             include_str!("assets/shaders/core/bloomfog_downsample.fsh")
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling blur upsample shader");
         let blur_up = Renderer::build_program(gl,
-            blur_vsh,
+            vsh,
             include_str!("assets/shaders/core/bloomfog_upsample.fsh")
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling gaussian vertical shader");
         let gaussian_v = Renderer::build_program(gl,
-            blur_vsh,
+            vsh,
             include_str!("assets/shaders/core/gaussian_v.fsh")
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling gaussian horizontal shader");
         let gaussian_h = Renderer::build_program(gl,
-            blur_vsh,
+            vsh,
             include_str!("assets/shaders/core/gaussian_h.fsh")
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling blue noise shader");
         let blue_noise = Renderer::build_program(gl,
-            blur_vsh,
+            vsh,
             include_str!("assets/shaders/core/blue_noise.fsh")
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling blit shader");
         let blit = Renderer::build_program(gl,
-            include_str!("assets/shaders/core/beatcraft_blit.vsh"),
+            vsh,
             include_str!("assets/shaders/core/beatcraft_blit.fsh")
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling composite shader");
         let comp = Renderer::build_program(gl,
-            blur_vsh,
+            vsh,
             include_str!("assets/shaders/core/composite.fsh")
         )?;
 
@@ -1672,13 +1673,11 @@ impl BloomfogRenderer {
             gl.bind_vertex_array(Some(vao));
             let vbo = gl.create_buffer()?;
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
-            let stride = (3 + 2 + 4) * 4;
+            let stride = (3 + 2) * 4;
             gl.enable_vertex_attrib_array(0);
             gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, stride, 0);
             gl.enable_vertex_attrib_array(1);
             gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, stride, 3 * 4);
-            gl.enable_vertex_attrib_array(2);
-            gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, stride, 5 * 4);
             gl.bind_vertex_array(None);
 
             Ok(Self {
@@ -2202,7 +2201,7 @@ impl BloomfogRenderer {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn apply_effect_pass(
+    pub(crate) fn apply_effect_pass(
         &self,
         renderer: &Renderer,
         gl: &glow::Context,
@@ -2230,7 +2229,7 @@ impl BloomfogRenderer {
                 PassType::GaussianV => self.gaussian_v,
                 PassType::GaussianH => self.gaussian_h,
                 PassType::BlueNoise => self.blue_noise,
-                PassType::Blit => self.blit,
+                PassType::Blit | PassType::FlippedBlit => self.blit,
                 PassType::Comp => self.comp,
             };
 
@@ -2249,16 +2248,20 @@ impl BloomfogRenderer {
                 renderer.set_vec2(gl, shader, "texelSize", Vec2::new(radius / window.0 as f32, radius / window.1 as f32));
             }
 
-            let rg = 2./255.;
+            let (a, b) = if matches!(pass, PassType::FlippedBlit) {
+                (0., 1.)
+            } else {
+                (1., 0.)
+            };
 
-            let data: [f32; 54] = [
-                -quad_size, -quad_size, 0.,  0., 0., rg, rg, 0., 1.,
-                 quad_size, -quad_size, 0.,  1., 0., rg, rg, 0., 1.,
-                 quad_size,  quad_size, 0.,  1., 1., rg, rg, 0., 1.,
+            let data: [f32; 30] = [
+                -quad_size, -quad_size, 0.,  0., 0.,
+                 quad_size, -quad_size, 0.,  a, b,
+                 quad_size,  quad_size, 0.,  1., 1.,
 
-                -quad_size, -quad_size, 0.,  0., 0., rg, rg, 0., 1.,
-                 quad_size,  quad_size, 0.,  1., 1., rg, rg, 0., 1.,
-                -quad_size,  quad_size, 0.,  0., 1., rg, rg, 0., 1.,
+                -quad_size, -quad_size, 0.,  0., 0.,
+                 quad_size,  quad_size, 0.,  1., 1.,
+                -quad_size,  quad_size, 0.,  b, a,
             ];
             gl.bind_vertex_array(Some(self.vao));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
