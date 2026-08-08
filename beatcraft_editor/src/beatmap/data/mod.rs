@@ -643,6 +643,13 @@ pub struct NJSEventDataV4 {
     pub njs_diff: f32,
 }
 
+pub struct BpmRegion {
+    pub start_sample: usize,
+    pub end_sample: usize,
+    pub start_beat: f32,
+    pub end_beat: f32,
+}
+
 // Implementations
 
 impl MapCharacteristic {

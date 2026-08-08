@@ -3,7 +3,7 @@ use std::fmt::Display;
 use std::path::Path;
 use std::{ptr, thread};
 use std::sync::{Arc, mpsc};
-use glow::{Context, HasContext};
+use glow::HasContext;
 
 use eframe::glow;
 use parking_lot::RwLock;
@@ -16,7 +16,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::audio::sample::Sample;
 
-use crate::{DB_AUDIO, DB_RENDER};
+use crate::DB_AUDIO;
 
 pub mod al;
 
@@ -331,6 +331,7 @@ pub struct Audio {
     spectrogram_tex_data: Arc<RwLock<Vec<f32>>>,
     spectrogram_columns_done: Arc<RwLock<usize>>,
     spectrogram_freq_bins: usize,
+    spectrogram_hop: usize,
     spectrogram_finished: Arc<RwLock<bool>>,
     spectrogram_gl_cache: RwLock<Option<SpectrogramGlCache>>,
 
@@ -385,7 +386,7 @@ impl Audio {
                 let spec_data = Arc::clone(&data);
                 let spec_cursor = Arc::clone(&pb_cursor);
                 let sample_rate = audio_info.sample_rate;
-                let (spectrogram_tex_data, spectrogram_columns_done, spectrogram_freq_bins, spectrogram_finished) =
+                let (spectrogram_tex_data, spectrogram_columns_done, spectrogram_freq_bins, spectrogram_finished, spectrogram_hop) =
                     Self::spawn_spectrogram_task(audio_sys, spec_data, spec_cursor, decode_finished, audio_info.channels, sample_rate);
 
                 let data2 = Arc::clone(&data);
@@ -408,6 +409,7 @@ impl Audio {
                     spectrogram_columns_done,
                     spectrogram_freq_bins,
                     spectrogram_tex_data,
+                    spectrogram_hop,
                     spectrogram_finished,
                     spectrogram_gl_cache: RwLock::default(),
                     gl: Arc::clone(&audio_sys.gl),
@@ -469,7 +471,7 @@ impl Audio {
                     Self::load_full(&data2, &loaded2, &load_pos, &mut audio_info, &sc2, &dcf2)
                 }));
 
-                let (spectrogram_tex_data, spectrogram_columns_done, spectrogram_freq_bins, spectrogram_finished) =
+                let (spectrogram_tex_data, spectrogram_columns_done, spectrogram_freq_bins, spectrogram_finished, spectrogram_hop) =
                     Self::spawn_spectrogram_task(audio_sys, Arc::clone(&data), decode_cursor, decode_finished, channels, sample_rate);
 
                 let audio = Arc::new(Self {
@@ -485,6 +487,7 @@ impl Audio {
                     spectrogram_tex_data,
                     spectrogram_columns_done,
                     spectrogram_freq_bins,
+                    spectrogram_hop,
                     spectrogram_finished,
                     spectrogram_gl_cache: RwLock::default(),
                     gl: Arc::clone(&audio_sys.gl),
@@ -839,7 +842,7 @@ impl Audio {
         decode_finished: Arc<RwLock<bool>>,
         channels: u16,
         sample_rate: u32,
-    ) -> (Arc<RwLock<Vec<f32>>>, Arc<RwLock<usize>>, usize, Arc<RwLock<bool>>) {
+    ) -> (Arc<RwLock<Vec<f32>>>, Arc<RwLock<usize>>, usize, Arc<RwLock<bool>>, usize) {
         const WINDOW_SIZE: usize = 1024;
         let freq_bins = WINDOW_SIZE / 2;
         const TARGET_COLUMNS_PER_SEC: f32 = 16.0;
@@ -872,7 +875,7 @@ impl Audio {
 
         audio_sys.add_task(Box::new(move || Self::spectrogram_task_loop(&mut state)));
 
-        (tex_data, columns_done, freq_bins, finished)
+        (tex_data, columns_done, freq_bins, finished, hop)
     }
 
     fn decode_task_loop(
@@ -1000,6 +1003,30 @@ impl Audio {
         *ranges = merged;
     }
 
+    pub fn spectrogram_uploaded_columns(&self) -> usize {
+        self.spectrogram_gl_cache.read().as_ref().map(|c| c.uploaded_columns).unwrap_or(0)
+    }
+
+    pub fn spectrogram_synced_coverage(&self) -> f32 {
+        let Some(total_frames) = *self.sample_count.read() else { return 1.0 };
+        if total_frames == 0 || self.spectrogram_hop == 0 {
+            return 1.0;
+        }
+        let total_columns_full = (total_frames / self.spectrogram_hop).max(1);
+        let uploaded = self.spectrogram_uploaded_columns();
+        (uploaded as f32 / total_columns_full as f32).min(1.0)
+    }
+
+    pub fn spectrogram_coverage(&self) -> f32 {
+        let Some(total_frames) = *self.sample_count.read() else { return 1.0 };
+        if total_frames == 0 || self.spectrogram_hop == 0 {
+            return 1.0;
+        }
+        let total_columns_full = (total_frames / self.spectrogram_hop).max(1);
+        let columns_done = *self.spectrogram_columns_done.read();
+        (columns_done as f32 / total_columns_full as f32).min(1.0)
+    }
+
     pub fn get_spectrogram_tex(&self, gl: &glow::Context) -> Option<glow::NativeTexture> {
     let freq_bins = self.spectrogram_freq_bins;
     let columns_done = *self.spectrogram_columns_done.read();
@@ -1037,10 +1064,10 @@ impl Audio {
                 }
                 let tex = gl.create_texture().expect("failed to create spectrogram texture");
                 gl.bind_texture(glow::TEXTURE_2D, Some(tex));
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32);
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_BORDER as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_BORDER as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
                 gl.tex_image_2d(
                     glow::TEXTURE_2D, 0,
                     glow::R32F as i32,

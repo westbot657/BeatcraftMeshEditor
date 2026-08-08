@@ -1,8 +1,11 @@
 use eframe::glow::{self, HasContext};
-use glam::{Mat4, Vec2};
+use glam::{FloatExt, Mat4, Vec2};
 
 use crate::DB_RENDER;
+use crate::audio::Audio;
 use crate::render::Renderer;
+
+const SPECTROGRAM_MIN_ZOOM: f32 = 0.01;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum GridStepSpacing {
@@ -19,6 +22,7 @@ impl GridStepSpacing {
     }
 }
 
+
 pub struct BeatmapRenderer {
     grid_shader: glow::NativeProgram,
     grid_vao: glow::VertexArray,
@@ -26,6 +30,8 @@ pub struct BeatmapRenderer {
     placement_grid_shader: glow::NativeProgram,
     placement_grid_vao: glow::VertexArray,
 
+    spectrogram_ui_shader: glow::NativeProgram,
+    spectrogram_ui_vao: glow::VertexArray,
 
     pub beat_spacing: f32,
     pub step_spacing: GridStepSpacing,
@@ -41,6 +47,9 @@ pub struct BeatmapRenderer {
 
     pub placement_z: f32,
     pub hovered_placement_cell: u32,
+
+    spectrogram_ui_zoom: f32,
+    spectrogram_ui_offset: f32,
 }
 
 
@@ -65,10 +74,16 @@ impl BeatmapRenderer {
                 include_str!("../assets/shaders/beatmap_grid/placement_grid.fsh"),
             )?;
 
+            tracing::debug!(target: DB_RENDER, "Compiling spectrogram UI shader");
+            let spectrogram_ui_shader = Renderer::build_program(
+                gl,
+                include_str!("../assets/shaders/spectrogram.vsh"),
+                include_str!("../assets/shaders/spectrogram.fsh"),
+            )?;
 
             let grid_vao = gl.create_vertex_array()?;
             let placement_grid_vao = gl.create_vertex_array()?;
-
+            let spectrogram_ui_vao = gl.create_vertex_array()?;
 
             tracing::debug!(target: DB_RENDER, "Uploading digit texture to GPU");
             let digits_tex = {
@@ -117,6 +132,8 @@ impl BeatmapRenderer {
                 placement_grid_shader,
                 placement_grid_vao,
 
+                spectrogram_ui_shader,
+                spectrogram_ui_vao,
 
                 beat_spacing: 8.,
                 step_spacing: GridStepSpacing::Quarters,
@@ -132,6 +149,9 @@ impl BeatmapRenderer {
 
                 placement_z: 0.,
                 hovered_placement_cell: 12,
+
+                spectrogram_ui_zoom: 1.,
+                spectrogram_ui_offset: 0.,
             })
         }
     }
@@ -197,6 +217,21 @@ impl BeatmapRenderer {
         *o = new_f;
     }
 
+    pub fn spectrogram_center(&mut self, cursor: f32) {
+        let zoom = self.spectrogram_ui_zoom;
+        self.spectrogram_ui_offset = (cursor - zoom * 0.5)
+            .clamp(0.0, (1.0 - zoom).max(0.0));
+    }
+
+    pub fn spectrogram_zoom(&mut self, scroll: f32, cursor: f32) {
+        if scroll == 0.0 {
+            return;
+        }
+        let factor = if scroll > 0. { 0.88 } else { 1.12 };
+        self.spectrogram_ui_zoom = (self.spectrogram_ui_zoom * factor).clamp(SPECTROGRAM_MIN_ZOOM, 1.0);
+        self.spectrogram_center(cursor);
+    }
+
     pub fn seek(&mut self, beat: f32) {
         self.beat_offset = (beat.trunc() as u16, beat.fract());
     }
@@ -205,6 +240,39 @@ impl BeatmapRenderer {
         self.beat_offset.0 as f32 + self.beat_offset.1
     }
 
+    pub fn spectrogram_range(&self) -> (f32, f32) {
+        (self.spectrogram_ui_offset, self.spectrogram_ui_offset + self.spectrogram_ui_zoom)
+    }
+
+    pub fn render_spectrogram_ui(
+        &self,
+        renderer: &mut Renderer,
+        gl: &glow::Context,
+        audio: &Audio,
+        length_beats: f32,
+    ) {
+        unsafe {
+            let beat = self.beat();
+            let cursor = beat / length_beats;
+            renderer.beatmap.spectrogram_center(cursor);
+            let program = self.spectrogram_ui_shader;
+            gl.use_program(Some(program));
+            gl.bind_vertex_array(Some(self.spectrogram_ui_vao));
+
+            let Some(tex) = audio.get_spectrogram_tex(gl) else { return };
+            let start = self.spectrogram_ui_offset;
+            let end = start + (0f32.lerp(length_beats, self.spectrogram_ui_zoom) / length_beats);
+            let coverage = audio.spectrogram_synced_coverage();
+
+            renderer.set_float(gl, program, "u_start", start);
+            renderer.set_float(gl, program, "u_end", end);
+            renderer.set_float(gl, program, "u_cursor", cursor);
+            renderer.set_float(gl, program, "u_coverage", coverage);
+
+            renderer.set_sampler(gl, program, "u_texture", Some(tex), 0);
+            gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
+        }
+    }
 }
 
 

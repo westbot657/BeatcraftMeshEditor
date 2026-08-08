@@ -1,5 +1,3 @@
-use std::error::Error;
-use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
@@ -11,7 +9,7 @@ use glam::{Mat4, Vec4};
 use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
 use crate::data::LightMeshData;
 use crate::light_mesh::LightMesh;
-use crate::render::{GpuMesh, GridType, MeshDrawCall, RenderTarget, Renderer};
+use crate::render::{GpuMesh, GridType, MeshDrawCall, Renderer};
 use crate::{DB_DATA, DB_LOGIC, DB_MAIN, RefDuper, UnsafeMutRef, editor, get_data_folder};
 use crate::editor::{App, EditorContext, RoutineAction, ViewStyle};
 
@@ -318,36 +316,73 @@ impl App {
 
                 ui.add_space(5.);
 
-                let s = unsafe { UnsafeMutRef::new(self) };
                 let mut rect = ui.available_rect_before_wrap();
                 rect.set_height(50.);
+
+                let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
+
+                if resp.hovered() {
+                    let (alt, scroll) = ctx.input(|i| (i.modifiers.alt, i.raw_scroll_delta.y));
+                    if scroll != 0.0 {
+                        if alt {
+                            if let Some(map) = self.map_editor.map.as_ref()
+                                && let Some(controller) = map.controller.as_ref()
+                                && let Some(audio) = map.audio.as_ref()
+                                && let Some(length_secs) = audio.length_seconds()
+                            {
+                                let bpm = controller.runtime_data.bpm;
+                                let bps = bpm / 60.0;
+                                let length_beats = length_secs * bps;
+                                let cursor = self.render.renderer.beatmap.beat() / length_beats;
+                                self.render.renderer.beatmap.spectrogram_zoom(scroll, cursor);
+                            }
+                        } else {
+                            self.render.renderer.beatmap.scroll(scroll.signum() * self.map_editor.scroll_step);
+                        }
+                    }
+                }
+
+                if (resp.clicked() || resp.dragged())
+                    && let Some(pos) = resp.interact_pointer_pos()
+                    && let Some(map) = self.map_editor.map.as_ref()
+                    && let Some(controller) = map.controller.as_ref()
+                    && let Some(audio) = map.audio.as_ref()
+                    && let Some(length_secs) = audio.length_seconds()
+                {
+                    let frac_x = ((pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
+
+                    let bpm = controller.runtime_data.bpm;
+                    let bps = bpm / 60.0;
+                    let length_beats = length_secs * bps;
+
+                    let (start, end) = self.render.renderer.beatmap.spectrogram_range();
+                    let u = start + (end - start) * frac_x;
+                    let beat = u * length_beats;
+                    let seek_secs = beat / bps;
+
+                    let _ = audio.seek(seek_secs);
+                    self.render.renderer.beatmap.seek(beat);
+                }
+
+                let s = unsafe { UnsafeMutRef::new(self) };
                 ui.painter().add(egui::PaintCallback {
                     rect,
                     callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
                         move |_info, painter| {
                             if let Some(map) = s.map_editor.map.as_ref()
-                            && let Some(audio) = map.audio.as_ref() {
+                            && let Some(controller) = map.controller.as_ref()
+                            && let Some(audio) = map.audio.as_ref()
+                            && let Some(length) = audio.length_seconds() {
                                 let gl = painter.gl();
-                                if let Some(tex) = audio.get_spectrogram_tex(gl) {
-                                    let wrap = RenderTarget {
-                                        fbo: glow::NativeFramebuffer(NonZeroU32::new(1).unwrap()),
-                                        color: tex,
-                                        depth: glow::NativeTexture(NonZeroU32::new(1).unwrap()),
-                                        size: (rect.width() as i32, rect.height() as i32),
-                                    };
-                                    s.render.renderer.bloomfog.apply_effect_pass(
-                                        &s.render.renderer, gl,
-                                        &wrap, None,
-                                        crate::render::PassType::FlippedBlit,
-                                        false, false,
-                                        (2, 2), 11., 1.
-                                    );
-                                }
+                                let bpm = controller.runtime_data.bpm;
+                                let length = bpm / 60. * length;
+                                s.render.renderer.beatmap.render_spectrogram_ui(
+                                    &mut s.ref_mut().render.renderer, gl, audio, length,
+                                );
                             }
                         }
                     ))
                 });
-                ui.allocate_exact_size(rect.size(), egui::Sense::empty());
 
                 ui.add_space(5.);
 
