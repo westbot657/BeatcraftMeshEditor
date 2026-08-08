@@ -63,15 +63,21 @@ static ASCENT: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/2a629 (Ascent - nitronik.exe)",
     "Standard", "ExpertPlus"
 );
+// 2.0.0 | 2.0.0
+static REALITY_CHECK: MapSelection = (
+    "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/25f (Reality Check Through The Skull - DM DOKURO)",
+    "Standard", "ExpertPlus"
+);
 
 
-static TEST_MAPS_V2: [MapSelection; 6] = [
+static TEST_MAPS_V2: [MapSelection; 7] = [
     SOMEWHERE_OUT_THERE,
     RINGED_GENESIS,
     HEADHUNTER,
     SEQUENCE_EP,
     TENEBROUS,
     CHEAT_CODES,
+    REALITY_CHECK,
 ];
 
 static TEST_MAPS_V3: [MapSelection; 4] = [
@@ -81,7 +87,7 @@ static TEST_MAPS_V3: [MapSelection; 4] = [
     ASCENT,
 ];
 
-static TEST_MAPS: [MapSelection; 9] = [
+static TEST_MAPS: [MapSelection; 11] = [
     SOMEWHERE_OUT_THERE,
     RINGED_GENESIS,
     HEADHUNTER,
@@ -91,6 +97,8 @@ static TEST_MAPS: [MapSelection; 9] = [
     ILL_SHARP_MINOR,
     SPIN_ETERNALLY,
     GHOST,
+    ASCENT,
+    REALITY_CHECK,
 ];
 
 static NOODLE_V2_MAPS: [MapSelection; 3] = [
@@ -170,6 +178,22 @@ fn test_deserialize_all_v3() -> Result<()> {
         println!("Info for {}:\n{:#?}", file, info);
 
         let exp: BeatmapFileV3 = open_char_diff(&path, &info, set, diff)?;
+
+        println!("map for {}:\n{:?}", file, exp);
+    }
+    Ok(())
+}
+
+#[test]
+fn test_deserialize_all_v2() -> Result<()> {
+    for (file, set, diff) in TEST_MAPS_V2 {
+        println!("parsing {}", file);
+
+        let path = PathBuf::from(file);
+        let info: InfoV2 = open_info(&path)?;
+        println!("Info for {}:\n{:#?}", file, info);
+
+        let exp: BeatmapFileV2 = open_char_diff(&path, &info, set, diff)?;
 
         println!("map for {}:\n{:?}", file, exp);
     }

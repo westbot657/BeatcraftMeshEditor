@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::ops::{Add, Div, Mul, Sub};
 
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
@@ -7,14 +8,15 @@ use crate::easing::Easing;
 use crate::render::GameObjectInstanceData;
 
 use super::BeatmapProjectDiff;
-use super::data::{BeatmapDataError, BeatmapFile, CutDirection, InfoFile, v2};
+use super::data::{BeatmapDataError, BeatmapFile, Color, CutDirection, InfoFile, v2};
 use super::render::BeatmapRenderer;
 
 pub struct RuntimeData {
-    njs: f32,
-    bpm: f32,
-    hjd: f32,
-    jd: f32,
+    pub njs: f32,
+    pub bpm: f32,
+    pub hjd: f32,
+    pub jd: f32,
+    pub color_scheme: ColorScheme,
 }
 
 pub struct BeatmapController {
@@ -50,7 +52,8 @@ impl RuntimeData {
             njs,
             bpm,
             hjd,
-            jd
+            jd,
+            color_scheme: Default::default(),
         }
     }
 
@@ -113,7 +116,7 @@ pub trait GameObject {
     fn duration(&self) -> f32 { 0. }
     fn arrow_type(&self) -> ArrowType { ArrowType::None }
 
-    fn get_instance(&self, clipping_plane: Vec4, model: Mat4) -> GameObjectInstanceData;
+    fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData;
 
     fn animate_simple(&self, mut m: Mat4, beat: f32, _data: &RuntimeData, renderer: &BeatmapRenderer) -> Option<Mat4> {
         let b = self.beat();
@@ -217,32 +220,132 @@ pub trait GameObject {
 
 }
 
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct LightColors {
+    pub primary: Vec4,
+    pub secondary: Vec4,
+    pub white: Vec4,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ColorScheme {
+    pub left_note: Vec4,
+    pub right_note: Vec4,
+    pub obstacle: Vec4,
+    pub lights: LightColors,
+    pub boost: LightColors,
+}
+
+impl Default for ColorScheme {
+    fn default() -> Self {
+        Self {
+            left_note: Vec4::new(0.749, 0.184, 0.184, 1.),
+            right_note: Vec4::new(0.122, 0.388, 0.655, 1.),
+            obstacle: Vec4::new(1., 0.184, 0.184, 1.),
+            lights: LightColors {
+                primary: Vec4::new(0.749, 0.184, 0.184, 1.),
+                secondary: Vec4::new(0.122, 0.388, 0.655, 1.),
+                white: Vec4::splat(1.),
+            },
+            boost: LightColors {
+                primary: Vec4::new(0.749, 0.184, 0.184, 1.),
+                secondary: Vec4::new(0.122, 0.388, 0.655, 1.),
+                white: Vec4::splat(1.),
+            },
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum NoteColor {
+    Red,
+    Blue,
+    Custom(Vec4),
+}
+impl NoteColor {
+    pub fn color(&self, cs: &ColorScheme) -> Vec4 {
+        match self {
+            Self::Red => cs.left_note,
+            Self::Blue => cs.right_note,
+            Self::Custom(c) => *c,
+        }
+    }
+}
+impl From<Color> for NoteColor {
+    fn from(value: Color) -> Self {
+        match value {
+            Color::Red => Self::Red,
+            Color::Blue => Self::Blue,
+        }
+    }
+}
+
+pub trait ColorableObject where Self: Sized {
+    fn color(col: &ObjectColor<Self>, cs: &ColorScheme) -> Vec4;
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ObjectColor<O: ColorableObject> {
+    Default(PhantomData<O>),
+    Custom(Vec4),
+}
+impl<O: ColorableObject> ObjectColor<O> {
+    pub fn color(&self, cs: &ColorScheme) -> Vec4 {
+        O::color(self, cs)
+    }
+}
+impl<O: ColorableObject> Default for ObjectColor<O> {
+    fn default() -> Self {
+        Self::Default(PhantomData)
+    }
+}
+
 pub struct ColorNote {
     pub spawn_orientation: Quat,
     pub beat: f32,
-    pub color: Vec4,
+    pub color: NoteColor,
     pub cut_direction: CutDirection,
     pub angle_offset: f32,
     pub grid_pos: Vec2,
+
     pub dissolve: f32,
     pub index: u32,
 }
 
 pub struct BombNote {
     pub beat: f32,
-    pub color: Vec4,
+    pub color: ObjectColor<Self>,
     pub grid_pos: Vec2,
+
     pub dissolve: f32,
     pub index: u32,
+}
+impl ColorableObject for BombNote {
+    fn color(col: &ObjectColor<Self>, _cs: &ColorScheme) -> Vec4 {
+        match col {
+            ObjectColor::Default(_) => Vec4::new(0.2, 0.2, 0.2, 1.),
+            ObjectColor::Custom(vec4) => *vec4,
+        }
+    }
 }
 
 pub struct Obstacle {
     pub beat: f32,
-    pub color: Vec4,
+    pub color: ObjectColor<Self>,
     pub grid_pos: Vec2,
+    pub size: Vec3,
+
     pub dissolve: f32,
     pub index: u32,
-    pub size: Vec3,
+}
+impl ColorableObject for Obstacle {
+    fn color(col: &ObjectColor<Self>, cs: &ColorScheme) -> Vec4 {
+        match col {
+            ObjectColor::Default(_) => cs.obstacle,//Vec4::new(1., 0.184, 0.184, 1.),
+            ObjectColor::Custom(vec4) => *vec4,
+        }
+    }
 }
 
 impl GameObject for ColorNote {
@@ -262,11 +365,11 @@ impl GameObject for ColorNote {
             ArrowType::Arrow
         }
     }
-    fn get_instance(&self, clipping_plane: Vec4, model: Mat4) -> GameObjectInstanceData {
+    fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData {
         GameObjectInstanceData::color_note(
             clipping_plane,
             model,
-            self.color,
+            self.color.color(cs),
             self.dissolve,
             self.index,
             Vec4::ZERO,
@@ -280,11 +383,11 @@ impl GameObject for BombNote {
     fn get_orientation(&self) -> Quat { Quat::IDENTITY }
     fn do_gravity(&self) -> bool { true }
     fn do_spawn_rotation(&self) -> bool { true }
-    fn get_instance(&self, clipping_plane: Vec4, model: Mat4) -> GameObjectInstanceData {
+    fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData {
         GameObjectInstanceData::bomb_note(
             clipping_plane,
             model,
-            self.color,
+            self.color.color(cs),
             self.dissolve,
             self.index,
             Vec4::ZERO
@@ -297,11 +400,11 @@ impl GameObject for Obstacle {
     fn grid_pos(&self) -> Vec2 { self.grid_pos }
     fn get_orientation(&self) -> Quat { Quat::IDENTITY }
     fn duration(&self) -> f32 { self.size.z }
-    fn get_instance(&self, clipping_plane: Vec4, model: Mat4) -> GameObjectInstanceData {
+    fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData {
         GameObjectInstanceData::obstacle(
             clipping_plane,
             model,
-            self.color,
+            self.color.color(cs),
             self.dissolve,
             self.index,
             self.size
@@ -332,10 +435,11 @@ impl BeatmapFile {
                     match note {
                         v2::V2Note::Note(color_note) => {
                             let index = color_notes.len() as u32;
+                            let color: NoteColor = color_note.typ.into();
                             color_notes.push(ColorNote {
                                 spawn_orientation: get_random_spawn_quat(&mut rng),
                                 beat: color_note.time,
-                                color: color_note.typ.to_default_color(),
+                                color,
                                 cut_direction: color_note.cut_direction,
                                 angle_offset: 0.,
                                 grid_pos: Vec2::new(color_note.line_index, color_note.line_layer),
@@ -347,7 +451,7 @@ impl BeatmapFile {
                             let index = bomb_notes.len() as u32;
                             bomb_notes.push(BombNote {
                                 beat: bomb_note.beat,
-                                color: Vec4::new(0.2, 0.2, 0.2, 1.),
+                                color: ObjectColor::default(),
                                 grid_pos: Vec2::new(bomb_note.line_index, bomb_note.line_layer),
                                 dissolve: 0.,
                                 index,
@@ -359,35 +463,36 @@ impl BeatmapFile {
                     let index = obstacles.len() as u32;
                     let (grid_pos, size) = match obst.typ {
                         super::data::ObstacleV2Type::FullHeight => (
-                            Vec2::new(obst.line_index, obst.line_layer - 0.8),
+                            Vec2::new(obst.line_index + ((obst.width / 2.) - 0.5), obst.line_layer - 0.8),
                             Vec3::new(obst.width, 5., obst.duration),
                         ),
                         super::data::ObstacleV2Type::Crouch => (
-                            Vec2::new(obst.line_index, obst.line_layer + 1.2),
+                            Vec2::new(obst.line_index + ((obst.width / 2.) - 0.5), obst.line_layer + 1.2),
                             Vec3::new(obst.width, 3., obst.duration)
                         ),
                         super::data::ObstacleV2Type::Free => (
-                            Vec2::new(obst.line_index, obst.line_layer - 0.8),
+                            Vec2::new(obst.line_index + ((obst.width / 2.) - 0.5), obst.line_layer - 0.8),
                             Vec3::new(obst.width, obst.height, obst.duration)
                         ),
                     };
                     obstacles.push(Obstacle {
                         beat: obst.beat,
-                        color: Vec4::new(1., 0.184, 0.184, 1.),
+                        color: ObjectColor::default(),
                         grid_pos,
+                        size,
                         dissolve: 0.,
                         index,
-                        size,
                     })
                 }
             },
             Self::V3(v3) => {
                 for note in v3.color_notes.iter() {
                     let index = color_notes.len() as u32;
+                    let color: NoteColor = note.color.into();
                     color_notes.push(ColorNote {
                         spawn_orientation: get_random_spawn_quat(&mut rng),
                         beat: note.beat,
-                        color: note.color.to_default_color(),
+                        color,
                         cut_direction: note.cut_direction,
                         angle_offset: 0.,
                         grid_pos: Vec2::new(note.line_index, note.line_layer),
@@ -399,7 +504,7 @@ impl BeatmapFile {
                     let index = bomb_notes.len() as u32;
                     bomb_notes.push(BombNote {
                         beat: bomb.beat,
-                        color: Vec4::new(0.2, 0.2, 0.2, 1.),
+                        color: ObjectColor::default(),
                         grid_pos: Vec2::new(bomb.line_index, bomb.line_layer),
                         dissolve: 0.,
                         index,
@@ -409,11 +514,11 @@ impl BeatmapFile {
                     let index = obstacles.len() as u32;
                     obstacles.push(Obstacle {
                         beat: obst.beat,
-                        color: Vec4::new(1., 0.184, 0.184, 1.),
-                        grid_pos: Vec2::new(obst.line_index, obst.line_layer - 0.8),
+                        color: ObjectColor::default(),
+                        grid_pos: Vec2::new(obst.line_index + ((obst.width / 2.) - 0.5), obst.line_layer - 0.8),
+                        size: Vec3::new(obst.width, obst.height, obst.duration),
                         dissolve: 0.,
                         index,
-                        size: Vec3::new(obst.width, obst.height, obst.duration),
                     });
                 }
             }

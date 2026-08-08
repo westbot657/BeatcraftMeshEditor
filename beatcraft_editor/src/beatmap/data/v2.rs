@@ -191,6 +191,9 @@ pub struct BeatmapFileV2 {
     #[serde(rename = "Stats")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stats: Option<serde_json::Value>,
+    #[serde(rename = "_BPMChanges")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bpm_changes: Option<serde_json::Value>,
     #[serde(rename = "_version")]
     pub version: MapVersion,
     #[serde(rename = "_notes")]
@@ -205,6 +208,10 @@ pub struct BeatmapFileV2 {
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
+
+    #[serde(rename = "_bookmarks")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bookmarks: Option<serde_json::Value>,
 
     // private as I don't care to implement these
     // but it still needs to be preserved from loading
@@ -248,7 +255,8 @@ pub struct InfoV2 {
     #[serde(rename = "_environmentName")]
     pub environment: String,
     #[serde(rename = "_allDirectionsEnvironmentName")]
-    pub environment_360: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment_360: Option<String>,
     #[serde(rename = "_environmentNames")]
     #[serde(default, skip_serializing_if="Vec::is_empty")]
     pub environment_names: Vec<String>,

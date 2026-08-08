@@ -6,6 +6,7 @@ use crate::easing::Easing;
 use super::v2::{ColorBoostValueV2, GagaSideV2, HydraulicsTypeV2, LightEventTypeV2, LightEventValueV2, RingLightEventTypeV2, SpinningLaserSideV2};
 use super::{ArcV3, BeatmapDataError, BombNoteV3, ChainV3, Color, ColorNoteV3, LegacyBPMEventV3, LegacySpawnRotationEventV3, MapVersion, ObstacleV3, Sentinel, SpawnRotationEventV3, convert_u8};
 use super::{bool_u8_serde, easing_as_i8};
+use super::{default_f, default_i, default_u, is_value_i, is_value_u, is_value_f};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -186,6 +187,17 @@ macro_rules! flags_as_u8 {
 flags_as_u8! { RandomizationBehavior }
 flags_as_u8! { LimitBehavior }
 
+impl Default for RandomizationBehavior {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+impl Default for LimitBehavior {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexFilterV3 {
@@ -202,12 +214,16 @@ pub struct IndexFilterV3 {
     #[serde(with = "bool_u8_serde")]
     pub reverse: bool,
     #[serde(rename = "n")]
+    #[serde(default, skip_serializing_if = "RandomizationBehavior::is_empty")]
     pub randomization_behavior: RandomizationBehavior,
     #[serde(rename = "s")]
+    #[serde(default = "default_u::<_, 0>", skip_serializing_if = "is_value_u::<0>")]
     pub randomization_seed: u64,
     #[serde(rename = "l")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub limit_percentage: f32,
     #[serde(rename = "d")]
+    #[serde(default, skip_serializing_if = "LimitBehavior::is_empty")]
     pub limit_behavior: LimitBehavior,
 }
 
@@ -279,6 +295,7 @@ pub struct LightColorEventBoxV3 {
     pub brightness_distribution_affects_first: bool,
     #[serde(rename = "i")]
     #[serde(with = "easing_as_i8")]
+    #[serde(default, skip_serializing_if = "Easing::is_default")]
     pub brightness_distribution_easing: Easing,
     #[serde(rename = "e")]
     pub events: Vec<LightColorEventV3>,
@@ -291,16 +308,27 @@ pub struct LightColorEventV3 {
     #[serde(rename = "i")]
     pub transition_type: TransitionType,
     #[serde(rename = "c")]
-    pub color: Color,
+    pub color: LightEventColor,
     #[serde(rename = "s")]
     pub brightness: f32,
     #[serde(rename = "f")]
     pub strobe_frequency: f32,
     #[serde(rename = "sb")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 1f32.to_bits() }>")]
     pub strobe_brightness: f32,
     #[serde(rename = "sf")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub strobe_fade: f32,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+#[repr(u8)]
+pub enum LightEventColor {
+    Primary   = 0,
+    Secondary = 1,
+    White     = 2,
+}
+convert_u8! { LightEventColor : 0..=2 }
 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -321,6 +349,7 @@ pub struct LightRotationEventBoxV3 {
     pub rotation_distribution_affects_first: bool,
     #[serde(rename = "i")]
     #[serde(with = "easing_as_i8")]
+    #[serde(default, skip_serializing_if = "Easing::is_default")]
     pub rotation_distribution_easing: Easing,
     #[serde(rename = "a")]
     pub axis: EventAxis,
@@ -367,6 +396,7 @@ pub struct LightTranslationEventBoxV3 {
     pub gap_distribution_affects_first: bool,
     #[serde(rename = "i")]
     #[serde(with = "easing_as_i8")]
+    #[serde(default, skip_serializing_if = "Easing::is_default")]
     pub gap_distribution_easing: Easing,
     #[serde(rename = "a")]
     pub axis: EventAxis,

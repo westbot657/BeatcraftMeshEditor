@@ -139,7 +139,10 @@ impl CutDirection {
 }
 
 
-pub(crate) fn is_value<const N: i64>(v: &(impl Num + From<i64>)) -> bool {
+pub(crate) fn is_value_i<const N: i64>(v: &(impl Num + From<i64>)) -> bool {
+    *v == N.into()
+}
+pub(crate) fn is_value_u<const N: u64>(v: &(impl Num + From<u64>)) -> bool {
     *v == N.into()
 }
 
@@ -147,21 +150,16 @@ pub(crate) fn is_value_f<const N: u32>(v: &f32) -> bool {
     *v == f32::from_bits(N)
 }
 
-pub(crate) fn default_n<T: Num + From<i64>, const N: i64>() -> T {
+pub(crate) fn default_i<T: Num + From<i64>, const N: i64>() -> T {
+    N.into()
+}
+
+pub(crate) fn default_u<T: Num + From<u64>, const N: u64>() -> T {
     N.into()
 }
 
 pub(crate) fn default_f<const N: u32>() -> f32 {
     f32::from_bits(N)
-}
-
-macro_rules! def_value {
-    (n: $val:literal) => {
-        default_n::<_, $val>
-    };
-    (f: $val:literal) => {
-        default_f::<{ $val.to_bits() }>
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -790,6 +788,7 @@ pub enum InfoFile {
 
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum BeatmapFile {
     V2(BeatmapFileV2),
     V3(BeatmapFileV3),
@@ -824,7 +823,7 @@ macro_rules! convert_u8 {
                 Ok(match value {
                     $values => unsafe { std::mem::transmute::<u8, Self>(value) },
                     _ => return Err(BeatmapDataError::ToEnum {
-                        enum_name: stringify!($name),
+                        enum_name: stringify!($cl),
                         val: value as i32,
                     })
                 })

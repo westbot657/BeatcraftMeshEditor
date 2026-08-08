@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
@@ -530,7 +531,7 @@ fn draw_map_gl(
             ViewStyle::Edit => object.animate_simple(wp, beatmap.beat(), &controller.runtime_data, beatmap),
             ViewStyle::Beatcraft { .. } => object.animate_complex(wp, beatmap.beat(), &controller.runtime_data),
         } {
-            let inst = object.get_instance(Vec4::ZERO, mat);
+            let inst = object.get_instance(Vec4::ZERO, mat, &controller.runtime_data.color_scheme);
             match t {
                 0 => note_instances.push(inst.into()),
                 1 => bomb_instances.push(inst.into()),
