@@ -581,8 +581,6 @@ pub struct ChainDataV4 {
 #[repr(u8)]
 #[serde(try_from = "u8", into = "u8")]
 pub enum SpawnRotationExecutionTime {
-    // Early       = 0,
-    // Late        = 1,
     LegacyEarly = 14,
     LegacyLate  = 15,
 }
