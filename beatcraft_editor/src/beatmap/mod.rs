@@ -16,7 +16,7 @@ use crate::editor::{App, EditorContext, RoutineAction, ViewStyle};
 
 use self::data::v2::{CharacteristicSetV2, DifficultyBeatmapV2};
 use self::data::{BeatmapFile, InfoFile, MapCharacteristic, MapDifficulty};
-use self::object::{BeatmapController, GameObject};
+use self::object::{BeatmapController, GameObject, ObjectType};
 
 pub mod event;
 pub mod object;
@@ -342,7 +342,7 @@ impl App {
                 let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
 
                 if resp.hovered() {
-                    let (alt, scroll) = ctx.input(|i| (i.modifiers.alt, i.raw_scroll_delta.y));
+                    let scroll = ctx.input(|i| i.raw_scroll_delta.y);
                     if scroll != 0.0 {
                         if alt {
                             if let Some(map) = self.map_editor.map.as_ref()
@@ -613,28 +613,49 @@ fn draw_map_gl(
     let controller = unsafe { rd.detach_mut_ref(controller) };
 
     let mut note_instances = Vec::new();
+    let mut bomb_instances = Vec::new();
+    let mut obstacle_instances = Vec::new();
+    let mut chain_head_instances = Vec::new();
+    let mut chain_tail_instances = Vec::new();
+
     let mut arrow_instances = Vec::new();
     let mut dot_instances = Vec::new();
     let mut chain_dot_instances = Vec::new();
-    let mut bomb_instances = Vec::new();
-    let mut obstacle_instances = Vec::new();
 
-    for (t, object) in controller.color_notes.iter().map(|x| (0, x as &dyn GameObject))
-        .chain(controller.bomb_notes.iter().map(|x| (1, x as &dyn GameObject)))
-        .chain(controller.obstacles.iter().map(|x| (2, x as &dyn GameObject))) {
-        let beatmap = &s.render.renderer.beatmap;
+    let beatmap = &s.render.renderer.beatmap;
+    let beat = beatmap.beat();
+
+    for (t, object) in controller.color_notes.iter().map(|x| (ObjectType::ColorNote, x as &dyn GameObject))
+        .chain(controller.bomb_notes.iter().map(|x| (ObjectType::BombNote, x as &dyn GameObject)))
+        .chain(controller.obstacles.iter().map(|x| (ObjectType::Obstacle, x as &dyn GameObject)))
+        .chain(controller.chain_notes.iter().map(|x| (ObjectType::ChainHead, x as &dyn GameObject))) {
 
         let wp = Mat4::IDENTITY;
 
         if let Some(mat) = match s.state.view_style {
-            ViewStyle::Edit => object.animate_simple(wp, beatmap.beat(), &controller.runtime_data, beatmap),
-            ViewStyle::Beatcraft { .. } => object.animate_complex(wp, beatmap.beat(), &controller.runtime_data),
+            ViewStyle::Edit => object.animate_simple(wp, beat, &controller.runtime_data, beatmap),
+            ViewStyle::Beatcraft { .. } => object.animate_complex(wp, beat, &controller.runtime_data),
         } {
             let inst = object.get_instance(Vec4::ZERO, mat, &controller.runtime_data.color_scheme);
             match t {
-                0 => note_instances.push(inst.into()),
-                1 => bomb_instances.push(inst.into()),
-                2 => obstacle_instances.push(inst.into()),
+                ObjectType::ColorNote => note_instances.push(inst.into()),
+                ObjectType::BombNote => bomb_instances.push(inst.into()),
+                ObjectType::Obstacle => obstacle_instances.push(inst.into()),
+                ObjectType::ChainHead => {
+                    chain_head_instances.push(inst.into());
+                    arrow_instances.push(inst.into());
+                    let Some(chain) = object.upcast_chain_head() else { unreachable!("only chain note heads are marked as ChainHead") };
+                    for link in chain.get_links() {
+                        if let Some(mat) = match s.state.view_style {
+                            ViewStyle::Edit => link.animate_simple(wp, beat, &controller.runtime_data, beatmap),
+                            ViewStyle::Beatcraft { .. } => link.animate_complex(wp, beat, &controller.runtime_data),
+                        } {
+                            let inst = link.get_instance(Vec4::ZERO, mat, &controller.runtime_data.color_scheme);
+                            chain_tail_instances.push(inst.into());
+                            chain_dot_instances.push(inst.into());
+                        }
+                    }
+                }
                 _ => {}
             }
             match object.arrow_type() {
@@ -647,16 +668,41 @@ fn draw_map_gl(
     }
 
     let m = &s.map_editor.mesh_set.note_mesh;
+    let b = &s.map_editor.mesh_set.bomb_mesh;
+    let o = &s.map_editor.mesh_set.obstacle_mesh;
+    let c = &s.map_editor.mesh_set.chain_head_mesh;
+    let cl = &s.map_editor.mesh_set.chain_body_mesh;
+
     let a = &s.map_editor.mesh_set.arrow_mesh;
     let d = &s.map_editor.mesh_set.dot_mesh;
     let cd = &s.map_editor.mesh_set.chain_dot_mesh;
-    let b = &s.map_editor.mesh_set.bomb_mesh;
-    let o = &s.map_editor.mesh_set.obstacle_mesh;
 
     let calls = vec![
         MeshDrawCall {
-            mesh: m, 
-            instances: note_instances.clone(),
+            mesh: m,
+            instances: note_instances,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: true,
+            bloom: false,
+            mirror: false,
+            obstacle: false,
+        },
+        MeshDrawCall {
+            mesh: c,
+            instances: chain_head_instances,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: true,
+            bloom: false,
+            mirror: false,
+            obstacle: false,
+        },
+        MeshDrawCall {
+            mesh: cl,
+            instances: chain_tail_instances,
             wireframe: false,
             cull: true,
             bloomfog: false,

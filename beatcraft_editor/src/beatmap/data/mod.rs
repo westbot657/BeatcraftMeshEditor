@@ -133,11 +133,8 @@ impl CutDirection {
     pub fn is_default(&self) -> bool {
         *self == Self::Up
     }
-}
-
-impl CutDirection {
-    pub fn to_quat(&self) -> Quat {
-        Quat::from_rotation_z(match self {
+    pub fn angle_degrees(&self) -> f32 {
+        match self {
             CutDirection::Up => 180f32,
             CutDirection::Down => 0.,
             CutDirection::Left => 90.,
@@ -147,7 +144,13 @@ impl CutDirection {
             CutDirection::DownLeft => 45.,
             CutDirection::DownRight => -45.,
             CutDirection::Dot => 0.,
-        }.to_radians())
+        }
+    }
+    pub fn world_angle_radians(&self) -> f32 {
+        -self.angle_degrees().to_radians()
+    }
+    pub fn to_quat(&self) -> Quat {
+        Quat::from_rotation_z(self.angle_degrees().to_radians())
     }
 }
 

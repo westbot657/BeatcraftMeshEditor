@@ -11,7 +11,7 @@ use glam::{IVec3, Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use tracing::Level;
 
-use crate::audio::{Audio, AudioSystem};
+use crate::audio::AudioSystem;
 use crate::beatmap::BeatmapEditor;
 use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
 use crate::config::AppData;

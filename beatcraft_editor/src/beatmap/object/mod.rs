@@ -1,7 +1,8 @@
+use std::f32;
 use std::marker::PhantomData;
 use std::ops::{Add, Div, Mul, Sub};
 
-use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
+use glam::{Mat4, Quat, Vec2, Vec3, Vec3Swizzles, Vec4};
 use rand::{rngs::ThreadRng, RngExt};
 
 use crate::easing::Easing;
@@ -24,6 +25,7 @@ pub struct BeatmapController {
     pub color_notes: Vec<ColorNote>,
     pub bomb_notes: Vec<BombNote>,
     pub obstacles: Vec<Obstacle>,
+    pub chain_notes: Vec<ChainNote>,
 }
 
 const JUMP_FAR_Z: f32 = 500.;
@@ -117,6 +119,8 @@ pub trait GameObject {
     fn arrow_type(&self) -> ArrowType { ArrowType::None }
 
     fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData;
+
+    fn upcast_chain_head(&self) -> Option<&ChainNote> { None }
 
     fn animate_simple(&self, mut m: Mat4, beat: f32, _data: &RuntimeData, renderer: &BeatmapRenderer) -> Option<Mat4> {
         let b = self.beat();
@@ -301,6 +305,17 @@ impl<O: ColorableObject> Default for ObjectColor<O> {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ObjectType {
+    ColorNote,
+    BombNote,
+    Obstacle,
+    ChainHead,
+    ChainLink,
+    ArcHead,
+    ArcTail,
+}
+
 pub struct ColorNote {
     pub spawn_orientation: Quat,
     pub beat: f32,
@@ -346,6 +361,26 @@ impl ColorableObject for Obstacle {
             ObjectColor::Custom(vec4) => *vec4,
         }
     }
+}
+
+pub struct ChainNoteLinkData {
+    pub spawn_orientation: Quat,
+    pub index: u32,
+}
+
+pub struct ChainNote {
+    pub spawn_orientation: Quat,
+    pub head_beat: f32,
+    pub tail_beat: f32,
+    pub cut_direction: CutDirection,
+    pub color: NoteColor,
+    pub head_grid_pos: Vec2,
+    pub tail_grid_pos: Vec2,
+    pub squish_factor: f32,
+    pub links: Vec<ChainNoteLinkData>,
+
+    pub dissolve: f32,
+    pub index: u32,
 }
 
 impl GameObject for ColorNote {
@@ -412,6 +447,118 @@ impl GameObject for Obstacle {
     }
 }
 
+pub struct ChainNoteLink {
+    grid_pos: Vec2,
+    beat: f32,
+    orientation: Quat,
+    spawn_orientation: Quat,
+    color: NoteColor,
+    index: u32,
+    dissolve: f32,
+}
+impl GameObject for ChainNote {
+    fn beat(&self) -> f32 { self.head_beat }
+    fn grid_pos(&self) -> Vec2 { self.head_grid_pos }
+    fn get_orientation(&self) -> Quat { self.cut_direction.to_quat() }
+    fn do_gravity(&self) -> bool { true }
+    fn do_look(&self) -> bool { true }
+    fn do_spawn_rotation(&self) -> bool { true }
+    fn spawn_orientation(&self) -> Quat { self.spawn_orientation }
+    fn upcast_chain_head(&self) -> Option<&ChainNote> { Some(self) }
+    fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData {
+        GameObjectInstanceData::color_note(
+            clipping_plane,
+            model,
+            self.color.color(cs),
+            self.dissolve,
+            self.index,
+            Vec4::ZERO,
+        )
+    }
+}
+impl ChainNote {
+    pub fn get_links(&self) -> Vec<ChainNoteLink> {
+        let slice_count = self.links.len();
+        if slice_count == 0 {
+            return Vec::new();
+        }
+
+        let head_pos = self.head_grid_pos.extend(0.);
+        let tail_offset = self.tail_grid_pos.extend(0.) - head_pos;
+        let mag = tail_offset.length();
+        let f = self.cut_direction.world_angle_radians() - 90f32.to_radians();
+        let ctrl = Vec3::new(f.cos() * 0.5 * mag, f.sin() * 0.5 * mag, 0.);
+
+        let spline = BezierCurve { p0: Vec3::ZERO, p1: ctrl, p2: tail_offset };
+
+        let gap = self.squish_factor / slice_count as f32;
+        let beat_span = self.tail_beat - self.head_beat;
+
+        let mut links = Vec::with_capacity(self.links.len());
+        for (i, data) in self.links.iter().enumerate() {
+            let i = i+1;
+            // interpolate spline
+
+            let grid_pos = (spline.position(gap * i as f32) + head_pos).xy();
+            let angle = spline.derivative(gap * i as f32).xy().to_angle() - 90f32.to_radians();
+
+            let orientation = Quat::from_rotation_z(-angle);
+
+            links.push(ChainNoteLink {
+                grid_pos,
+                beat: self.head_beat + (beat_span * (gap * i as f32)),
+                orientation,
+                spawn_orientation: data.spawn_orientation,
+                color: self.color,
+                index: self.index * 5 + i as u32 * 2,
+                dissolve: self.dissolve,
+            });
+        }
+        links
+    }
+}
+impl GameObject for ChainNoteLink {
+    fn beat(&self) -> f32 { self.beat }
+    fn grid_pos(&self) -> Vec2 { self.grid_pos }
+    fn get_orientation(&self) -> Quat { self.orientation }
+    fn do_gravity(&self) -> bool { true }
+    fn do_look(&self) -> bool { true }
+    fn do_spawn_rotation(&self) -> bool { true }
+    fn spawn_orientation(&self) -> Quat { self.spawn_orientation }
+    fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData {
+        GameObjectInstanceData::color_note(
+            clipping_plane,
+            model,
+            self.color.color(cs),
+            self.dissolve,
+            self.index,
+            Vec4::ZERO,
+        )
+    }
+}
+
+struct BezierCurve {
+    p0: Vec3,
+    p1: Vec3,
+    p2: Vec3,
+}
+impl BezierCurve {
+    fn position(&self, t: f32) -> Vec3 {
+        let n = 1. - t;
+        let x = n * n * self.p0.x + 2. * n * t * self.p1.x + t * t * self.p2.x;
+        let y = n * n * self.p0.y + 2. * n * t * self.p1.y + t * t * self.p2.y;
+        let z = n * n * self.p0.z + 2. * n * t * self.p1.z + t * t * self.p2.z;
+        Vec3::new(x, y, z)
+    }
+    fn derivative(&self, t: f32) -> Vec3 {
+        let n = 1. - t;
+        let x = 2. * n * (self.p1.x - self.p0.x) + 2. * t * (self.p2.x - self.p1.x);
+        let y = 2. * n * (self.p1.y - self.p0.y) + 2. * t * (self.p2.y - self.p1.y);
+        let z = 2. * n * (self.p1.z - self.p0.z) + 2. * t * (self.p2.z - self.p1.z);
+        Vec3::new(x, y, z)
+    }
+}
+
 
 impl BeatmapController {
     pub fn new(info: &InfoFile, diff_data: &BeatmapProjectDiff, diff: &BeatmapFile) -> Result<Self, BeatmapDataError> {
@@ -427,6 +574,7 @@ impl BeatmapFile {
         let mut color_notes = Vec::new();
         let mut bomb_notes = Vec::new();
         let mut obstacles = Vec::new();
+        let mut chain_notes = Vec::new();
 
         #[allow(clippy::single_match)]
         match self {
@@ -486,16 +634,45 @@ impl BeatmapFile {
                 }
             },
             Self::V3(v3) => {
+                for chain in v3.chains.iter() {
+                    let index = chain_notes.len() as u32;
+                    let mut links = Vec::with_capacity(chain.slice_count as usize);
+                    for i in 0..chain.slice_count {
+                        links.push(ChainNoteLinkData {
+                            spawn_orientation: get_random_spawn_quat(&mut rng),
+                            index: i as u32,
+                        });
+                    }
+                    chain_notes.push(ChainNote {
+                        spawn_orientation: get_random_spawn_quat(&mut rng),
+                        head_beat: chain.head_beat,
+                        tail_beat: chain.tail_beat,
+                        cut_direction: chain.head_cut_direction,
+                        color: chain.color.into(),
+                        head_grid_pos: Vec2::new(chain.head_line_index, chain.head_line_layer),
+                        tail_grid_pos: Vec2::new(chain.tail_line_index, chain.tail_line_layer),
+                        squish_factor: chain.squish_factor,
+                        links,
+                        dissolve: 0.,
+                        index,
+                    });
+                }
                 for note in v3.color_notes.iter() {
                     let index = color_notes.len() as u32;
                     let color: NoteColor = note.color.into();
+                    let grid_pos = Vec2::new(note.line_index, note.line_layer);
+
+                    if chain_notes.iter().any(|c| c.color == color && c.head_grid_pos == grid_pos && c.head_beat == note.beat) {
+                        continue;
+                    }
+
                     color_notes.push(ColorNote {
                         spawn_orientation: get_random_spawn_quat(&mut rng),
                         beat: note.beat,
                         color,
                         cut_direction: note.cut_direction,
                         angle_offset: 0.,
-                        grid_pos: Vec2::new(note.line_index, note.line_layer),
+                        grid_pos,
                         dissolve: 0.,
                         index,
                     });
@@ -523,16 +700,48 @@ impl BeatmapFile {
                 }
             },
             Self::V4(v4) => {
+                for chain in v4.chains.iter() {
+                    let index = chain_notes.len() as u32;
+                    let Some(head_data) = v4.color_notes_data.get(chain.head_note_metadata_index as usize) else { continue };
+                    let Some(data) = v4.chains_data.get(chain.metadata_index as usize) else { continue };
+                    let mut links = Vec::new();
+                    for i in 0..data.slice_count {
+                        links.push(ChainNoteLinkData {
+                            spawn_orientation: get_random_spawn_quat(&mut rng),
+                            index: i as u32,
+                        });
+                    }
+
+                    chain_notes.push(ChainNote {
+                        spawn_orientation: get_random_spawn_quat(&mut rng),
+                        head_beat: chain.head_beat,
+                        tail_beat: chain.tail_beat,
+                        cut_direction: head_data.cut_direction,
+                        color: head_data.color.into(),
+                        head_grid_pos: Vec2::new(head_data.line_index, head_data.line_layer),
+                        tail_grid_pos: Vec2::new(data.tail_line_index, data.tail_line_layer),
+                        squish_factor: data.squish_factor,
+                        links,
+                        dissolve: 0.,
+                        index,
+                    });
+                }
                 for note in v4.color_notes.iter() {
                     let index = color_notes.len() as u32;
                     let Some(data) = v4.color_notes_data.get(note.metadata_index as usize) else { continue };
+                    let grid_pos = Vec2::new(data.line_index, data.line_layer);
+                    let color: NoteColor = data.color.into();
+
+                    if chain_notes.iter().any(|c| c.color == color && c.head_grid_pos == grid_pos && c.head_beat == note.beat) {
+                        continue;
+                    }
                     color_notes.push(ColorNote {
                         spawn_orientation: get_random_spawn_quat(&mut rng),
                         beat: note.beat,
-                        color: data.color.into(),
+                        color,
                         cut_direction: data.cut_direction,
                         angle_offset: data.angle_offset as f32,
-                        grid_pos: Vec2::new(data.line_index, data.line_layer),
+                        grid_pos,
                         dissolve: 0.,
                         index,
                     });
@@ -568,6 +777,7 @@ impl BeatmapFile {
             color_notes,
             bomb_notes,
             obstacles,
+            chain_notes,
         })
     }
 }
