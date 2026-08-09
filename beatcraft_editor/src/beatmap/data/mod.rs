@@ -546,11 +546,11 @@ pub struct ChainV4 {
     #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub tail_beat: f32,
     #[serde(rename = "hr")]
-    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
-    pub head_rotation_lane: f32,
+    #[serde(default, skip_serializing_if = "is_value_i::<0>")]
+    pub head_rotation_lane: i32,
     #[serde(rename = "tr")]
-    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
-    pub tail_rotation_lane: f32,
+    #[serde(default, skip_serializing_if = "is_value_i::<0>")]
+    pub tail_rotation_lane: i32,
     #[serde(rename = "i")]
     #[serde(default, skip_serializing_if = "is_value_u::<0>")]
     pub head_note_metadata_index: u32,
@@ -581,10 +581,19 @@ pub struct ChainDataV4 {
 #[repr(u8)]
 #[serde(try_from = "u8", into = "u8")]
 pub enum SpawnRotationExecutionTime {
-    Early       = 0,
-    Late        = 1,
+    // Early       = 0,
+    // Late        = 1,
     LegacyEarly = 14,
     LegacyLate  = 15,
+}
+convert_u8! { SpawnRotationExecutionTime: 14 | 15 }
+impl SpawnRotationExecutionTime {
+    pub fn is_early(&self) -> bool {
+        matches!(self, Self::LegacyEarly)
+    }
+    pub fn is_late(&self) -> bool {
+        matches!(self, Self::LegacyLate)
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -600,8 +609,42 @@ pub enum SpawnRotationAngle {
     CW45  = 6,
     CW60  = 7,
 }
+impl TryFrom<u8>for SpawnRotationAngle {
+    type Error = BeatmapDataError;
+    fn try_from(value: u8) -> Result<Self,Self::Error>{
+        Ok(match value {
+            0..=7 => unsafe {
+                std::mem::transmute::<u8,Self>(value)
+            },
+            _ => return Err(BeatmapDataError::ToEnum {
+                enum_name: stringify!(SpawnRotationAngle),val: value as i32,
+            })
+        })
+    }
+}
+impl From<SpawnRotationAngle>for u8 {
+    fn from(value: SpawnRotationAngle) -> Self {
+        unsafe {
+            std::mem::transmute::<SpawnRotationAngle,u8>(value)
+        }
+    }
+}
+impl SpawnRotationAngle {
+    pub fn get_degrees(&self) -> i32 {
+        match self {
+            SpawnRotationAngle::CCW60 => -60,
+            SpawnRotationAngle::CCW45 => -45,
+            SpawnRotationAngle::CCW30 => -30,
+            SpawnRotationAngle::CCW15 => -15,
+            SpawnRotationAngle::CW15 => 15,
+            SpawnRotationAngle::CW30 => 30,
+            SpawnRotationAngle::CW45 => 45,
+            SpawnRotationAngle::CW60 => 60,
+        }
+    }
+}
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpawnRotationEventV2 {
     #[serde(rename = "_time")]
@@ -927,8 +970,6 @@ convert_u8! { Color: 0 | 1 }
 convert_u8! { CutDirection: 0..=8 }
 convert_u8! { ObstacleV2Type: 0..=2 }
 convert_u8! { ArcMidAnchorMode: 0..=2 }
-convert_u8! { SpawnRotationExecutionTime: 0 | 1 | 14 | 15 }
-convert_u8! { SpawnRotationAngle: 0..=7 }
 
 
 use serde::{Deserializer, Serializer};

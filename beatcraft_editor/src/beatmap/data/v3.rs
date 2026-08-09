@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::easing::Easing;
 
 use super::v2::{ColorBoostValueV2, GagaSideV2, HydraulicsTypeV2, LightEventTypeV2, LightEventValueV2, RingLightEventTypeV2, SpinningLaserSideV2};
-use super::{ArcV3, BeatmapDataError, BombNoteV3, ChainV3, Color, ColorNoteV3, LegacyBPMEventV3, LegacySpawnRotationEventV3, MapVersion, ObstacleV3, Sentinel, SpawnRotationEventV3, convert_u8};
+use super::{ArcV3, BeatmapDataError, BombNoteV3, ChainV3, Color, ColorNoteV3, LegacyBPMEventV3, LegacySpawnRotationEventV3, MapVersion, ObstacleV3, Sentinel, SpawnRotationEventV3, SpawnRotationExecutionTime, convert_u8};
 use super::{bool_u8_serde, easing_as_i8};
 use super::{default_f, default_i, default_u, is_value_i, is_value_u, is_value_f};
 
@@ -17,13 +17,13 @@ pub struct BpmEventV3 {
     pub bpm: f32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RotationEventV3 {
     #[serde(rename = "b")]
     pub beat: f32,
     #[serde(rename = "e")]
-    pub e: u8,
+    pub execution_time: SpawnRotationExecutionTime,
     #[serde(rename = "r")]
     pub rotation: f32,
 }
