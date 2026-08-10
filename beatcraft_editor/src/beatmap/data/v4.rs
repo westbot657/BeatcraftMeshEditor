@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{ArcDataV4, ArcV4, BombNoteDataV4, BombNoteV4, ChainDataV4, ChainV4, ColorNoteDataV4, ColorNoteV4, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion, NJSEventDataV4, NJSEventV4, ObstacleDataV4, ObstacleV4, SpawnRotationEventDataV4, SpawnRotationEventV4};
+use super::{ArcDataV4, ArcV4, BombNoteDataV4, BombNoteV4, BpmRegion, ChainDataV4, ChainV4, ColorNoteDataV4, ColorNoteV4, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion, NJSEventDataV4, NJSEventV4, ObstacleDataV4, ObstacleV4, SpawnRotationEventDataV4, SpawnRotationEventV4};
 
 
 
@@ -103,5 +103,43 @@ pub struct DifficultyBeatmapV4 {
 pub struct MapAuthorsV4 {
     pub mappers: Vec<String>,
     pub lighters: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioDataFileV4 {
+    pub version: MapVersion,
+    pub song_checksum: String,
+    pub song_sample_count: usize,
+    pub song_frequency: u32,
+    pub bpm_data: Vec<BpmRegionV4>,
+
+    // I swear these things are buggy in base game anyways so idc about them rn.
+    lufs_data: Vec<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BpmRegionV4 {
+    #[serde(rename = "si")]
+    pub start_index: usize,
+    #[serde(rename = "ei")]
+    pub end_index: usize,
+    #[serde(rename = "sb")]
+    pub start_beat: f32,
+    #[serde(rename = "eb")]
+    pub end_beat: f32,
+}
+
+impl From<&BpmRegionV4> for BpmRegion {
+    fn from(value: &BpmRegionV4) -> Self {
+        Self {
+            start_sample: value.start_index,
+            end_sample: value.end_index,
+            start_beat: value.start_beat,
+            end_beat: value.end_beat,
+        }
+    }
 }
 

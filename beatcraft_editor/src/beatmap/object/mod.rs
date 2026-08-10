@@ -9,24 +9,8 @@ use crate::easing::Easing;
 use crate::render::GameObjectInstanceData;
 
 use super::BeatmapProjectDiff;
-use super::data::{BeatmapDataError, BeatmapFile, Color, CutDirection, InfoFile, v2};
+use super::data::{BeatmapDataError, BeatmapFile, BpmRegion, Color, CutDirection, InfoFile, v2};
 use super::render::BeatmapRenderer;
-
-pub struct RuntimeData {
-    pub njs: f32,
-    pub bpm: f32,
-    pub hjd: f32,
-    pub jd: f32,
-    pub color_scheme: ColorScheme,
-}
-
-pub struct BeatmapController {
-    pub runtime_data: RuntimeData,
-    pub color_notes: Vec<ColorNote>,
-    pub bomb_notes: Vec<BombNote>,
-    pub obstacles: Vec<Obstacle>,
-    pub chain_notes: Vec<ChainNote>,
-}
 
 const JUMP_FAR_Z: f32 = 500.;
 
@@ -46,9 +30,35 @@ where
 impl Lerp<f32> for f32 {}
 impl Lerp<f64> for f64 {}
 
+pub struct BeatmapController {
+    pub runtime_data: RuntimeData,
+    pub color_notes: Vec<ColorNote>,
+    pub bomb_notes: Vec<BombNote>,
+    pub obstacles: Vec<Obstacle>,
+    pub chain_notes: Vec<ChainNote>,
+}
+
+pub struct RuntimeData {
+    pub njs: f32,
+    bpm: f32,
+    pub hjd: f32,
+    pub jd: f32,
+    pub color_scheme: ColorScheme,
+    pub bpm_regions: Vec<BpmRegion>,
+    pub sample_count: usize,
+    pub sample_rate: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TimeUnit {
+    Beat(f32),
+    Seconds(f32),
+    Sample(usize),
+}
+
 impl RuntimeData {
 
-    pub fn new(njs: f32, bpm: f32, spawn_offset: f32) -> Self {
+    pub fn new(njs: f32, bpm: f32, spawn_offset: f32, bpm_regions: Vec<BpmRegion>, sample_count: usize, sample_rate: u32) -> Self {
         let (hjd, jd) = Self::calc_hjd(njs, bpm, spawn_offset);
         Self {
             njs,
@@ -56,7 +66,56 @@ impl RuntimeData {
             hjd,
             jd,
             color_scheme: Default::default(),
+            bpm_regions,
+            sample_count,
+            sample_rate,
         }
+    }
+
+    pub fn seconds_to_beat(&self, seconds: f32) -> f32 {
+        let sample = (seconds * self.sample_rate as f32) as usize;
+        for BpmRegion { start_sample, end_sample, start_beat, end_beat } in self.bpm_regions.iter() {
+            if (*start_sample..=*end_sample).contains(&sample) {
+                let x = f32::inv_lerp(*start_sample as f32, *end_sample as f32, sample as f32);
+                return f32::lerp(*start_beat, *end_beat, x);
+            }
+        }
+        seconds / (60. / self.bpm)
+    }
+
+    pub fn beat_to_seconds(&self, beat: f32) -> f32 {
+        let sample = self.beat_to_sample(beat);
+        sample as f32 / self.sample_rate as f32
+    }
+
+    fn beat_to_sample(&self, beat: f32) -> usize {
+        for BpmRegion { start_sample, end_sample, start_beat, end_beat } in self.bpm_regions.iter() {
+            if (*start_beat..=*end_beat).contains(&beat) {
+                let x = f32::inv_lerp(*start_beat, *end_beat, beat);
+                return f32::lerp(*start_sample as f32, *end_sample as f32, x) as usize;
+            }
+        }
+        let s = beat * (60. / self.bpm);
+        (s * self.sample_rate as f32) as usize
+    }
+
+    pub fn bpm(&self, time: TimeUnit) -> f32 {
+        let time_samples = match time {
+            TimeUnit::Sample(s) => s,
+            TimeUnit::Seconds(s) => (s * self.sample_rate as f32) as usize,
+            TimeUnit::Beat(b) => self.beat_to_sample(b),
+        };
+
+        for BpmRegion { start_sample, end_sample, start_beat, end_beat } in self.bpm_regions.iter() {
+            if (*start_sample..=*end_sample).contains(&time_samples) {
+                let seconds = (*end_sample - *start_sample) as f32 / self.sample_rate as f32;
+                let beats = *end_beat - *start_beat;
+                return beats / seconds * 60.;
+            }
+        }
+        let seconds = self.sample_count as f32 / self.sample_rate as f32;
+
+        seconds / (60. / self.bpm)
     }
 
     fn calc_hjd(njs: f32, bpm: f32, spawn_offset: f32) -> (f32, f32) {
@@ -574,14 +633,14 @@ impl BezierCurve {
 
 
 impl BeatmapController {
-    pub fn new(info: &InfoFile, diff_data: &BeatmapProjectDiff, diff: &BeatmapFile) -> Result<Self, BeatmapDataError> {
+    pub fn new(info: &InfoFile, diff_data: &BeatmapProjectDiff, diff: &BeatmapFile, bpm_regions: Vec<BpmRegion>, sample_count: usize, sample_rate: u32) -> Result<Self, BeatmapDataError> {
 
-        diff.to_controller(info, diff_data)
+        diff.to_controller(info, diff_data, bpm_regions, sample_count, sample_rate)
     }
 }
 
 impl BeatmapFile {
-    fn to_controller(&self, info: &InfoFile, diff_data: &BeatmapProjectDiff) -> Result<BeatmapController, BeatmapDataError> {
+    fn to_controller(&self, info: &InfoFile, diff_data: &BeatmapProjectDiff, bpm_regions: Vec<BpmRegion>, sample_count: usize, sample_rate: u32) -> Result<BeatmapController, BeatmapDataError> {
 
         let mut rng = rand::rng();
         let mut color_notes = Vec::new();
@@ -865,7 +924,7 @@ impl BeatmapFile {
         }
 
         Ok(BeatmapController {
-            runtime_data: RuntimeData::new(diff_data.njs, info.bpm(), diff_data.njs_offset),
+            runtime_data: RuntimeData::new(diff_data.njs, info.bpm(), diff_data.njs_offset, bpm_regions, sample_count, sample_rate),
             color_notes,
             bomb_notes,
             obstacles,

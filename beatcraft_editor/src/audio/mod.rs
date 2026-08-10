@@ -325,7 +325,7 @@ pub struct Audio {
     pending_play: Arc<RwLock<bool>>,
     src_handle: u32,
     channels: u16,
-    sample_rate: u32,
+    pub sample_rate: u32,
     fx_filter: u32,
 
     spectrogram_tex_data: Arc<RwLock<Vec<f32>>>,
@@ -386,14 +386,17 @@ impl Audio {
                 let spec_data = Arc::clone(&data);
                 let spec_cursor = Arc::clone(&pb_cursor);
                 let sample_rate = audio_info.sample_rate;
+                let dcf2 = Arc::clone(&decode_finished);
                 let (spectrogram_tex_data, spectrogram_columns_done, spectrogram_freq_bins, spectrogram_finished, spectrogram_hop) =
                     Self::spawn_spectrogram_task(audio_sys, spec_data, spec_cursor, decode_finished, audio_info.channels, sample_rate);
 
                 let data2 = Arc::clone(&data);
                 let loaded2 = Arc::clone(&loaded);
                 let mut audio_info2 = AudioSystem::open_decoder(path)?;
+                let df2 = Arc::new(RwLock::new(0));
+                let sc2 = Arc::clone(&sample_count);
                 audio_sys.add_task(Box::new(move || {
-                    Self::decode_task_loop(&data2, &sections, &pb_cursor, &seek_target, &loaded2, audio_info.channels, &mut audio_info2)
+                    Self::decode_task_loop(&data2, &sections, &pb_cursor, &seek_target, &loaded2, audio_info.channels, &mut audio_info2, &sc2, &df2, &dcf2)
                 }));
 
                 let audio = Arc::new(Self {
@@ -467,8 +470,9 @@ impl Audio {
                 let loaded2 = Arc::clone(&loaded);
                 let sc2 = Arc::clone(&sample_count);
                 let dcf2 = Arc::clone(&decode_finished);
+                let df2 = Arc::new(RwLock::new(0));
                 audio_sys.add_task(Box::new(move || {
-                    Self::load_full(&data2, &loaded2, &load_pos, &mut audio_info, &sc2, &dcf2)
+                    Self::load_full(&data2, &loaded2, &load_pos, &mut audio_info, &sc2, &df2, &dcf2)
                 }));
 
                 let (spectrogram_tex_data, spectrogram_columns_done, spectrogram_freq_bins, spectrogram_finished, spectrogram_hop) =
@@ -532,7 +536,7 @@ impl Audio {
                     *playback_position += take;
                 }
             },
-            AudioSource::Full { load_position, playback_position, free_buffers, queued_sizes, played_samples, all_buffers } => {
+            AudioSource::Full { load_position, playback_position, free_buffers, queued_sizes, played_samples, .. } => {
                 unsafe {
                     let mut processed = [0i32];
                     al::alGetSourcei(self.src_handle, al::AL_BUFFERS_PROCESSED, processed.as_mut_ptr());
@@ -581,6 +585,10 @@ impl Audio {
             }
         }
 
+    }
+
+    pub fn sample_count(&self) -> Option<usize> {
+        *self.sample_count.read()
     }
 
     pub fn play(&self) -> Result<(), PlaybackError> {
@@ -775,11 +783,13 @@ impl Audio {
         load_pos: &Arc<RwLock<usize>>,
         info: &mut AudioInfo,
         sample_count: &Arc<RwLock<Option<usize>>>,
+        decoded_frames: &Arc<RwLock<usize>>,
         decode_finished: &Arc<RwLock<bool>>,
     ) -> TaskAction {
 
         if !{ *loaded.read() } {
             *decode_finished.write() = true;
+            *sample_count.write() = Some(*decoded_frames.read());
             return TaskAction::Remove;
         }
 
@@ -788,6 +798,7 @@ impl Audio {
                 Ok(Some(packet)) => packet,
                 Ok(None) => {
                     *decode_finished.write() = true;
+                    *sample_count.write() = Some(*decoded_frames.read());
                     return TaskAction::Remove
                 },
                 Err(symphonia::core::errors::Error::ResetRequired) => {
@@ -796,6 +807,7 @@ impl Audio {
                 Err(err) => {
                     tracing::error!(target: DB_AUDIO, "Audio reader encountered an unrecoverable error: {err}");
                     *decode_finished.write() = true;
+                    *sample_count.write() = Some(*decoded_frames.read());
                     return TaskAction::Remove;
                 }
             };
@@ -818,6 +830,9 @@ impl Audio {
                 let slice = &mut dat[(end-size)..];
                 buf.copy_to_slice_interleaved(slice);
                 *load_pos.write() += size;
+
+                let frames = size / info.channels as usize;
+                *decoded_frames.write() += frames; // NEW
             }
             Err(symphonia::core::errors::Error::IoError(err)) => {
                 tracing::warn!(target: DB_AUDIO, "IO Error during decode: {err}");
@@ -829,7 +844,6 @@ impl Audio {
                 tracing::error!(target: DB_AUDIO, "Audio decoder encountered an unrecoverable error: {err}")
             }
         }
-
 
         TaskAction::None
     }
@@ -886,8 +900,15 @@ impl Audio {
         loaded: &Arc<RwLock<bool>>,
         channels: u16,
         info: &mut AudioInfo,
+        sample_count: &Arc<RwLock<Option<usize>>>,
+        decoded_frames: &Arc<RwLock<usize>>,
+        decode_finished: &Arc<RwLock<bool>>,
     ) -> TaskAction {
-        if !*loaded.read() { return TaskAction::Remove; }
+        if !*loaded.read() {
+            *decode_finished.write() = true;
+            *sample_count.write() = Some(*decoded_frames.read());
+            return TaskAction::Remove;
+        }
 
         if let Some(target_sample) = seek_target.write().take() {
             let target_frame = target_sample / channels as usize;
@@ -912,9 +933,18 @@ impl Audio {
         let packet = loop {
             let packet = match info.format_reader.next_packet() {
                 Ok(Some(p)) => p,
-                Ok(None) => return TaskAction::Remove,
+                Ok(None) => {
+                    *decode_finished.write() = true;
+                    *sample_count.write() = Some(*decoded_frames.read());
+                    return TaskAction::Remove
+                },
                 Err(symphonia::core::errors::Error::ResetRequired) => unimplemented!("why do I have to deal with OGG"),
-                Err(err) => { tracing::error!(target: DB_AUDIO, "{err}"); return TaskAction::Remove; }
+                Err(err) => {
+                    tracing::error!(target: DB_AUDIO, "{err}");
+                    *decode_finished.write() = true;
+                    *sample_count.write() = Some(*decoded_frames.read());
+                    return TaskAction::Remove;
+                }
             };
             while !info.format_reader.metadata().is_latest() { info.format_reader.metadata().pop(); }
             if packet.track_id != info.track_id { continue; }
@@ -932,6 +962,7 @@ impl Audio {
             drop(dat);
 
             *decode_cursor.write() = end;
+            *decoded_frames.write() += size / channels as usize;
             let mut ranges = loaded_ranges.write();
             ranges.push((start, end));
             Self::merge_ranges(&mut ranges);

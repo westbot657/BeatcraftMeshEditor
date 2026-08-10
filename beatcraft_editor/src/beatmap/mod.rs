@@ -11,10 +11,11 @@ use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
 use crate::data::LightMeshData;
 use crate::light_mesh::LightMesh;
 use crate::render::{GpuMesh, GridType, MeshDrawCall, Renderer};
-use crate::{DB_DATA, DB_LOGIC, DB_MAIN, RefDuper, UnsafeMutRef, editor, get_data_folder};
+use crate::{DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, RefDuper, UnsafeMutRef, editor, get_data_folder};
 use crate::editor::{App, EditorContext, RoutineAction, ViewStyle};
 
 use self::data::v2::{CharacteristicSetV2, DifficultyBeatmapV2};
+use self::data::v4::{AudioDataFileV4, AudioInfoV4};
 use self::data::{BeatmapFile, InfoFile, MapCharacteristic, MapDifficulty};
 use self::object::{BeatmapController, GameObject, ObjectType};
 
@@ -66,6 +67,7 @@ pub struct BeatmapProject {
     pub info_path: Option<PathBuf>,
     pub info: Option<InfoFile>,
     pub audio_info_path: Option<PathBuf>,
+    pub audio_info: Option<AudioDataFileV4>,
     pub audio: Option<std::sync::Arc<Audio>>,
     pub cover_image: Option<PathBuf>,
     pub sets: Vec<BeatmapProjectSet>,
@@ -203,7 +205,8 @@ impl BeatmapEditor {
 
         let mut sets = Vec::new();
         let mut cover_image = None;
-        let audio_info_path = None;
+        let mut audio_info_path = None;
+        let mut audio_info = None;
         let mut info_data = None;
         let mut audio_path = None;
 
@@ -235,12 +238,20 @@ impl BeatmapEditor {
                             diffs,
                         });
                     }
+                    audio_info_path = Some(PathBuf::from(&v4.audio.audio_data_filename));
                     cover_image = Some(PathBuf::from(&v4.cover_image_filename));
                     audio_path = Some(PathBuf::from(&v4.audio.song_filename));
                 }
             }
 
             info_data = Some(info);
+        }
+
+        if let Some(path) = audio_info_path.as_deref() {
+            let path = map.join(path);
+            let data = std::fs::read(path)?;
+            let info: AudioDataFileV4 = serde_json::from_slice(&data)?;
+            audio_info = Some(info);
         }
 
         let mut audio = None;
@@ -255,6 +266,7 @@ impl BeatmapEditor {
             info_path: info_file,
             info: info_data,
             audio_info_path,
+            audio_info,
             audio,
             cover_image,
             sets,
@@ -350,9 +362,7 @@ impl App {
                                 && let Some(audio) = map.audio.as_ref()
                                 && let Some(length_secs) = audio.length_seconds()
                             {
-                                let bpm = controller.runtime_data.bpm;
-                                let bps = bpm / 60.0;
-                                let length_beats = length_secs * bps;
+                                let length_beats = controller.runtime_data.seconds_to_beat(length_secs);
                                 let cursor = self.render.renderer.beatmap.beat() / length_beats;
                                 self.render.renderer.beatmap.spectrogram_zoom(scroll, cursor);
                             }
@@ -371,14 +381,12 @@ impl App {
                 {
                     let frac_x = ((pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
 
-                    let bpm = controller.runtime_data.bpm;
-                    let bps = bpm / 60.0;
-                    let length_beats = length_secs * bps;
+                    let length_beats = controller.runtime_data.seconds_to_beat(length_secs);
 
                     let (start, end) = self.render.renderer.beatmap.spectrogram_range();
                     let u = start + (end - start) * frac_x;
                     let beat = u * length_beats;
-                    let seek_secs = beat / bps;
+                    let seek_secs = controller.runtime_data.beat_to_seconds(beat);
 
                     let _ = audio.seek(seek_secs);
                     self.render.renderer.beatmap.seek(beat);
@@ -394,8 +402,7 @@ impl App {
                             && let Some(audio) = map.audio.as_ref()
                             && let Some(length) = audio.length_seconds() {
                                 let gl = painter.gl();
-                                let bpm = controller.runtime_data.bpm;
-                                let length = bpm / 60. * length;
+                                let length = controller.runtime_data.seconds_to_beat(length);
                                 s.render.renderer.beatmap.render_spectrogram_ui(
                                     &mut s.ref_mut().render.renderer, gl, audio, length,
                                 );
@@ -453,8 +460,6 @@ impl App {
                 //
             });
 
-        let screen = ctx.content_rect().size();
-        let screen = (screen.x, screen.y);
         egui::CentralPanel::default()
             .frame(egui::Frame::default().fill(ctx.theme().default_visuals().panel_fill).inner_margin(0.))
             .show(ctx, |ui| {
@@ -466,127 +471,98 @@ impl App {
                         ui.label("TODO: recent map selector");
                     },
                     Some(map) => {
-                        if map.controller.is_none() {
-                            ui.label(map.folder.to_string_lossy().as_str());
+                        match map.controller.as_ref() {
+                            None => {
+                                ui.label(map.folder.to_string_lossy().as_str());
 
-                            #[allow(clippy::single_match)]
-                            match map.info.as_mut() {
-                                Some(i) => {
-                                    match i {
-                                        InfoFile::V2(v2) => {
-                                            ui.label("Info V2");
-                                            ui.label(&v2.song_name);
-                                            ui.label(&v2.song_sub_name);
-                                            ui.horizontal(|ui| {
+                                #[allow(clippy::single_match)]
+                                match map.info.as_mut() {
+                                    Some(i) => {
+                                        match i {
+                                            InfoFile::V2(v2) => {
+                                                ui.label("Info V2");
+                                                ui.label(&v2.song_name);
+                                                ui.label(&v2.song_sub_name);
+                                                ui.horizontal(|ui| {
+                                                    ui.label(format!(
+                                                        "Artist: {}  BPM: {:.2}  Mappers: {}",
+                                                        v2.song_author_name,
+                                                        v2.bpm,
+                                                        v2.level_author_name
+                                                    ));
+                                                });
+                                            },
+                                            InfoFile::V4(v4) => {
+                                                ui.label("Info V4");
+                                                ui.label(&v4.song.title);
+                                                ui.label(&v4.song.sub_title);
                                                 ui.label(format!(
-                                                    "Artist: {}  BPM: {:.2}  Mappers: {}",
-                                                    v2.song_author_name,
-                                                    v2.bpm,
-                                                    v2.level_author_name
+                                                    "Artist: {}  BPM: {:.2}",
+                                                    v4.song.author,
+                                                    v4.audio.bpm,
                                                 ));
-                                            });
-                                        },
-                                        InfoFile::V4(v4) => {
-                                            ui.label("Info V4");
-                                            ui.label(&v4.song.title);
-                                            ui.label(&v4.song.sub_title);
-                                            ui.label(format!(
-                                                "Artist: {}  BPM: {:.2}",
-                                                v4.song.author,
-                                                v4.audio.bpm,
-                                            ));
+                                            }
                                         }
-                                    }
-                                    ui.add_space(15.);
-                                },
-                                None => {},
-                            }
+                                        ui.add_space(15.);
+                                    },
+                                    None => {},
+                                }
 
-                            ui.horizontal(|ui| {
-                                for set in map.sets.iter_mut() {
-                                    ui.allocate_ui_with_layout(
-                                        [200., 50.].into(), egui::Layout::top_down(egui::Align::Min),
-                                        |ui| {
-                                            ui.label(set.set.display_name());
-                                            ui.separator();
-                                            for diff in set.diffs.iter_mut() {
-                                                if ui.button(diff.difficulty.display_name()).clicked() {
-                                                    let path = diff.beatmap_file.as_deref().unwrap();
-                                                    let path = map.folder.join(path);
-                                                    let data = std::fs::read(path).unwrap();
-                                                    match serde_json::from_slice::<BeatmapFile>(&data) {
-                                                        Ok(diff2) => {
-                                                            map.controller = Some(BeatmapController::new(
-                                                                map.info.as_ref().unwrap(),
-                                                                diff,
-                                                                &diff2
-                                                            ).unwrap());
-                                                        }
-                                                        Err(e) => {
-                                                            tracing::error!(target: DB_DATA, "Error loading beatmap file:\n{}", e);
-                                                        }
+                                draw_map_diffs(ui, map);
+                            },
+                            Some(controller) => {
+                                let rect = ui.available_rect_before_wrap();
+                                self.state.vp_rect = rect;
+
+                                let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
+                                self.handle_3d_input(&resp, ctx, gl);
+
+                                if let Some(audio) = map.audio.as_ref()
+                                    && audio.is_playing() {
+                                        let sec = audio.position_seconds();
+                                        let beat = controller.runtime_data.seconds_to_beat(sec);
+                                        self.render.renderer.beatmap.seek(beat);
+                                    }
+
+                                let s = unsafe { UnsafeMutRef::new(self) };
+
+                                ui.painter().add(egui::PaintCallback {
+                                    rect,
+                                    callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
+                                        move |_info, painter| {
+                                            let gl = painter.gl();
+                                            unsafe {
+                                                let w = rect.width();
+                                                let h = rect.height();
+                                                let view = s.ref_mut().cam().view_mat();
+                                                let proj = s.ref_mut().cam().proj_mat(w, h);
+
+                                                match s.state.view_style {
+                                                    editor::ViewStyle::Beatcraft { blackout_sky: true } => {
+                                                        gl.clear_color(0., 0., 0., 1.);
+                                                    }
+                                                    _ => {
+                                                        gl.clear_color(0.07, 0.08, 0.11, 1.);
+                                                        gl.bind_framebuffer(glow::FRAMEBUFFER, None);
                                                     }
                                                 }
-                                            }
-                                        }
-                                    );
-                                }
-                            });
 
-                        } else {
-                            let rect = ui.available_rect_before_wrap();
-                            self.state.vp_rect = rect;
+                                                gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+                                                gl.enable(glow::DEPTH_TEST);
+                                                gl.depth_mask(true);
 
-                            let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
-                            self.handle_3d_input(&resp, ctx, gl);
 
-                            if let Some(audio) = map.audio.as_ref()
-                                && audio.is_playing() {
-                                    let sec = audio.position_seconds();
-                                    let beat = sec * (map.info.as_ref().unwrap().bpm() / 60.);
-                                    self.render.renderer.beatmap.seek(beat);
-                                }
+                                                draw_map_gl(&s, gl, &view, &proj, (w as i32, h as i32));
 
-                            let s = unsafe { UnsafeMutRef::new(self) };
-
-                            ui.painter().add(egui::PaintCallback {
-                                rect,
-                                callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
-                                    move |_info, painter| {
-                                        let gl = painter.gl();
-                                        unsafe {
-                                            let w = rect.width();
-                                            let h = rect.height();
-                                            let view = s.ref_mut().cam().view_mat();
-                                            let proj = s.ref_mut().cam().proj_mat(w, h);
-
-                                            match s.state.view_style {
-                                                editor::ViewStyle::Beatcraft { blackout_sky: true } => {
-                                                    gl.clear_color(0., 0., 0., 1.);
-                                                }
-                                                _ => {
-                                                    gl.clear_color(0.07, 0.08, 0.11, 1.);
-                                                    gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+                                                if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
+                                                    s.render.renderer.draw_map_grid(gl, &view, &proj);
                                                 }
                                             }
 
-                                            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
-                                            gl.enable(glow::DEPTH_TEST);
-                                            gl.depth_mask(true);
-
-
-                                            draw_map_gl(&s, gl, &view, &proj, (w as i32, h as i32), screen);
-
-                                            if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
-                                                s.render.renderer.draw_map_grid(gl, &view, &proj);
-                                            }
                                         }
-
-                                    }
-                                ))
-                            });
-
-
+                                    ))
+                                });
+                            },
                         }
                     },
                 }
@@ -600,11 +576,61 @@ impl App {
     }
 }
 
+fn draw_map_diffs(ui: &mut egui::Ui, map: &mut BeatmapProject) {
+    ui.horizontal(|ui| {
+        for set in map.sets.iter_mut() {
+            ui.allocate_ui_with_layout(
+                [200., 50.].into(),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.label(set.set.display_name());
+                    ui.separator();
+                    for diff in set.diffs.iter_mut() {
+                        if ui.button(diff.difficulty.display_name()).clicked() {
+                            let path = diff.beatmap_file.as_deref().unwrap();
+                            let path = map.folder.join(path);
+                            let data = std::fs::read(path).unwrap();
+                            match serde_json::from_slice::<BeatmapFile>(&data) {
+                                Ok(diff2) => {
+                                    if let Some(audio) = map.audio.as_ref() {
+                                        if let Some(sample_count) = audio.sample_count() {
+                                            let bpm_regions = match map.audio_info.as_ref() {
+                                                None => Vec::new(),
+                                                Some(info) => {
+                                                    info.bpm_data.iter().map(Into::into).collect()
+                                                }
+                                            };
+                                            map.controller = Some(BeatmapController::new(
+                                                map.info.as_ref().unwrap(),
+                                                diff,
+                                                &diff2,
+                                                bpm_regions,
+                                                sample_count,
+                                                audio.sample_rate,
+                                            ).unwrap());
+                                        } else {
+                                            tracing::warn!(target: DB_AUDIO, "Audio sample_count is None");
+                                        }
+
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!(target: DB_DATA, "Error loading beatmap file:\n{}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+            );
+        }
+    });
+
+}
+
 fn draw_map_gl(
     s: &UnsafeMutRef<App>, gl: &glow::Context,
     view: &Mat4, proj: &Mat4,
     window: (i32, i32),
-    screen: (f32, f32),
 ) {
 
     let controller = s.ref_mut().map_editor.map.as_mut().unwrap().controller.as_mut().unwrap();
