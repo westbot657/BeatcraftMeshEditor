@@ -249,11 +249,11 @@ impl BeatmapRenderer {
         renderer: &mut Renderer,
         gl: &glow::Context,
         audio: &Audio,
-        length_beats: f32,
+        second: f32,
+        length_seconds: f32,
     ) {
         unsafe {
-            let beat = self.beat();
-            let cursor = beat / length_beats;
+            let cursor = second / length_seconds;
             renderer.beatmap.spectrogram_center(cursor);
             let program = self.spectrogram_ui_shader;
             gl.use_program(Some(program));
@@ -261,7 +261,7 @@ impl BeatmapRenderer {
 
             let Some(tex) = audio.get_spectrogram_tex(gl) else { return };
             let start = self.spectrogram_ui_offset;
-            let end = start + (0f32.lerp(length_beats, self.spectrogram_ui_zoom) / length_beats);
+            let end = start + (0f32.lerp(length_seconds, self.spectrogram_ui_zoom) / length_seconds);
             let coverage = audio.spectrogram_synced_coverage();
 
             renderer.set_float(gl, program, "u_start", start);

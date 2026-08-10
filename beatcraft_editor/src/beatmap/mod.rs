@@ -381,12 +381,10 @@ impl App {
                 {
                     let frac_x = ((pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
 
-                    let length_beats = controller.runtime_data.seconds_to_beat(length_secs);
-
                     let (start, end) = self.render.renderer.beatmap.spectrogram_range();
                     let u = start + (end - start) * frac_x;
-                    let beat = u * length_beats;
-                    let seek_secs = controller.runtime_data.beat_to_seconds(beat);
+                    let seek_secs = length_secs * u;
+                    let beat = controller.runtime_data.seconds_to_beat(seek_secs);
 
                     let _ = audio.seek(seek_secs);
                     self.render.renderer.beatmap.seek(beat);
@@ -398,13 +396,13 @@ impl App {
                     callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
                         move |_info, painter| {
                             if let Some(map) = s.map_editor.map.as_ref()
-                            && let Some(controller) = map.controller.as_ref()
+                            //&& let Some(controller) = map.controller.as_ref()
                             && let Some(audio) = map.audio.as_ref()
                             && let Some(length) = audio.length_seconds() {
                                 let gl = painter.gl();
-                                let length = controller.runtime_data.seconds_to_beat(length);
+                                let sec = audio.position_seconds();
                                 s.render.renderer.beatmap.render_spectrogram_ui(
-                                    &mut s.ref_mut().render.renderer, gl, audio, length,
+                                    &mut s.ref_mut().render.renderer, gl, audio, sec, length,
                                 );
                             }
                         }

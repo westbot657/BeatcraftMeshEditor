@@ -1483,13 +1483,14 @@ impl App {
             EditorContext::Map(MapEditorContext::Beatmap) => {
                 if input.key_pressed(Key::Space) {
                     if let Some(map) = self.map_editor.map.as_ref()
+                    && let Some(controller) = map.controller.as_ref()
                     && let Some(audio) = map.audio.as_ref() {
                         if audio.is_playing() {
                             audio.pause();
                         } else {
                             tracing::debug!(target: DB_AUDIO, "seeking to map");
                             let beat = self.render.renderer.beatmap.beat();
-                            let sec = beat / (map.info.as_ref().unwrap().bpm() / 60.);
+                            let sec = controller.runtime_data.beat_to_seconds(beat);
                             if audio.seek(sec).is_ok() {
                                 let _ = audio.play();
                             }
