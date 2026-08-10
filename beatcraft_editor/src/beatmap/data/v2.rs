@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{ArcV2, BPMEventV2, BeatmapDataError, BombNoteV2, ColorNoteV2, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion, ObstacleV2, RGBAColor, Sentinel, SpawnRotationEventV2, convert_u8};
+use super::{ArcV2, BPMEventV2, BeatmapDataError, BombNoteV2, BpmRegion, ColorNoteV2, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion, ObstacleV2, RGBAColor, Sentinel, SpawnRotationEventV2, convert_u8};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -334,6 +334,43 @@ pub struct DifficultyBeatmapV2 {
     pub environment_name_index: Option<u32>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AudioDataFileV2 {
+    #[serde(rename = "_version")]
+    pub version: MapVersion,
+    #[serde(rename = "_songSampleCount")]
+    pub sample_count: usize,
+    #[serde(rename = "_songFrequency")]
+    pub frequency: u32,
+    #[serde(rename = "_regions")]
+    pub bpm_regions: Vec<BpmRegionV2>,
+}
+
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BpmRegionV2 {
+    #[serde(rename = "_startSampleIndex")]
+    pub start_index: usize,
+    #[serde(rename = "_endSampleIndex")]
+    pub end_index: usize,
+    #[serde(rename = "_startBeat")]
+    pub start_beat: f32,
+    #[serde(rename = "_endBeat")]
+    pub end_beat: f32,
+}
+
+impl From<&BpmRegionV2> for BpmRegion {
+    fn from(value: &BpmRegionV2) -> Self {
+        Self {
+            start_sample: value.start_index,
+            end_sample: value.end_index,
+            start_beat: value.start_beat,
+            end_beat: value.end_beat,
+        }
+    }
+}
 
 // implementations
 

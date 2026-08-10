@@ -744,6 +744,7 @@ pub struct NJSEventDataV4 {
     pub njs_diff: f32,
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct BpmRegion {
     pub start_sample: usize,
     pub end_sample: usize,
@@ -904,6 +905,14 @@ pub enum BeatmapFile {
     V4(BeatmapFileV4),
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
+pub enum AudioDataFile {
+    V2(AudioDataFileV2),
+    V4(AudioDataFileV4),
+}
+
 impl InfoFile {
     pub fn bpm(&self) -> f32 {
         match self {
@@ -918,6 +927,15 @@ impl Color {
         match self {
             Color::Red => Vec4::new(0.749, 0.184, 0.184, 1.),
             Color::Blue => Vec4::new(0.122, 0.388, 0.655, 1.),
+        }
+    }
+}
+
+impl AudioDataFile {
+    pub fn bpm_regions(&self) -> Vec<BpmRegion> {
+        match self {
+            AudioDataFile::V2(v2) => v2.bpm_regions.iter().map(Into::into).collect(),
+            AudioDataFile::V4(v4) => v4.bpm_data.iter().map(Into::into).collect(),
         }
     }
 }
@@ -973,9 +991,9 @@ convert_u8! { ArcMidAnchorMode: 0..=2 }
 use serde::{Deserializer, Serializer};
 use serde::de::Error as _;
 
-use self::v2::{BeatmapFileV2, InfoV2};
+use self::v2::{AudioDataFileV2, BeatmapFileV2, InfoV2};
 use self::v3::BeatmapFileV3;
-use self::v4::{BeatmapFileV4, InfoV4};
+use self::v4::{AudioDataFileV4, BeatmapFileV4, InfoV4};
 
 impl<const N: u8> Serialize for Sentinel<N> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

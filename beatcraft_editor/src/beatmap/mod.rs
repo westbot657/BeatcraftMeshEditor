@@ -15,8 +15,7 @@ use crate::{DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, RefDuper, UnsafeMutRef, editor
 use crate::editor::{App, EditorContext, RoutineAction, ViewStyle};
 
 use self::data::v2::{CharacteristicSetV2, DifficultyBeatmapV2};
-use self::data::v4::{AudioDataFileV4, AudioInfoV4};
-use self::data::{BeatmapFile, InfoFile, MapCharacteristic, MapDifficulty};
+use self::data::{AudioDataFile, BeatmapFile, InfoFile, MapCharacteristic, MapDifficulty};
 use self::object::{BeatmapController, GameObject, ObjectType};
 
 pub mod event;
@@ -67,7 +66,7 @@ pub struct BeatmapProject {
     pub info_path: Option<PathBuf>,
     pub info: Option<InfoFile>,
     pub audio_info_path: Option<PathBuf>,
-    pub audio_info: Option<AudioDataFileV4>,
+    pub audio_info: Option<AudioDataFile>,
     pub audio: Option<std::sync::Arc<Audio>>,
     pub cover_image: Option<PathBuf>,
     pub sets: Vec<BeatmapProjectSet>,
@@ -194,6 +193,7 @@ impl BeatmapEditor {
         }
 
         let mut info_file = None;
+        let mut audio_info_path = None;
         for file in map.read_dir()? {
             let file = file?;
             let name = file.file_name().to_string_lossy().to_lowercase();
@@ -201,11 +201,13 @@ impl BeatmapEditor {
             if name == "info.dat" {
                 info_file = Some(file.path());
             }
+            if name == "bpminfo.dat" {
+                audio_info_path = Some(file.path());
+            }
         }
 
         let mut sets = Vec::new();
         let mut cover_image = None;
-        let mut audio_info_path = None;
         let mut audio_info = None;
         let mut info_data = None;
         let mut audio_path = None;
@@ -250,7 +252,7 @@ impl BeatmapEditor {
         if let Some(path) = audio_info_path.as_deref() {
             let path = map.join(path);
             let data = std::fs::read(path)?;
-            let info: AudioDataFileV4 = serde_json::from_slice(&data)?;
+            let info: AudioDataFile = serde_json::from_slice(&data)?;
             audio_info = Some(info);
         }
 
@@ -595,7 +597,9 @@ fn draw_map_diffs(ui: &mut egui::Ui, map: &mut BeatmapProject) {
                                             let bpm_regions = match map.audio_info.as_ref() {
                                                 None => Vec::new(),
                                                 Some(info) => {
-                                                    info.bpm_data.iter().map(Into::into).collect()
+                                                    let r = info.bpm_regions();
+                                                    tracing::debug!(target: DB_DATA, ?r, "Loaded BPM regions:");
+                                                    r
                                                 }
                                             };
                                             map.controller = Some(BeatmapController::new(

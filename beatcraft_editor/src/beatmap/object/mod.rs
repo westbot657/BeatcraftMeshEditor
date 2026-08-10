@@ -41,8 +41,7 @@ pub struct BeatmapController {
 pub struct RuntimeData {
     pub njs: f32,
     bpm: f32,
-    pub hjd: f32,
-    pub jd: f32,
+    spawn_offset: f32,
     pub color_scheme: ColorScheme,
     pub bpm_regions: Vec<BpmRegion>,
     pub sample_count: usize,
@@ -59,17 +58,20 @@ pub enum TimeUnit {
 impl RuntimeData {
 
     pub fn new(njs: f32, bpm: f32, spawn_offset: f32, bpm_regions: Vec<BpmRegion>, sample_count: usize, sample_rate: u32) -> Self {
-        let (hjd, jd) = Self::calc_hjd(njs, bpm, spawn_offset);
         Self {
             njs,
             bpm,
-            hjd,
-            jd,
+            spawn_offset,
             color_scheme: Default::default(),
             bpm_regions,
             sample_count,
             sample_rate,
         }
+    }
+
+    pub fn jumps(&self, beat: f32) -> (f32, f32) {
+        let bpm = self.bpm(TimeUnit::Beat(beat));
+        Self::calc_jumps(self.njs, bpm, self.spawn_offset)
     }
 
     pub fn seconds_to_beat(&self, seconds: f32) -> f32 {
@@ -118,7 +120,7 @@ impl RuntimeData {
         seconds / (60. / self.bpm)
     }
 
-    fn calc_hjd(njs: f32, bpm: f32, spawn_offset: f32) -> (f32, f32) {
+    fn calc_jumps(njs: f32, bpm: f32, spawn_offset: f32) -> (f32, f32) {
         let mut hjd = 4.;
         let spb = 60. / bpm;
 
@@ -206,23 +208,18 @@ pub trait GameObject {
 
     fn animate_complex(&self, mut m: Mat4, beat: f32, data: &RuntimeData) -> Option<Mat4> {
         let b = self.beat();
+        let (hjd, jd) = data.jumps(b);
 
         let dur = self.duration();
-        let s = b - data.hjd;
-        let d = b + dur + data.hjd;
+        let s = b - hjd;
+        let d = b + dur + hjd;
 
         if (s..d).contains(&beat) {
-            let ji = b - data.hjd / 2.;
-            let jo = (b + dur) + data.hjd / 2.;
-            let jip = data.jd / 2.;
+            let ji = b - hjd / 2.;
+            let jo = b + hjd / 2.;
+            let jip = jd / 2.;
 
-            let njs_length = data.njs * (60. / data.bpm);
-
-            let jop = if dur > 0. {
-                -(njs_length * dur)
-            } else {
-                data.jd * -0.25
-            };
+            let jop = jd * -0.25;
 
             let mut gp = self.grid_pos();
 
