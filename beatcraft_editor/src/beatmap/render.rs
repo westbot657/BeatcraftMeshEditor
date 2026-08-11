@@ -25,10 +25,9 @@ impl GridStepSpacing {
 
 pub struct BeatmapRenderer {
     grid_shader: glow::NativeProgram,
-    grid_vao: glow::VertexArray,
-
     placement_grid_shader: glow::NativeProgram,
-    placement_grid_vao: glow::VertexArray,
+    world_plane_shader: glow::NativeProgram,
+    grid_vao: glow::VertexArray,
 
     spectrogram_ui_shader: glow::NativeProgram,
     spectrogram_ui_vao: glow::VertexArray,
@@ -41,11 +40,13 @@ pub struct BeatmapRenderer {
     grid_width: f32,
     digit_size: Vec2,
     digit_position: Vec2,
+    beat_line_px: f32,
     thick_line_px: f32,
     thin_line_px: f32,
     digits_tex: glow::Texture,
 
     pub placement_z: f32,
+    pub placement_r: f32,
     pub hovered_placement_cell: u32,
 
     spectrogram_ui_zoom: f32,
@@ -81,8 +82,14 @@ impl BeatmapRenderer {
                 include_str!("../assets/shaders/spectrogram.fsh"),
             )?;
 
+            tracing::debug!(target: DB_RENDER, "Compiling world plane shader");
+            let world_plane_shader = Renderer::build_program(
+                gl,
+                include_str!("../assets/shaders/beatmap_grid/world_plane.vsh"),
+                include_str!("../assets/shaders/beatmap_grid/world_plane.fsh"),
+            )?;
+
             let grid_vao = gl.create_vertex_array()?;
-            let placement_grid_vao = gl.create_vertex_array()?;
             let spectrogram_ui_vao = gl.create_vertex_array()?;
 
             tracing::debug!(target: DB_RENDER, "Uploading digit texture to GPU");
@@ -127,10 +134,10 @@ impl BeatmapRenderer {
 
             Ok(Self {
                 grid_shader,
+                placement_grid_shader,
+                world_plane_shader,
                 grid_vao,
 
-                placement_grid_shader,
-                placement_grid_vao,
 
                 spectrogram_ui_shader,
                 spectrogram_ui_vao,
@@ -143,11 +150,13 @@ impl BeatmapRenderer {
                 grid_width: 1.5,
                 digit_size: Vec2::splat(0.5),
                 digit_position: Vec2::new(0., 0.),
+                beat_line_px: 3.,
                 thick_line_px: 2.,
                 thin_line_px: 1.,
                 digits_tex,
 
                 placement_z: 0.,
+                placement_r: 0.,
                 hovered_placement_cell: 12,
 
                 spectrogram_ui_zoom: 1.,
@@ -163,10 +172,22 @@ impl BeatmapRenderer {
                 glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA,
                 glow::ZERO, glow::ONE,
             );
-            // timeline markers
+            gl.bind_vertex_array(Some(self.grid_vao));
+
+            // Lanes
+            let grid = self.world_plane_shader;
+            gl.use_program(Some(grid));
+            gl.depth_mask(false);
+            renderer.set_mat4(gl, grid, "u_view", view);
+            renderer.set_mat4(gl, grid, "u_proj", proj);
+            renderer.set_float(gl, grid, "u_rotation", self.placement_r);
+            renderer.set_float(gl, grid, "u_z", self.placement_z);
+            gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
+            gl.depth_mask(true);
+
+            // Timeline markers
             let grid = self.grid_shader;
             gl.use_program(Some(grid));
-            gl.bind_vertex_array(Some(self.grid_vao));
             renderer.set_mat4(gl, grid, "u_view_proj", &vp);
             renderer.set_float(gl, grid, "u_beat_spacing", self.beat_spacing);
             renderer.set_float(gl, grid, "u_step_spacing", self.step_spacing.value());
@@ -176,6 +197,7 @@ impl BeatmapRenderer {
             renderer.set_float(gl, grid, "u_track_width", self.grid_width);
             renderer.set_vec2(gl, grid, "u_digit_offset", self.digit_position);
             renderer.set_vec2(gl, grid, "u_digit_size", self.digit_size);
+            renderer.set_float(gl, grid, "u_beat_line_px", self.beat_line_px);
             renderer.set_float(gl, grid, "u_thick_line_px", self.thick_line_px);
             renderer.set_float(gl, grid, "u_thin_line_px", self.thin_line_px);
             renderer.set_sampler(gl, grid, "u_digit_tex", Some(self.digits_tex), 0);
@@ -184,9 +206,9 @@ impl BeatmapRenderer {
             // placement grid
             let grid = self.placement_grid_shader;
             gl.use_program(Some(grid));
-            gl.bind_vertex_array(Some(self.placement_grid_vao));
             renderer.set_mat4(gl, grid, "u_view_proj", &vp);
             renderer.set_float(gl, grid, "u_z", self.placement_z);
+            renderer.set_float(gl, grid, "u_rotation", self.placement_r);
             renderer.set_uint(gl, grid, "u_hovered_cell", self.hovered_placement_cell);
 
             gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);

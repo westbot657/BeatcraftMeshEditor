@@ -2,12 +2,14 @@
 
 uniform float u_beat_spacing;
 uniform float u_step_spacing;
+uniform float u_beat_line_px;
 uniform float u_thick_line_px;
 uniform float u_thin_line_px;
 
 uniform sampler2D u_digit_tex;
 
 in vec2 v_uv;
+in float v_z;
 
 out vec4 fragColor;
 
@@ -16,6 +18,7 @@ void main() {
         vec2 remap = v_uv + vec2(2.0);
         float world_z = remap.y * u_beat_spacing;
 
+        float dist_to_zero = abs(v_z);
         float dist_to_boundary = min(world_z, u_beat_spacing - world_z);
 
         float safe_step = max(u_step_spacing, 1e-5);
@@ -25,18 +28,21 @@ void main() {
 
         float px = max(fwidth(world_z), 1e-6);
 
+        float beat  = 1.0 - smoothstep(0.0, u_beat_line_px  * px, dist_to_zero);
         float thick = 1.0 - smoothstep(0.0, u_thick_line_px * px, dist_to_boundary);
         float thin  = 1.0 - smoothstep(0.0, u_thin_line_px  * px, dist_to_step);
 
         // draw thick (beat boundary) at full brightness, thin (subdivision) dimmer;
-        // where they overlap, let the brighter one win rather than adding
+        // beat line at world_z = 0 takes top precedence as solid opaque white
         vec3 thick_color = vec3(1.0);
         vec3 thin_color  = vec3(0.35);
 
-        float alpha = max(thick, thin);
+        float alpha = max(max(thick, thin), beat);
         if (alpha <= 0.001) discard;
 
         vec3 color = mix(thin_color, thick_color, thick);
+        color = mix(color, vec3(1.0), beat);
+
         fragColor = vec4(color, alpha);
     } else {
         fragColor = texture(u_digit_tex, v_uv);

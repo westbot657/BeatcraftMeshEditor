@@ -426,6 +426,16 @@ pub struct ClickCycle {
     pub vertices: InnerCycle<VertexId>,
     pub instances: InnerCycle<usize>,
 }
+impl ClickCycle {
+    pub fn reset(&mut self) {
+        self.instances.current = 0;
+        self.instances.candidates.clear();
+        self.instances.last_pos = Vec2::new(-9999., -9999.);
+        self.vertices.current = 0;
+        self.vertices.candidates.clear();
+        self.vertices.last_pos = Vec2::new(-9999., -9999.);
+    }
+}
 
 pub struct View {
     pub meshes: IndexMap<String, Option<ViewMesh>>,
@@ -1354,6 +1364,11 @@ impl App {
             self.upload_selection_points(gl);
         }
 
+        if alt && input.key_pressed(Key::R) {
+            self.rebuild_meshes(gl);
+        }
+
+
         match self.context {
             EditorContext::Model(_) => {
 
@@ -1497,6 +1512,12 @@ impl App {
                         }
                     }
                 }
+                if input.key_pressed(Key::ArrowLeft) {
+                    self.render.renderer.beatmap.placement_r += 15f32.to_radians();
+                }
+                if input.key_pressed(Key::ArrowRight) {
+                    self.render.renderer.beatmap.placement_r -= 15f32.to_radians();
+                }
             },
             _ => {}
         }
@@ -1581,36 +1602,30 @@ impl App {
                 },
                 EditorContext::Map(MapEditorContext::Beatmap) => {
                     let beatmap = &self.render.renderer.beatmap;
+                    let placement_r = beatmap.placement_r;
                     let placement_z = beatmap.placement_z;
                     let half_width = 2. * 0.6;
                     let grid_height = 3. * 0.6;
                     const COLS: u32 = 4;
                     const ROWS: u32 = 3;
-
                     self.render.renderer.beatmap.hovered_placement_cell = u32::MAX;
-
                     let vp = self.cam().vp(w, h);
                     let (ray_pos, ray_dir) = Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &vp);
 
-                    // the placement grid is a vertical plane (facing the camera along Z) at
-                    // world Z == placement_z, per how the note-grid quads are laid out
-                    let denom = ray_dir.z;
-                    if denom.abs() > 1e-6 {
-                        let t = (placement_z - ray_pos.z) / denom;
-                        if t > 0.0 {
-                            let hit = ray_pos + ray_dir * t;
+                    let inv_rot = Quat::from_rotation_y(-placement_r);
+                    let local_ray_pos = inv_rot * ray_pos;
+                    let local_ray_dir = inv_rot * ray_dir;
 
-                            // +X is left (per the camera convention established earlier), track
-                            // spans [-half_width, half_width]; grid Y spans [0, grid_height]
+                    let denom = local_ray_dir.z;
+                    if denom.abs() > 1e-6 {
+                        let t = (placement_z - local_ray_pos.z) / denom;
+                        if t > 0.0 {
+                            let hit = local_ray_pos + local_ray_dir * t;
                             if hit.x.abs() <= half_width && hit.y >= 0.0 && hit.y <= grid_height {
-                                // remap so u=0 is the rightmost column (since +X is left, the
-                                // rightmost column is at x = -half_width) — flip if this reads backwards
                                 let u = (half_width - hit.x) / (2.0 * half_width);
                                 let v = hit.y / grid_height;
-
                                 let col = (u * COLS as f32).floor().clamp(0.0, (COLS - 1) as f32) as u32;
                                 let row = (v * ROWS as f32).floor().clamp(0.0, (ROWS - 1) as f32) as u32;
-
                                 self.render.renderer.beatmap.hovered_placement_cell = row * COLS + col;
                             }
                         }
@@ -2552,7 +2567,9 @@ impl App {
             self.load_mirror(path, gl)?
         }
 
-        self.render.renderer.texture_paths = session.texture_paths;
+        for (tex, path) in session.texture_paths {
+            self.render.renderer.texture_paths.insert(tex, path);
+        }
 
         self.view.session = Some(path.to_path_buf());
         self.rebuild_meshes(gl);

@@ -239,6 +239,31 @@ impl eframe::App for App {
 
 impl App {
 
+    pub fn reset_context(&mut self) {
+        let gl = Arc::clone(&self.state.gl);
+
+        self.click_cycle.reset();
+        self.audio_system.remove_dead_audio();
+        self.map_editor.map = None;
+        self.editor.hovered = None;
+        self.editor.mesh = None;
+        self.editor.part = None;
+        self.view.fog_heights = None;
+        self.view.spectrogram = None;
+        self.view.session = None;
+        self.view.mirror_path = None;
+        self.view.mirror_id = None;
+        self.view.mirror_geometry.clear();
+        self.view.env_path = None;
+        self.selection = Selection::None;
+        self.assembly.hovered = None;
+        self.assembly.handles.clear();
+        self.context = editor::EditorContext::None;
+        self.history.history.clear();
+        self.history.future.clear();
+        self.rebuild_meshes(&gl);
+    }
+
     fn draw_welcome_page(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("WelcomeTopBar")
             .show(ctx, |ui| {
@@ -305,13 +330,21 @@ impl App {
                     if let Some((kind, path)) = to_open {
                         match kind {
                             config::ProjectKind::EnvironmentMesh => {
+                                self.reset_context();
                                 let gl = Arc::clone(&self.state.gl);
                                 let _ = self.load_session(&path, &gl);
                                 self.context = editor::EditorContext::Model(editor::ModelEditorContext::Environment);
                             }
                             config::ProjectKind::SaberMesh => todo!(),
                             config::ProjectKind::NoteMesh => todo!(),
-                            config::ProjectKind::Beatmap => todo!(),
+                            config::ProjectKind::Beatmap => {
+                                self.reset_context();
+                                let gl = Arc::clone(&self.state.gl);
+                                let rd = RefDuper;
+                                let s = unsafe { rd.detach_mut_ref(self) };
+                                let _ = s.load_beatmap(&mut self.audio_system, path, &gl, &mut self.render.renderer, self.data.audio_volume);
+                                self.context = editor::EditorContext::Map(editor::MapEditorContext::Beatmap);
+                            },
                             config::ProjectKind::Lightshow => todo!(),
                         }
                     }
@@ -352,7 +385,7 @@ impl App {
                             "saber_edit_scale".into(),
                             SABER_EDITOR_ICON.clone(),
                             &["Saber", "Editor"],
-                            |s| s.context = editor::EditorContext::Model(editor::ModelEditorContext::Saber),
+                            |s| ()//s.context = editor::EditorContext::Model(editor::ModelEditorContext::Saber),
                         );
 
                         self.draw_context_selector(
@@ -360,7 +393,7 @@ impl App {
                             "note_edit_scale".into(),
                             NOTE_EDITOR_ICON.clone(),
                             &["Note/Bomb", "Editor"],
-                            |s| s.context = editor::EditorContext::Model(editor::ModelEditorContext::Notes),
+                            |s| ()//s.context = editor::EditorContext::Model(editor::ModelEditorContext::Notes),
                         );
 
                     });
@@ -415,6 +448,7 @@ impl App {
         );
 
         if response.clicked() {
+            self.reset_context();
             on_click(self);
         }
 

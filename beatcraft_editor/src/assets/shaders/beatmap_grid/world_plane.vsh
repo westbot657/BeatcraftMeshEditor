@@ -1,4 +1,4 @@
-#version 330 core
+#version 450 core
 
 uniform mat4 u_view;
 uniform mat4 u_proj;
@@ -19,7 +19,7 @@ void main() {
     float height = max(abs(cameraPos.y), 1.0);
 
     vec2 offset = corners[gl_VertexID];
-    vec3 pos = vec3(cameraPos.x + offset.x * 5000.0, 0.0, cameraPos.z + offset.y * 5000.0);
+    vec3 pos = vec3(cameraPos.x + offset.x * 1000.0, 0.0, cameraPos.z + offset.y * 1000.0);
 
     v_uv = offset;
     v_world_pos = pos;
@@ -27,3 +27,4 @@ void main() {
 
     gl_Position = u_proj * u_view * vec4(pos, 1.0);
 }
+

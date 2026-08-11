@@ -13,12 +13,13 @@ uniform vec2 u_digit_offset;
 uniform vec2 u_digit_size;
 
 out vec2 v_uv;
+out float v_z;
 
 void emit_quad(float x0, float x1, float z0, float z1, vec4 uv) {
-    gl_Position = u_view_proj * vec4(x0, 0.0, z0, 1.0);  v_uv = uv.xy;  EmitVertex();
-    gl_Position = u_view_proj * vec4(x0, 0.0, z1, 1.0);  v_uv = uv.xw;  EmitVertex();
-    gl_Position = u_view_proj * vec4(x1, 0.0, z0, 1.0);  v_uv = uv.zy;  EmitVertex();
-    gl_Position = u_view_proj * vec4(x1, 0.0, z1, 1.0);  v_uv = uv.zw;  EmitVertex();
+    gl_Position = u_view_proj * vec4(x0, 0.0, z0, 1.0);  v_uv = uv.xy;  v_z = z0;  EmitVertex();
+    gl_Position = u_view_proj * vec4(x0, 0.0, z1, 1.0);  v_uv = uv.xw;  v_z = z1;  EmitVertex();
+    gl_Position = u_view_proj * vec4(x1, 0.0, z0, 1.0);  v_uv = uv.zy;  v_z = z0;  EmitVertex();
+    gl_Position = u_view_proj * vec4(x1, 0.0, z1, 1.0);  v_uv = uv.zw;  v_z = z1;  EmitVertex();
     EndPrimitive();
 }
 

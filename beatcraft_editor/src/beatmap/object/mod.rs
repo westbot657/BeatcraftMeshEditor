@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::f32;
 use std::marker::PhantomData;
 use std::ops::{Add, Div, Mul, Sub};
@@ -373,18 +374,31 @@ impl Default for ColorScheme {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum RawNoteColor {
+    Red,
+    Blue,
+}
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum NoteColor {
     Red,
     Blue,
-    Custom(Vec4),
+    CustomRed(Vec4),
+    CustomBlue(Vec4),
 }
 impl NoteColor {
     pub fn color(&self, cs: &ColorScheme) -> Vec4 {
         match self {
             Self::Red => cs.left_note,
             Self::Blue => cs.right_note,
-            Self::Custom(c) => *c,
+            Self::CustomRed(c) => *c,
+            Self::CustomBlue(c) => *c,
+        }
+    }
+    pub fn raw(&self) -> RawNoteColor {
+        match self {
+            Self::Red | Self::CustomRed(_) => RawNoteColor::Red,
+            Self::Blue | Self::CustomBlue(_) => RawNoteColor::Blue,
         }
     }
 }
@@ -503,7 +517,7 @@ impl GameObject for ColorNote {
     fn beat(&self) -> f32 { self.beat }
     fn grid_pos(&self) -> Vec2 { self.grid_pos }
     fn get_orientation(&self) -> Quat {
-        self.cut_direction.to_quat() * Quat::from_rotation_z(self.angle_offset)
+        self.cut_direction.to_quat() * Quat::from_rotation_z(self.angle_offset.to_radians())
     }
     fn do_gravity(&self) -> bool { true }
     fn do_look(&self) -> bool { true }
@@ -973,6 +987,8 @@ impl BeatmapFile {
             }
         }
 
+        Self::check_window_snaps(&mut color_notes);
+
         Ok(BeatmapController {
             runtime_data: RuntimeData::new(diff_data.njs, info.bpm(), diff_data.njs_offset, bpm_regions, sample_count, sample_rate),
             color_notes,
@@ -981,5 +997,67 @@ impl BeatmapFile {
             chain_notes,
         })
     }
+
+    fn check_window_snaps(color_notes: &mut [ColorNote]) {
+        let mut note_types: HashMap<RawNoteColor, Vec<&mut ColorNote>> = HashMap::new();
+        for n in color_notes.iter_mut() {
+            let entry = note_types.entry(n.color.raw()).or_default();
+            entry.push(n)
+        }
+        for (_, notes) in note_types.into_iter() {
+            let mut time_groups: HashMap<u32, Vec<&mut ColorNote>> = HashMap::new();
+            for n in notes.into_iter() {
+                let entry = time_groups.entry(n.beat.to_bits()).or_default();
+                entry.push(n);
+            }
+
+            for (_, mut notes) in time_groups.into_iter() {
+                if notes.len() != 2 { continue }
+                let b = notes.pop().unwrap();
+                let a = notes.pop().unwrap();
+
+                Self::check_window_snap(a, b);
+                Self::check_window_snap(b, a);
+            }
+        }
+    }
+
+    fn check_window_snap(a: &mut ColorNote, b: &mut ColorNote) {
+
+        fn normalize_angle(a: f32) -> f32 {
+            (a + 360.) % 360.
+        }
+        fn degrees_between(a: f32, b: f32) -> f32 {
+            let diff = (normalize_angle(a) - normalize_angle(b)).abs();
+            f32::min(diff, 360. - diff)
+        }
+
+        let same_cuts = a.cut_direction == b.cut_direction;
+        let this_is_dot = a.cut_direction == CutDirection::Dot;
+        let other_is_dot = b.cut_direction == CutDirection::Dot;
+
+        if !same_cuts && !this_is_dot && !other_is_dot { return }
+
+        let ap = a.grid_pos;
+        let bp = b.grid_pos;
+        let cross = bp - ap;
+        let angle = -cross.to_angle().to_degrees() + 90.;
+
+        if this_is_dot && other_is_dot {
+            a.angle_offset = angle;
+            b.angle_offset = angle;
+            return;
+        }
+
+        let degrees = if this_is_dot { b.cut_direction.angle_degrees() } else { a.cut_direction.angle_degrees() };
+        let between = degrees_between(degrees, angle);
+
+        if between <= 40. {
+            a.angle_offset = angle - a.cut_direction.angle_degrees();
+            b.angle_offset = angle - b.cut_direction.angle_degrees();
+        }
+
+    }
+
 }
 
