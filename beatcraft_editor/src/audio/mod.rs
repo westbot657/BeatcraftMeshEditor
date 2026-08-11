@@ -261,24 +261,9 @@ pub fn check_al_error(where_: impl Display) {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum LoadTask {
-    Background,
-    Playback,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum TaskAction {
     None,
     Remove,
-}
-
-#[derive(Copy, Clone, Debug)]
-enum AudioLoadState {
-    /// end is exclusive
-    Empty { start: usize, end: usize },
-    /// end is exclusive
-    Loaded { start: usize, end: usize },
-    Loading { start: usize, task: LoadTask },
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -892,6 +877,7 @@ impl Audio {
         (tex_data, columns_done, freq_bins, finished, hop)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn decode_task_loop(
         data: &Arc<RwLock<Vec<i16>>>,
         loaded_ranges: &Arc<RwLock<Vec<(usize, usize)>>>,

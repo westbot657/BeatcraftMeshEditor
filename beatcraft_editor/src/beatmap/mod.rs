@@ -398,11 +398,11 @@ impl App {
                     callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
                         move |_info, painter| {
                             if let Some(map) = s.map_editor.map.as_ref()
-                            //&& let Some(controller) = map.controller.as_ref()
+                            && let Some(controller) = map.controller.as_ref()
                             && let Some(audio) = map.audio.as_ref()
                             && let Some(length) = audio.length_seconds() {
                                 let gl = painter.gl();
-                                let sec = audio.position_seconds();
+                                let sec = controller.runtime_data.beat_to_seconds(s.render.renderer.beatmap.beat());
                                 s.render.renderer.beatmap.render_spectrogram_ui(
                                     &mut s.ref_mut().render.renderer, gl, audio, sec, length,
                                 );

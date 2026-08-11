@@ -12,7 +12,6 @@ use super::BeatmapProjectDiff;
 use super::data::{BeatmapDataError, BeatmapFile, BpmRegion, Color, CutDirection, InfoFile, v2};
 use super::render::BeatmapRenderer;
 
-const JUMP_FAR_Z: f32 = 500.;
 
 pub trait Lerp<T>
 where
@@ -67,6 +66,10 @@ impl RuntimeData {
             sample_count,
             sample_rate,
         }
+    }
+
+    pub fn base_jumps(&self) -> (f32, f32) {
+        Self::calc_jumps(self.njs, self.bpm, self.spawn_offset)
     }
 
     pub fn jumps(&self, beat: f32) -> (f32, f32) {
@@ -126,7 +129,7 @@ impl RuntimeData {
 
         let n2 = njs * spb;
         let mut n3 = n2 * hjd;
-        while n3 >= 18. {
+        while n3 > 17.999 {
             hjd /= 2.;
             n3 = n2 * hjd;
         }
@@ -207,79 +210,129 @@ pub trait GameObject {
     }
 
     fn animate_complex(&self, mut m: Mat4, beat: f32, data: &RuntimeData) -> Option<Mat4> {
-        let b = self.beat();
-        let (hjd, jd) = data.jumps(b);
-
-        let dur = self.duration();
-        let s = b - hjd;
-        let d = b + dur + hjd;
-
-        if (s..d).contains(&beat) {
-            let ji = b - hjd / 2.;
-            let jo = b + hjd / 2.;
-            let jip = jd / 2.;
-
-            let jop = jd * -0.25;
-
-            let mut gp = self.grid_pos();
-
-            gp = Vec2::new(1.5 - gp.x, gp.y + 0.5) * 0.6;
-
-            let lifetime = f32::inv_lerp(s, d, beat).clamp(0., 1.);
-            let spawn_lifetime = (lifetime * 2.).clamp(0., 1.);
-
-            let rst = 1. - (lifetime - 0.5).abs() * 2.;
-            let jump_time = Easing::easeOutQuad.apply(rst);
-            gp.y = f32::lerp(if self.do_gravity() { -0.3 } else { gp.y - 0.3 }, gp.y, jump_time);
-
-            let z = if beat <= ji {
-                let p = (ji - beat) / 2.;
-                f32::lerp(jip, JUMP_FAR_Z, p)
-            } else if beat < jo {
-                let p = f32::inv_lerp(ji, jo, beat);
-                f32::lerp(jip, jop, p)
-            } else {
-                let mut p = f32::inv_lerp(jo, d, beat);
-                p *= p;
-                f32::lerp(jop, -JUMP_FAR_Z, p)
-            };
-
-            let jump_mat = Mat4::from_translation(gp.extend(z));
-            m *= Mat4::from_rotation_y(-self.lane_rotation_degrees().to_radians());
-            m *= Mat4::from_translation(Vec3::new(0., 0.8, 0.));
-
-            let ori = if self.do_look()
-            && lifetime < 0.5 {
-                let mi = m.inverse();
-                let mut hp = mi.transform_point3(HEAD_POS);
-                hp = jump_mat.transform_point3(hp * -1.).normalize();
-                let target = Quat::from_rotation_arc(Vec3::Z, hp);
-                Quat::IDENTITY.slerp(target, spawn_lifetime)
-            } else { Quat::IDENTITY };
-
-            m *= jump_mat;
-
-            m *= Mat4::from_quat(ori);
-
-            let local_rot = if lifetime < 0.5
-            && spawn_lifetime != 0. {
-                let rot_lifetime = (spawn_lifetime / 0.3).clamp(0., 1.);
-                let rt = Easing::easeOutQuad.apply(rot_lifetime);
-                let so = self.spawn_orientation();
-                let or = self.get_orientation();
-                so.slerp(or, rt)
-            } else {
-                self.get_orientation()
-            };
-
-            m *= Mat4::from_quat(local_rot);
-            Some(m)
-        } else {
-            None
+        fn spawn_parabola(target_height: f32, base_height: f32, half_jump_distance: f32, t: f32) -> f32 {
+            let d_sq = (half_jump_distance * half_jump_distance).max(1e-6);
+            let movement_range = target_height - base_height;
+            (-(movement_range / d_sq) * t * t + target_height).clamp(-9999., 9999.)
         }
 
-    }
+        fn look_rotation(forward: Vec3, up: Vec3) -> Quat {
+            let forward = forward.normalize();
+            let right = up.cross(forward).normalize();
+            let up = forward.cross(right);
+            Quat::from_mat3(&glam::Mat3::from_cols(right, up, forward))
+        }
 
+        const ROTATION_ANIM_TIME: f32 = 0.4;
+
+        const JUMP_FAR_Z: f32 = 500.;
+        const PRE_ROLL_SECONDS: f32 = 1.0;
+        const POST_ROLL_SECONDS: f32 = 1.0;
+        const LOOK_FREEZE_DISTANCE: f32 = 1.0;
+
+        let b = self.beat();
+        let dur = self.duration();
+
+        let (_, jd) = data.base_jumps();
+        let njs = data.njs;
+        let half_jump_distance = jd / 2.0;
+        let reaction_time = half_jump_distance / njs;
+
+        let object_time = data.beat_to_seconds(b);
+        let dur_seconds = data.beat_to_seconds(b + dur) - object_time;
+
+        let s_time = object_time - reaction_time;
+        let d_time = object_time + dur_seconds + reaction_time;
+
+        let pre_roll_start_time = s_time - PRE_ROLL_SECONDS;
+        let post_roll_end_time = d_time + POST_ROLL_SECONDS;
+
+        let s_ext = data.seconds_to_beat(pre_roll_start_time);
+        let d_ext = data.seconds_to_beat(post_roll_end_time);
+
+        if !(s_ext..d_ext).contains(&beat) {
+            return None;
+        }
+
+        let current_time = data.beat_to_seconds(beat);
+
+        let mut gp = self.grid_pos();
+        gp = Vec2::new(1.5 - gp.x, gp.y + 0.5) * 0.6;
+
+        let z_at_spawn = half_jump_distance;
+        let z_at_despawn = (object_time - d_time) * njs;
+
+        let in_pre_roll = current_time < s_time;
+        let in_post_roll = current_time > d_time;
+
+        let z = if in_pre_roll {
+            let p = f32::inv_lerp(pre_roll_start_time, s_time, current_time).clamp(0., 1.);
+            f32::lerp(JUMP_FAR_Z, z_at_spawn, p)
+        } else if in_post_roll {
+            let p = f32::inv_lerp(d_time, post_roll_end_time, current_time).clamp(0., 1.);
+            f32::lerp(z_at_despawn, -JUMP_FAR_Z, p)
+        } else {
+            (object_time - current_time) * njs
+        };
+
+        let start_y = -0.3;
+
+        // Parabola only applies while approaching (z >= 0, i.e. before the hit).
+        // Once z has crossed 0 — whether still in the normal phase or already
+        // into post-roll — height is just static at gp.y, since that's exactly
+        // where the parabola ends up at z == 0 anyway. Clamping the input to
+        // spawn_parabola at zero (rather than branching separately) makes this
+        // fall out for free instead of needing a third case.
+        let y = if self.do_gravity() {
+            if in_pre_roll {
+                start_y
+            } else {
+                spawn_parabola(gp.y, start_y, half_jump_distance, z.max(0.0))
+            }
+        } else {
+            gp.y
+        };
+
+        let jump_mat = Mat4::from_translation(Vec3::new(gp.x, y, z));
+
+        m *= Mat4::from_rotation_y(-self.lane_rotation_degrees().to_radians());
+        m *= Mat4::from_translation(Vec3::new(0., 0.8, 1.));
+        m *= jump_mat;
+
+        let jump_progress = (object_time - current_time) / -reaction_time + 1.0;
+
+        let base_rot = if jump_progress <= 0. {
+            self.spawn_orientation()
+        } else if jump_progress < ROTATION_ANIM_TIME {
+            let t = Easing::easeOutSine.apply(jump_progress / ROTATION_ANIM_TIME);
+            self.spawn_orientation().slerp(self.get_orientation(), t)
+        } else {
+            self.get_orientation()
+        };
+
+        let final_rot = if self.do_look() {
+            let look_z = z.max(LOOK_FREEZE_DISTANCE);
+            let look_y = if self.do_gravity() {
+                if in_pre_roll { start_y } else { spawn_parabola(gp.y, start_y, half_jump_distance, look_z.max(0.0)) }
+            } else {
+                gp.y
+            };
+            let look_pos = Vec3::new(gp.x, look_y, look_z);
+
+            let mut head = HEAD_POS;
+            head.y = f32::lerp(head.y, look_pos.y, 0.8);
+            let forward = (look_pos - head).normalize();
+            let look = look_rotation(forward, base_rot * Vec3::Y);
+
+            base_rot.slerp(look, jump_progress.clamp(0., 1.))
+        } else {
+            base_rot
+        };
+
+        m *= Mat4::from_quat(final_rot);
+
+        Some(m)
+    }
 
 }
 
@@ -419,7 +472,7 @@ pub struct Obstacle {
 impl ColorableObject for Obstacle {
     fn color(col: &ObjectColor<Self>, cs: &ColorScheme) -> Vec4 {
         match col {
-            ObjectColor::Default(_) => cs.obstacle,//Vec4::new(1., 0.184, 0.184, 1.),
+            ObjectColor::Default(_) => cs.obstacle,
             ObjectColor::Custom(vec4) => *vec4,
         }
     }
