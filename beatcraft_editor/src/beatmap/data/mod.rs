@@ -10,6 +10,10 @@ use crate::easing::Easing;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod song_core;
+pub mod tracks;
+pub mod noodle;
+pub mod chroma;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum VersionClass {

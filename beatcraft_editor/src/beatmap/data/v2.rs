@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use super::song_core::{DifficultyBeatmapCustomDataV2, DifficultySetCustomDataV2, InfoCustomDataV2};
 use super::{ArcV2, BPMEventV2, BeatmapDataError, BombNoteV2, BpmRegion, ColorNoteV2, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion, ObstacleV2, RGBAColor, Sentinel, SpawnRotationEventV2, convert_u8};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -265,7 +266,7 @@ pub struct InfoV2 {
     pub color_schemes: Vec<ColorSchemeV2>,
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_data: Option<serde_json::Value>,
+    pub custom_data: Option<InfoCustomDataV2>,
     #[serde(rename = "_difficultyBeatmapSets")]
     pub difficulty_beatmap_sets: Vec<CharacteristicSetV2>,
 }
@@ -303,6 +304,9 @@ pub struct ColorSchemeInnerV2 {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CharacteristicSetV2 {
+    #[serde(rename = "_customData")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_data: Option<DifficultySetCustomDataV2>,
     #[serde(rename = "_beatmapCharacteristicName")]
     pub beatmap_characteristic_name: MapCharacteristic,
     #[serde(rename = "_difficultyBeatmaps")]
@@ -324,7 +328,7 @@ pub struct DifficultyBeatmapV2 {
     pub note_jump_start_beat_offset: f32,
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_data: Option<serde_json::Value>,
+    pub custom_data: Option<DifficultyBeatmapCustomDataV2>,
 
     #[serde(rename = "_beatmapColorSchemeIdx")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
