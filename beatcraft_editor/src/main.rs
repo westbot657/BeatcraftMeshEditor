@@ -311,18 +311,31 @@ impl App {
                             Layout::top_down(egui::Align::Min),
                             |ui| {
                                 ui.horizontal(|ui| {
-                                    ui.allocate_ui_with_layout([280., 10.].into(), egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                                        let w = ui.label(egui::RichText::new(label).strong()).on_hover_text(full_path).interact_rect.width();
-                                        ui.allocate_ui_with_layout([275. - w, 1.].into(), egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                                            if ui.button("Open").clicked() {
-                                                to_open = Some((kind, path.to_path_buf()));
-                                            }
-                                        });
+                                    let total_width = 280.0;
+                                    let button_width = 50.0;
+                                    ui.allocate_ui_with_layout(
+                                        [total_width, 20.].into(),
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            egui::ScrollArea::horizontal()
+                                                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                                                .id_salt(("label_scroll", path))
+                                                .max_width(total_width - button_width)
+                                                .show(ui, |ui| {
+                                                    ui.label(egui::RichText::new(label).strong())
+                                                        .on_hover_text(full_path);
+                                                });
 
-                                    });
+                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                if ui.button("Open").clicked() {
+                                                    to_open = Some((kind, path.to_path_buf()));
+                                                }
+                                            });
+                                        },
+                                    );
                                 });
                                 ui.label(egui::RichText::new(kind.to_string()).weak());
-                                ui.label(egui::RichText::new(format!("Last Modified: {modified}")).small());
+                                ui.label(egui::RichText::new(format!("Last Opened: {modified}")).small());
                             }
                         );
 

@@ -283,6 +283,47 @@ impl BeatmapEditor {
 }
 
 impl App {
+
+    fn await_beatmap_open(&mut self) {
+        tracing::debug!(target: DB_LOGIC, "Spawning thread for opening beatmap project");
+        let (sx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let Some(map_folder) = rfd::FileDialog::new()
+                .set_title("Open Beatmap...")
+                .pick_folder() else {
+                    tracing::debug!(target: DB_LOGIC, "Canceled opening beatmap");
+                    return;
+                };
+            tracing::debug!(target: DB_LOGIC, ?map_folder, "Opening beatmap");
+            let _ = sx.send(map_folder);
+        });
+        self.add_routine(Box::new(move |s, gl| {
+            match rx.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    RoutineAction::Remove
+                }
+                Ok(folder) => {
+                    let rd = RefDuper;
+                    let s2 = unsafe { rd.detach_mut_ref(s) };
+                    if let Some(map) = s.map_editor.map.take()
+                    && let Some(audio) = map.audio {
+                        audio.stop();
+                        drop(audio);
+                        s.audio_system.remove_dead_audio();
+                    }
+                    s.render.renderer.beatmap.seek(0.);
+                    if let Err(e) = s.load_beatmap(&mut s2.audio_system, folder, gl, &mut s2.render.renderer, s2.data.audio_volume) {
+                        s.set_status(None, "Failed to load beatmap", 2.);
+                        tracing::error!(target: DB_MAIN, "Failed to load beatmap: {e}");
+                    }
+                    RoutineAction::Remove
+                }
+            }
+        }));
+
+    }
+
     pub fn draw_beatmap_editor(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame, shift: bool, ctrl: bool, alt: bool) {
         let gl = frame.gl().unwrap();
 
@@ -291,42 +332,7 @@ impl App {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open map\u{2026} \u{2502}").clicked() {
-                        tracing::debug!(target: DB_LOGIC, "Spawning thread for opening beatmap project");
-                        let (sx, rx) = mpsc::channel();
-                        thread::spawn(move || {
-                            let Some(map_folder) = rfd::FileDialog::new()
-                                .set_title("Open Beatmap...")
-                                .pick_folder() else {
-                                    tracing::debug!(target: DB_LOGIC, "Canceled opening beatmap");
-                                    return;
-                                };
-                            tracing::debug!(target: DB_LOGIC, ?map_folder, "Opening beatmap");
-                            let _ = sx.send(map_folder);
-                        });
-                        self.add_routine(Box::new(move |s, gl| {
-                            match rx.try_recv() {
-                                Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
-                                Err(mpsc::TryRecvError::Disconnected) => {
-                                    RoutineAction::Remove
-                                }
-                                Ok(folder) => {
-                                    let rd = RefDuper;
-                                    let s2 = unsafe { rd.detach_mut_ref(s) };
-                                    if let Some(map) = s.map_editor.map.take()
-                                    && let Some(audio) = map.audio {
-                                        audio.stop();
-                                        drop(audio);
-                                        s.audio_system.remove_dead_audio();
-                                    }
-                                    s.render.renderer.beatmap.seek(0.);
-                                    if let Err(e) = s.load_beatmap(&mut s2.audio_system, folder, gl, &mut s2.render.renderer, s2.data.audio_volume) {
-                                        s.set_status(None, "Failed to load beatmap", 2.);
-                                        tracing::error!(target: DB_MAIN, "Failed to load beatmap: {e}");
-                                    }
-                                    RoutineAction::Remove
-                                }
-                            }
-                        }));
+                        self.await_beatmap_open();
                     }
                     if ui.button("Menu      \u{2502}").clicked() {
                         tracing::debug!(target: DB_LOGIC, "Returning to menu");
@@ -573,7 +579,10 @@ impl App {
     }
 
     pub fn load_beatmap(&mut self, audio_system: &mut AudioSystem, folder: PathBuf, gl: &Context, renderer: &mut Renderer, volume: f32) -> Result<(), MapLoadError> {
-        self.map_editor.load(audio_system, folder, gl, renderer, volume)
+        let f2 = folder.clone();
+        self.map_editor.load(audio_system, folder, gl, renderer, volume)?;
+        self.data.mark_project_modified(&f2, crate::config::ProjectKind::Beatmap);
+        Ok(())
     }
 }
 
