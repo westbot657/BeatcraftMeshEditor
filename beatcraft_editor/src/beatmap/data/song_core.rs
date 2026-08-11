@@ -91,9 +91,11 @@ pub struct DifficultySetCustomDataV2 {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DifficultyBeatmapCustomDataV2 {
     #[serde(rename = "_oneSaber")]
-    pub one_saber: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub one_saber: Option<bool>,
     #[serde(rename = "_showRotationNoteSpawnLines")]
-    pub show_rotation_note_spawn_lines: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_rotation_note_spawn_lines: Option<bool>,
     #[serde(rename = "_difficultyLabel")]
     pub difficulty_label: String,
     #[serde(rename = "_editorOffset")]
@@ -101,26 +103,37 @@ pub struct DifficultyBeatmapCustomDataV2 {
     #[serde(rename = "_editorOldOffset")]
     pub editor_old_offset: f32,
     #[serde(rename = "_colorLeft")]
-    pub color_left: RGBCustomColorDataV2,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_left: Option<RGBCustomColorDataV2>,
     #[serde(rename = "_colorRight")]
-    pub color_right: RGBCustomColorDataV2,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_right: Option<RGBCustomColorDataV2>,
     #[serde(rename = "_envColorLeft")]
-    pub env_color_left: RGBCustomColorDataV2,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env_color_left: Option<RGBCustomColorDataV2>,
     #[serde(rename = "_envColorRight")]
-    pub env_color_right: RGBCustomColorDataV2,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env_color_right: Option<RGBCustomColorDataV2>,
     #[serde(rename = "_envColorLeftBoost")]
-    pub env_color_left_boost: RGBCustomColorDataV2,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env_color_left_boost: Option<RGBCustomColorDataV2>,
     #[serde(rename = "_envColorRightBoost")]
-    pub env_color_right_boost: RGBCustomColorDataV2,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env_color_right_boost: Option<RGBCustomColorDataV2>,
     #[serde(rename = "_obstacleColor")]
-    pub obstacle_color: RGBCustomColorDataV2,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub obstacle_color: Option<RGBCustomColorDataV2>,
     #[serde(rename = "_warnings")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
     #[serde(rename = "_information")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub information: Vec<String>,
     #[serde(rename = "_suggestions")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub suggestions: Vec<SuggestionModName>,
     #[serde(rename = "_requirements")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requirements: Vec<RequirementModName>,
 
     #[serde(flatten)]

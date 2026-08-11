@@ -1319,6 +1319,7 @@ impl Renderer {
         wireframe: bool,
         fog_heights: [f32; 2],
         draw_mirror: bool,
+        bg_color: (f32, f32, f32, f32),
     ) {
         let rd = RefDuper;
         let self2 = unsafe { rd.detach_mut_ref(self) };
@@ -1326,6 +1327,7 @@ impl Renderer {
         self.bloomfog.draw_meshes(
             self2, gl, view, proj, calls, window, draw_grid,
             Some(&self3.bloomfog.grab_target), mirror_mesh, wireframe, fog_heights, draw_mirror,
+            bg_color,
         );
     }
 
@@ -1829,6 +1831,7 @@ impl BloomfogRenderer {
         wireframe: bool,
         fog_heights: [f32; 2],
         draw_mirror: bool,
+        bg_color: (f32, f32, f32, f32),
     ) {
         unsafe {
             // pre-render beatmaps
@@ -1845,8 +1848,10 @@ impl BloomfogRenderer {
             gl.bind_framebuffer(glow::FRAMEBUFFER, main_target.map(|t| t.fbo));
             if let Some(t) = main_target {
                 t.bind(gl);
-                gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
             }
+            gl.clear_color(bg_color.0, bg_color.1, bg_color.2, bg_color.3);
+            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+
 
             self.framebuffer.bind(gl);
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
@@ -1855,7 +1860,7 @@ impl BloomfogRenderer {
 
             self.apply_pyramid_blur(renderer, gl, window);
 
-            self.apply_effect_pass(renderer, gl, &self.blurred_buffer, main_target, PassType::Blit, false, true, window, 11., 2.);
+            self.apply_effect_pass(renderer, gl, &self.blurred_buffer, main_target, PassType::Blit, false, Some((0., 0., 0., 0.)), window, 11., 2.);
             gl.depth_mask(true);
 
             // render mirrored?
@@ -1898,7 +1903,7 @@ impl BloomfogRenderer {
 
             gl.bind_framebuffer(glow::FRAMEBUFFER, None);
             gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
-            self.apply_effect_pass(renderer, gl, main_target.unwrap(), None, PassType::Blit, false, false, window, 11., 1.);
+            self.apply_effect_pass(renderer, gl, main_target.unwrap(), None, PassType::Blit, false, None, window, 11., 1.);
 
             self.render_obstacles(
                 renderer,
@@ -2104,8 +2109,8 @@ impl BloomfogRenderer {
                 }
             }
 
-            self.apply_effect_pass(renderer, gl, &self.bloom_input, Some(&self.bloom_swap), PassType::GaussianH, true, true, window, 3.25, 1.);
-            self.apply_effect_pass(renderer, gl, &self.bloom_swap, Some(&self.bloom_output), PassType::GaussianV, true, true, window, 3.25, 1.);
+            self.apply_effect_pass(renderer, gl, &self.bloom_input, Some(&self.bloom_swap), PassType::GaussianH, true, Some((0., 0., 0., 0.)), window, 3.25, 1.);
+            self.apply_effect_pass(renderer, gl, &self.bloom_swap, Some(&self.bloom_output), PassType::GaussianV, true, Some((0., 0., 0., 0.)), window, 3.25, 1.);
 
             if let Some(t) = main_target {
                 t.bind(gl);
@@ -2116,7 +2121,7 @@ impl BloomfogRenderer {
 
             gl.blend_func(glow::ONE, glow::ONE);
 
-            self.apply_effect_pass(renderer, gl, &self.bloom_output, main_target, PassType::Blit, false, false, window, 11., 1.);
+            self.apply_effect_pass(renderer, gl, &self.bloom_output, main_target, PassType::Blit, false, None, window, 11., 1.);
 
             gl.blend_func_separate(
                 glow::ONE, glow::ONE_MINUS_SRC_ALPHA,
@@ -2188,14 +2193,14 @@ impl BloomfogRenderer {
 
         let mut current = &self.framebuffer;
         for l in 0..7 {
-            self.apply_effect_pass(renderer, gl, current, Some(&self.pyramid_buffers[l]), PassType::DownSample, true, true, window, 11., quad_size);
+            self.apply_effect_pass(renderer, gl, current, Some(&self.pyramid_buffers[l]), PassType::DownSample, true, Some((0., 0., 0., 0.)), window, 11., quad_size);
             current = &self.pyramid_buffers[l];
         }
 
-        self.apply_effect_pass(renderer, gl, current, Some(&self.extra_buffer), PassType::UpSample, true, true, window, 11., quad_size);
-        self.apply_effect_pass(renderer, gl, &self.extra_buffer, Some(&self.framebuffer), PassType::GaussianV, true, true, window, 11., quad_size);
-        self.apply_effect_pass(renderer, gl, &self.framebuffer, Some(&self.extra_buffer), PassType::GaussianH, true, true, window, 11., quad_size);
-        self.apply_effect_pass(renderer, gl, &self.extra_buffer, Some(&self.blurred_buffer), PassType::BlueNoise, false, true, window, 11., quad_size);
+        self.apply_effect_pass(renderer, gl, current, Some(&self.extra_buffer), PassType::UpSample, true, Some((0., 0., 0., 0.)), window, 11., quad_size);
+        self.apply_effect_pass(renderer, gl, &self.extra_buffer, Some(&self.framebuffer), PassType::GaussianV, true, Some((0., 0., 0., 0.)), window, 11., quad_size);
+        self.apply_effect_pass(renderer, gl, &self.framebuffer, Some(&self.extra_buffer), PassType::GaussianH, true, Some((0., 0., 0., 0.)), window, 11., quad_size);
+        self.apply_effect_pass(renderer, gl, &self.extra_buffer, Some(&self.blurred_buffer), PassType::BlueNoise, false, Some((0., 0., 0., 0.)), window, 11., quad_size);
 
     }
 
@@ -2208,7 +2213,7 @@ impl BloomfogRenderer {
         output: Option<&RenderTarget>,
         pass: PassType,
         linear: bool,
-        clear_output: bool,
+        clear_output: Option<(f32, f32, f32, f32)>,
         window: (i32, i32),
         radius: f32,
         quad_size: f32,
@@ -2216,8 +2221,8 @@ impl BloomfogRenderer {
         unsafe {
             if let Some(output) = output {
                 output.bind(gl);
-                if clear_output {
-                    gl.clear_color(0., 0., 0., 0.);
+                if let Some(c) = clear_output {
+                    gl.clear_color(c.0, c.1, c.2, c.3);
                     gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
                 }
             }

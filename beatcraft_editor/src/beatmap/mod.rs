@@ -14,6 +14,7 @@ use crate::render::{GpuMesh, GridType, MeshDrawCall, Renderer};
 use crate::{DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, RefDuper, UnsafeMutRef, editor, get_data_folder};
 use crate::editor::{App, EditorContext, RoutineAction, ViewStyle};
 
+use self::data::song_core::DifficultyBeatmapCustomDataV2;
 use self::data::v2::{CharacteristicSetV2, DifficultyBeatmapV2};
 use self::data::{AudioDataFile, BeatmapFile, InfoFile, MapCharacteristic, MapDifficulty};
 use self::object::{BeatmapController, GameObject, ObjectType};
@@ -30,7 +31,7 @@ pub struct BeatmapProjectDiff {
     pub beatmap_file: Option<PathBuf>,
     pub njs: f32,
     pub njs_offset: f32,
-    pub custom_data: Option<serde_json::Value>,
+    pub custom_data: Option<DifficultyBeatmapCustomDataV2>,
 }
 
 pub struct BeatmapProjectSet {
@@ -806,7 +807,7 @@ fn draw_map_gl(
                 false,
             );
         },
-        ViewStyle::Beatcraft { .. } => {
+        ViewStyle::Beatcraft { blackout_sky } => {
             s.ref_mut().render.renderer.draw_meshes_fancy(
                 gl, view, proj,
                 &calls,
@@ -814,6 +815,7 @@ fn draw_map_gl(
                 s.render.mirror.as_ref(), false,
                 s.view.fog_heights.unwrap_or([-50., -30.]),
                 true,
+                if blackout_sky { (0., 0., 0., 1.) } else { (0.07, 0.08, 0.11, 1.) }
             );
         },
     }

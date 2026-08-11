@@ -2120,13 +2120,14 @@ fn draw_view_gl(
                 true,
             );
         }
-        editor::ViewStyle::Beatcraft { .. } => {
+        editor::ViewStyle::Beatcraft { blackout_sky } => {
             s.ref_mut().render.renderer.draw_meshes_fancy(
                 gl, view, proj, &calls,
                 window, if s.state.show_grid { GridType::WorldGrid } else { GridType::None },
                 s.render.mirror.as_ref(), s.state.wireframe,
                 s.view.fog_heights.unwrap_or([-50., -30.]),
                 true,
+                if blackout_sky { (0., 0., 0., 1.) } else { (0.07, 0.08, 0.11, 1.) }
             );
         }
     }
@@ -2811,7 +2812,7 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                         s.render.mirror.as_ref(), s.state.wireframe, false,
                     );
                 }
-                editor::ViewStyle::Beatcraft { .. } => {
+                editor::ViewStyle::Beatcraft { blackout_sky } => {
                     s.ref_mut().render.renderer.draw_meshes_fancy(
                         gl,
                         view, proj,
@@ -2830,6 +2831,7 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                         if s.state.show_grid { GridType::WorldGrid } else { GridType::None },
                         s.render.mirror.as_ref(), s.state.wireframe,
                         s.view.fog_heights.unwrap_or([-50., -30.]), false,
+                        if blackout_sky { (0., 0., 0., 1.) } else { (0.07, 0.08, 0.11, 1.) }
                     );
                 }
             }
@@ -3781,12 +3783,13 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
                     s.render.mirror.as_ref(), s.state.wireframe, false,
                 );
             }
-            editor::ViewStyle::Beatcraft { .. } => {
+            editor::ViewStyle::Beatcraft { blackout_sky } => {
                 s.ref_mut().render.renderer.draw_meshes_fancy(
                     gl, view, proj, &calls,
                     window, if s.state.show_grid { GridType::WorldGrid } else { GridType::None },
                     s.render.mirror.as_ref(), s.state.wireframe,
                     s.view.fog_heights.unwrap_or([-50., -30.]), false,
+                    if blackout_sky { (0., 0., 0., 1.) } else { (0.07, 0.08, 0.11, 1.) }
                 );
             }
         }
