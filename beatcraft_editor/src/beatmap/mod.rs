@@ -184,7 +184,7 @@ impl BeatmapEditor {
         Ok(s)
     }
 
-    pub fn load(&mut self, s: &mut AudioSystem, map: PathBuf, gl: &Context, renderer: &mut Renderer, volume: f32) -> Result<(), MapLoadError> {
+    pub fn load(&mut self, s: &mut AudioSystem, map: PathBuf, _gl: &Context, _renderer: &mut Renderer, volume: f32) -> Result<(), MapLoadError> {
         let span = tracing::debug_span!("load beatmap");
         let _guard = span.enter();
 

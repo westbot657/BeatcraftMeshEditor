@@ -276,7 +276,6 @@ pub enum AudioMode {
 enum AudioSource {
     Stream {
         loaded_ranges: Arc<RwLock<Vec<(usize, usize)>>>,
-        decode_cursor: Arc<RwLock<usize>>,
         seek_target: Arc<RwLock<Option<usize>>>,
         playback_position: usize,
         free_buffers: Vec<u32>,
@@ -343,7 +342,6 @@ impl Audio {
 
                 let source = Arc::new(RwLock::new(AudioSource::Stream {
                     loaded_ranges: Arc::clone(&sections),
-                    decode_cursor: Arc::clone(&pb_cursor),
                     seek_target: Arc::clone(&seek_target),
                     playback_position: 0,
                     free_buffers: buffers,

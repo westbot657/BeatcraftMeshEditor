@@ -7,7 +7,6 @@ use bitflags::bitflags;
 use glam::{Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
-use num_traits::Zero;
 
 use crate::easing::Easing;
 use crate::editor::{ActionType, Camera, ViewPlacement};
