@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use super::is_value_f;
+use super::settings_setter::CustomSettingsV2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InfoCustomDataV2 {
@@ -13,8 +14,21 @@ pub struct InfoCustomDataV2 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_environment_hash: Option<String>,
 
+    #[serde(rename = "_editors")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editors: Option<EditorInfoV2>,
+
     #[serde(flatten)]
     pub extra: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EditorInfoV2 {
+    #[serde(rename = "_lastEditedBy")]
+    pub last_edited_by: String,
+
+    #[serde(flatten)]
+    pub editor_info: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -38,6 +52,8 @@ pub struct RGBCustomColorDataV2 {
 pub enum SuggestionModName {
     Chroma,
 
+    AudioLink,
+
     #[serde(untagged)]
     Custom(String),
 }
@@ -52,6 +68,8 @@ pub enum RequirementModName {
     #[serde(rename = "Mapping Extensions")]
     MappingExtensions,
 
+    AudioLink,
+
     #[serde(untagged)]
     Custom(String),
 }
@@ -60,6 +78,7 @@ impl SuggestionModName {
     pub fn display_name(&self) -> &str {
         match self {
             Self::Chroma => "Chroma",
+            Self::AudioLink => "AudioLink",
             Self::Custom(s) => s.as_str(),
         }
     }
@@ -68,12 +87,13 @@ impl SuggestionModName {
 impl RequirementModName {
     pub fn display_name(&self) -> &str {
         match self {
-            RequirementModName::Chroma => "Chroma",
-            RequirementModName::Noodle => "Noodle Extensions",
-            RequirementModName::Vivify => "Vivify",
-            /////////////// => "////////",
-            RequirementModName::MappingExtensions => "Mapping Extensions",
-            RequirementModName::Custom(s) => s.as_str(),
+            Self::Chroma => "Chroma",
+            Self::Noodle => "Noodle Extensions",
+            Self::Vivify => "Vivify",
+            ////////////////////////// => "////////",
+            Self::MappingExtensions => "Mapping Extensions",
+            Self::AudioLink => "AudioLink",
+            Self::Custom(s) => s.as_str(),
         }
     }
 }
@@ -139,6 +159,9 @@ pub struct DifficultyBeatmapCustomDataV2 {
     #[serde(rename = "_requirements")]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requirements: Vec<RequirementModName>,
+    #[serde(rename = "_settings")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<CustomSettingsV2>,
 
     #[serde(flatten)]
     pub extra: Option<serde_json::Map<String, serde_json::Value>>,

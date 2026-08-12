@@ -33,7 +33,7 @@ use indexmap::map::MutableKeys;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt, EnvFilter, prelude::*};
 
-use self::config::{AppData, RawAppData, RecentProject};
+use self::config::{AppData, ProjectKind, RawAppData, RecentProject};
 use self::data::{BillboardData, LightGroup, LightMeshData, MaterialType, NormalId, ShaderSettingsData, ShaderStyle, SpectrogramData, UvId, VertexId};
 use self::easing::Easing;
 use self::editor::{ActionType, App, CreateEnv, MINECRAFT_F, RingType, RoutineAction, SOURCE_CODE_F, Selection, SpinSide, ViewPlacement, ViewStyle, WorkingRenameKey, setup_fonts};
@@ -301,6 +301,10 @@ impl App {
 
                     let mut to_open = None;
                     for RecentProject { modified, path, kind } in self.data.recents.iter() {
+                        #[cfg(not(feature = "mesh-editor"))]
+                        if matches!(kind.kind(), ProjectKind::EnvironmentMesh | ProjectKind::NoteMesh | ProjectKind::SaberMesh) { continue }
+                        #[cfg(not(feature = "mapper"))]
+                        if matches!(kind.kind(), ProjectKind::Beatmap | ProjectKind::Lightshow) { continue }
                         let ext = path.with_extension("");
                         let Some(label) = ext.file_name() else { continue };
                         let label = label.to_string_lossy();
@@ -341,15 +345,20 @@ impl App {
 
                     }
                     if let Some((kind, path)) = to_open {
+                        #[allow(unreachable_patterns)]
                         match kind {
+                            #[cfg(feature = "mesh-editor")]
                             config::ProjectType::EnvironmentMesh => {
                                 self.reset_context();
                                 let gl = Arc::clone(&self.state.gl);
                                 let _ = self.load_session(&path, &gl);
                                 self.context = editor::EditorContext::Model(editor::ModelEditorContext::Environment);
                             }
+                            #[cfg(feature = "mesh-editor")]
                             config::ProjectType::SaberMesh => todo!(),
+                            #[cfg(feature = "mesh-editor")]
                             config::ProjectType::NoteMesh => todo!(),
+                            #[cfg(feature = "mapper")]
                             config::ProjectType::Beatmap { .. } => {
                                 self.reset_context();
                                 let gl = Arc::clone(&self.state.gl);
@@ -358,7 +367,9 @@ impl App {
                                 let _ = s.load_beatmap(&mut self.audio_system, path, &gl, &mut self.render.renderer, self.data.audio_volume);
                                 self.context = editor::EditorContext::Map(editor::MapEditorContext::Beatmap);
                             },
+                            #[cfg(feature = "mapper")]
                             config::ProjectType::Lightshow => todo!(),
+                            _ => {}
                         }
                     }
 
@@ -379,8 +390,14 @@ impl App {
                 egui::Layout::top_down(egui::Align::Center),
                 |ui| {
                     let height = ui.available_height() / 2.;
-                    ui.add_space(height - 206.25);
+                    let val = match (cfg!(feature = "mapper"), cfg!(feature = "mesh-editor")) {
+                        (true, true) => 206.25,
+                        (true, false) | (false, true) => 100.,
+                        (false, false) => 0.,
+                    };
+                    ui.add_space(height - val);
 
+                    #[cfg(feature = "mesh-editor")]
                     ui.allocate_ui_with_layout(
                         [610., 200.].into(),
                         egui::Layout::left_to_right(egui::Align::Center),
@@ -411,8 +428,10 @@ impl App {
 
                     });
 
+                    #[cfg(all(feature = "mapper", feature = "mesh-editor"))]
                     ui.add_space(12.5);
 
+                    #[cfg(feature = "mapper")]
                     ui.allocate_ui_with_layout(
                         [405., 200.].into(),
                         egui::Layout::left_to_right(egui::Align::Center),

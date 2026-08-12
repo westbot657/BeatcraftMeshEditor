@@ -11,6 +11,7 @@ pub mod v2;
 pub mod v3;
 pub mod v4;
 pub mod song_core;
+pub mod settings_setter;
 pub mod tracks;
 pub mod noodle;
 pub mod chroma;
