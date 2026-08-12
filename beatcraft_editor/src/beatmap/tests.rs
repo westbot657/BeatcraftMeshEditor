@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow};
 use egui::TextBuffer;
 
-use crate::beatmap::data::v2::{BeatmapFileV2, DifficultyBeatmapV2};
+use crate::beatmap::data::v2::BeatmapFileV2;
 use crate::beatmap::data::v3::BeatmapFileV3;
 use crate::beatmap::data::v4::{BeatmapFileV4, InfoV4};
 

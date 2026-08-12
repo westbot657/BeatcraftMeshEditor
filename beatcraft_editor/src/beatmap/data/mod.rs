@@ -171,9 +171,9 @@ pub(crate) fn is_value_f<const N: u32>(v: &f32) -> bool {
     *v == f32::from_bits(N)
 }
 
-pub(crate) fn default_i<T: Num + From<i8>, const N: i8>() -> T {
-    N.into()
-}
+// pub(crate) fn default_i<T: Num + From<i8>, const N: i8>() -> T {
+//     N.into()
+// }
 
 pub(crate) fn default_u<T: Num + From<u8>, const N: u8>() -> T {
     N.into()
@@ -896,6 +896,7 @@ impl VersionClass {
 
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum InfoFile {
     V2(InfoV2),
     V4(InfoV4),

@@ -14,7 +14,7 @@ mapper = []
 
 [dependencies]
 eframe = { version = "0.33.3", features = ["glow", "persistence"] }
-egui = { version = "0.33.3", features = ["persistence"] }
+egui = { version = "0.33.3", features = ["persistence", "serde"] }
 glam = { version = "0.32", features = ["bytemuck", "serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
@@ -41,6 +41,7 @@ symphonia = "0.6.0"
 rustfft = "6.4.1"
 bitflags = { version = "2.13.1", features = ["serde"] }
 rand = "0.10.2"
+egui-keybind = { version = "0.8.0", features = ["serde"] }
 
 [build-dependencies]
 bindgen = "0.72.1"

@@ -33,7 +33,7 @@ use indexmap::map::MutableKeys;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt, EnvFilter, prelude::*};
 
-use self::config::{AppData, ProjectKind, RawAppData, RecentProject};
+use self::config::{AppData, RawAppData, RecentProject};
 use self::data::{BillboardData, LightGroup, LightMeshData, MaterialType, NormalId, ShaderSettingsData, ShaderStyle, SpectrogramData, UvId, VertexId};
 use self::easing::Easing;
 use self::editor::{ActionType, App, CreateEnv, MINECRAFT_F, RingType, RoutineAction, SOURCE_CODE_F, Selection, SpinSide, ViewPlacement, ViewStyle, WorkingRenameKey, setup_fonts};
@@ -415,7 +415,7 @@ impl App {
                             "saber_edit_scale".into(),
                             SABER_EDITOR_ICON.clone(),
                             &["Saber", "Editor"],
-                            |s| ()//s.context = editor::EditorContext::Model(editor::ModelEditorContext::Saber),
+                            |_s| ()//s.context = editor::EditorContext::Model(editor::ModelEditorContext::Saber),
                         );
 
                         self.draw_context_selector(
@@ -423,7 +423,7 @@ impl App {
                             "note_edit_scale".into(),
                             NOTE_EDITOR_ICON.clone(),
                             &["Note/Bomb", "Editor"],
-                            |s| ()//s.context = editor::EditorContext::Model(editor::ModelEditorContext::Notes),
+                            |_s| ()//s.context = editor::EditorContext::Model(editor::ModelEditorContext::Notes),
                         );
 
                     });
@@ -450,7 +450,7 @@ impl App {
                             "lightshow_edit_scale".into(),
                             MISSING_EDITOR_ICON.clone(),
                             &["Lightshow", "Editor"],
-                            |s| ()//s.context = editor::EditorContext::Map(editor::MapEditorContext::Lightshow),
+                            |_s| ()//s.context = editor::EditorContext::Map(editor::MapEditorContext::Lightshow),
                         );
                     });
 
@@ -819,8 +819,6 @@ impl App {
                 });
             });
 
-        let screen_size = ctx.content_rect().size();
-        let screen_size = (screen_size.x, screen_size.y);
         egui::CentralPanel::default()
             .frame(Frame::NONE)
             .show(ctx, |ui| {
@@ -860,13 +858,13 @@ impl App {
 
                                 match s.mode {
                                     editor::EditorMode::View => {
-                                        draw_view_gl(&s, gl, &view, &proj, (w as i32, h as i32), screen_size);
+                                        draw_view_gl(&s, gl, &view, &proj, (w as i32, h as i32));
                                     }
                                     editor::EditorMode::Assembly => {
-                                        draw_assembly_gl(&s, gl, &view, &proj, (w as i32, h as i32), screen_size);
+                                        draw_assembly_gl(&s, gl, &view, &proj, (w as i32, h as i32));
                                     }
                                     editor::EditorMode::Edit => {
-                                        draw_edit_gl(&s, gl, &view, &proj, (w as i32, h as i32), screen_size);
+                                        draw_edit_gl(&s, gl, &view, &proj, (w as i32, h as i32));
                                     }
                                 }
 
@@ -2110,7 +2108,6 @@ fn draw_view_gl(
     s: &UnsafeMutRef<App>, gl: &glow::Context,
     view: &Mat4, proj: &Mat4,
     window: (i32, i32),
-    screen: (f32, f32),
 ) {
     let mut calls = Vec::new();
     for (_id, vm) in s.view.meshes.iter() {
@@ -2818,7 +2815,7 @@ fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32), screen: (f32, f32)) {
+fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32)) {
     let vp = proj * view;
     if let Some(sel) = s.editor.mesh.as_deref()
         && let Some(Some(vm)) = s.view.meshes.get(sel)
@@ -3785,7 +3782,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32), screen: (f32, f32)) {
+fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32)) {
     let vp = proj * view;
     if let Some((_, name, _part)) = s.get_current_part()
         && let Some(sel) = s.editor.mesh.as_deref()

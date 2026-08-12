@@ -4,6 +4,7 @@ use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 
 use chrono::DateTime;
+use egui::{Key, KeyboardShortcut, Modifiers};
 use serde::{Deserialize, Serialize};
 
 use crate::beatmap::data::InfoFile;
@@ -12,12 +13,19 @@ use crate::beatmap::data::InfoFile;
 pub struct RawAppData {
     recents: RawRecentProjects,
     audio_volume: f32,
+    #[serde(default)]
+    keymaps: KeyMaps,
+
+    #[serde(flatten)]
+    /// Intended to catch any malformed data to prevent intact data from being lost.
+    catch_all: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone)]
 pub struct AppData {
     pub recents: RecentProjects,
     pub audio_volume: f32,
+    pub keymaps: KeyMaps,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -46,6 +54,127 @@ pub enum ProjectType {
     },
     Lightshow,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyMaps {
+    pub toggle_vertices: KeyboardShortcut,
+    pub toggle_wireframe: KeyboardShortcut,
+    pub toggle_grid: KeyboardShortcut,
+    pub toggle_render_style: KeyboardShortcut,
+    pub toggle_mesh_part_back: KeyboardShortcut,
+    pub toggle_mesh_part_forward: KeyboardShortcut,
+    pub toggle_edit_component: KeyboardShortcut,
+    pub toggle_assembly_view: KeyboardShortcut,
+    pub create_or_remove_triangles: KeyboardShortcut,
+    pub flip_triangles: KeyboardShortcut,
+    pub create_vertex: KeyboardShortcut,
+
+    pub toggle_map_playback: KeyboardShortcut,
+    pub rotate_map_grid_left: KeyboardShortcut,
+    pub rotate_map_grid_right: KeyboardShortcut,
+    pub map_fly_forward: Key,
+    pub map_fly_backward: Key,
+    pub map_fly_left: Key,
+    pub map_fly_right: Key,
+    pub map_fly_up: Key,
+    pub map_fly_down: Key,
+
+    pub deselect: KeyboardShortcut,
+    pub save: KeyboardShortcut,
+    pub undo: KeyboardShortcut,
+    pub redo: KeyboardShortcut,
+    pub rebuild_meshes: KeyboardShortcut,
+}
+
+impl Default for KeyMaps {
+    fn default() -> Self {
+        Self {
+            toggle_vertices: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::V
+            ),
+            toggle_wireframe: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::L,
+            ),
+            toggle_grid: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::G,
+            ),
+            toggle_render_style: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::F,
+            ),
+            toggle_mesh_part_back: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::ArrowLeft,
+            ),
+            toggle_mesh_part_forward: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::ArrowRight,
+            ),
+            toggle_edit_component: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::E,
+            ),
+            toggle_assembly_view: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::I,
+            ),
+            create_or_remove_triangles: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::N,
+            ),
+            flip_triangles: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::R,
+            ),
+            create_vertex: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::C,
+            ),
+            toggle_map_playback: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::Space,
+            ),
+            rotate_map_grid_left: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::ArrowLeft,
+            ),
+            rotate_map_grid_right: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::ArrowRight,
+            ),
+            map_fly_forward: Key::W,
+            map_fly_backward: Key::S,
+            map_fly_left: Key::A,
+            map_fly_right: Key::D,
+            map_fly_up: Key::E,
+            map_fly_down: Key::Q,
+            deselect: KeyboardShortcut::new(
+                Modifiers::NONE,
+                Key::Escape,
+            ),
+            save: KeyboardShortcut::new(
+                Modifiers::CTRL,
+                Key::S,
+            ),
+            undo: KeyboardShortcut::new(
+                Modifiers::CTRL,
+                Key::Z,
+            ),
+            redo: KeyboardShortcut::new(
+                Modifiers::CTRL | Modifiers::SHIFT,
+                Key::Z,
+            ),
+            rebuild_meshes: KeyboardShortcut::new(
+                Modifiers::ALT,
+                Key::R,
+            ),
+        }
+    }
+}
+
 
 impl ProjectType {
     pub fn kind(&self) -> ProjectKind {
@@ -91,6 +220,7 @@ impl From<RawAppData> for AppData {
         Self {
             recents: value.recents.into(),
             audio_volume: value.audio_volume,
+            keymaps: value.keymaps,
         }
     }
 }
@@ -157,6 +287,8 @@ impl From<&AppData> for RawAppData {
         Self {
             recents: (&value.recents).into(),
             audio_volume: value.audio_volume,
+            keymaps: value.keymaps.clone(),
+            catch_all: None,
         }
     }
 }

@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 use crate::easing::Easing;
 
 use super::v2::{ColorBoostValueV2, GagaSideV2, HydraulicsTypeV2, LightEventTypeV2, LightEventValueV2, RingLightEventTypeV2, SpinningLaserSideV2};
-use super::{ArcV3, BeatmapDataError, BombNoteV3, ChainV3, Color, ColorNoteV3, LegacyBPMEventV3, LegacySpawnRotationEventV3, MapVersion, ObstacleV3, Sentinel, SpawnRotationEventV3, SpawnRotationExecutionTime, convert_u8};
+use super::{ArcV3, BeatmapDataError, BombNoteV3, ChainV3, ColorNoteV3, LegacyBPMEventV3, LegacySpawnRotationEventV3, MapVersion, ObstacleV3, Sentinel, SpawnRotationExecutionTime, convert_u8};
 use super::{bool_u8_serde, easing_as_i8};
-use super::{default_f, default_i, default_u, is_value_i, is_value_u, is_value_f};
+use super::{default_u, is_value_u, is_value_f};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

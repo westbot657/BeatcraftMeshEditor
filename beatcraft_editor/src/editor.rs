@@ -7,6 +7,7 @@ use std::{fs, mem};
 
 use eframe::glow::{self, Context, HasContext};
 use egui::{Key, Response};
+use egui_keybind::Bind;
 use glam::{IVec3, Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use tracing::Level;
@@ -1299,14 +1300,14 @@ impl App {
         let shift = input.modifiers.shift;
         let alt = input.modifiers.alt;
 
-        if ctrl && input.key_pressed(Key::Z) {
-            if shift {
-                self.redo(gl);
-            } else {
-                self.undo(gl);
-            }
+        if ctx.input_mut(|i| self.data.keymaps.redo.pressed(i)) {
+            self.redo(gl);
         }
-        if ctrl && input.key_pressed(Key::S) {
+        if ctx.input_mut(|i| self.data.keymaps.undo.pressed(i)) {
+            self.undo(gl);
+        }
+
+        if ctx.input_mut(|i| self.data.keymaps.save.pressed(i)) {
             match self.mode {
                 EditorMode::View => {
                     if let Err(e) = self.save_session() {
@@ -1339,32 +1340,32 @@ impl App {
             // TODO
         }
 
-        if input.key_pressed(Key::W) {
+        if ctx.input_mut(|i| self.data.keymaps.toggle_wireframe.pressed(i)) {
             self.state.wireframe = !self.state.wireframe;
         }
-        if input.key_pressed(Key::G) {
+        if ctx.input_mut(|i| self.data.keymaps.toggle_grid.pressed(i)) {
             self.state.show_grid = !self.state.show_grid;
         }
-        if input.key_pressed(Key::V) {
+        if ctx.input_mut(|i| self.data.keymaps.toggle_vertices.pressed(i)) {
             self.state.show_verts = !self.state.show_verts;
         }
-        if input.key_pressed(Key::F) {
+        if ctx.input_mut(|i| self.data.keymaps.toggle_render_style.pressed(i)) {
             self.state.view_style.cycle();
         }
-        if input.key_pressed(Key::I) {
+        if ctx.input_mut(|i| self.data.keymaps.toggle_assembly_view.pressed(i)) {
             self.last_mode = self.mode;
             self.mode = EditorMode::View;
             self.selection = Selection::None;
             self.upload_selection_points(gl);
         }
 
-        if input.key_pressed(Key::Escape) {
+        if ctx.input_mut(|i| self.data.keymaps.deselect.pressed(i)) {
             self.selection = Selection::None;
             self.state.ui.mirror_editor.selected.clear();
             self.upload_selection_points(gl);
         }
 
-        if alt && input.key_pressed(Key::R) {
+        if ctx.input_mut(|i| self.data.keymaps.rebuild_meshes.pressed(i)) {
             self.rebuild_meshes(gl);
         }
 
@@ -1388,7 +1389,7 @@ impl App {
 
                     }
                     EditorMode::Assembly => {
-                        if input.key_pressed(Key::E) {
+                        if ctx.input_mut(|i| self.data.keymaps.toggle_edit_component.pressed(i)) {
                             self.last_mode = self.mode;
                             self.selection = Selection::None;
                             self.upload_selection_points(gl);
@@ -1403,13 +1404,13 @@ impl App {
                         }
                     }
                     EditorMode::Edit => {
-                        if input.key_pressed(Key::E) {
+                        if ctx.input_mut(|i| self.data.keymaps.toggle_edit_component.pressed(i)) {
                             self.last_mode = self.mode;
                             self.selection = Selection::None;
                             self.upload_selection_points(gl);
                             self.mode = EditorMode::Assembly;
                         }
-                        if input.key_pressed(Key::A)
+                        if ctx.input_mut(|i| self.data.keymaps.toggle_mesh_part_back.pressed(i))
                             && let Some(sel) = self.editor.mesh.as_deref()
                                 && let Some(Some(mesh)) = self.view.meshes.get(sel)
                         {
@@ -1423,7 +1424,7 @@ impl App {
                             self.selection = Selection::None;
                             self.upload_selection_points(gl);
                         }
-                        if input.key_pressed(Key::D)
+                        if ctx.input_mut(|i| self.data.keymaps.toggle_mesh_part_forward.pressed(i))
                             && let Some(sel) = self.editor.mesh.as_deref()
                                 && let Some(Some(mesh)) = self.view.meshes.get(sel)
                         {
@@ -1458,7 +1459,7 @@ impl App {
                                 self.rebuild_meshes(gl);
                             }
                         }
-                        if input.key_pressed(Key::N)
+                        if ctx.input_mut(|i| self.data.keymaps.create_or_remove_triangles.pressed(i))
                             && let Selection::Vertices(ref verts) = self.selection
                         {
                             let rd = RefDuper;
@@ -1475,7 +1476,7 @@ impl App {
                                 self.rebuild_meshes(gl);
                             }
                         }
-                        if input.key_pressed(Key::R)
+                        if ctx.input_mut(|i| self.data.keymaps.flip_triangles.pressed(i))
                             && let Selection::Vertices(ref verts) = self.selection
                         {
                             let rd = RefDuper;
@@ -1496,7 +1497,7 @@ impl App {
             },
             #[allow(clippy::collapsible_match, clippy::collapsible_if)]
             EditorContext::Map(MapEditorContext::Beatmap) => {
-                if input.key_pressed(Key::Space) {
+                if ctx.input_mut(|i| self.data.keymaps.toggle_map_playback.pressed(i)) {
                     if let Some(map) = self.map_editor.map.as_ref()
                     && let Some(controller) = map.controller.as_ref()
                     && let Some(audio) = map.audio.as_ref() {
@@ -1512,10 +1513,10 @@ impl App {
                         }
                     }
                 }
-                if input.key_pressed(Key::ArrowLeft) {
+                if ctx.input_mut(|i| self.data.keymaps.rotate_map_grid_left.pressed(i)) {
                     self.render.renderer.beatmap.placement_r += 15f32.to_radians();
                 }
-                if input.key_pressed(Key::ArrowRight) {
+                if ctx.input_mut(|i| self.data.keymaps.rotate_map_grid_right.pressed(i)) {
                     self.render.renderer.beatmap.placement_r -= 15f32.to_radians();
                 }
             },
@@ -1584,7 +1585,7 @@ impl App {
                     let self2 = unsafe { rd.detach_mut_ref(self) };
                     if self.mode == EditorMode::Edit
                         && let Some(i) = &input
-                            && i.key_pressed(Key::C)
+                            && ctx.input_mut(|i| self.data.keymaps.create_vertex.pressed(i))
                             && !i.modifiers.ctrl
                             && let vp = self.cam().vp(w, h)
                             && let Some(part) = self.get_current_part_mut()
@@ -1630,6 +1631,33 @@ impl App {
                             }
                         }
                     }
+
+                    let move_speed = if shift {
+                        if alt { 0.0125 } else { 0.125 }
+                    } else if alt { 0.75 } else { 0.25 };
+                    let forward = Vec2::from_angle(-self.cam().yaw - 90f32.to_radians()) * move_speed;
+                    let right = Vec2::from_angle(-self.cam().yaw) * move_speed;
+                    let forward = Vec3::new(forward.x, 0., forward.y);
+                    let right = Vec3::new(right.x, 0., right.y);
+                    if ctx.input(|i| i.key_down(self.data.keymaps.map_fly_forward)) {
+                        self.cam().target += forward;
+                    }
+                    if ctx.input(|i| i.key_down(self.data.keymaps.map_fly_backward)) {
+                        self.cam().target -= forward;
+                    }
+                    if ctx.input(|i| i.key_down(self.data.keymaps.map_fly_left)) {
+                        self.cam().target -= right;
+                    }
+                    if ctx.input(|i| i.key_down(self.data.keymaps.map_fly_right)) {
+                        self.cam().target += right;
+                    }
+                    if ctx.input(|i| i.key_down(self.data.keymaps.map_fly_up)) {
+                        self.cam().target.y += move_speed;
+                    }
+                    if ctx.input(|i| i.key_down(self.data.keymaps.map_fly_down)) {
+                        self.cam().target.y -= move_speed;
+                    }
+
                 }
                 _ => {},
             }

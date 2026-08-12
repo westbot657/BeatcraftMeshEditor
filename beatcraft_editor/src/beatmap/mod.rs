@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 use std::sync::mpsc;
-use std::{fs, thread};
+use std::thread;
 
 use eframe::glow::{self, Context, HasContext};
-use egui::{ImageSource, TextBuffer};
+use egui::TextBuffer;
 use glam::{Mat4, Vec4};
 use indexmap::IndexMap;
 
 use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
-use crate::config::{ProjectKind, ProjectType};
+use crate::config::ProjectType;
 use crate::data::LightMeshData;
 use crate::light_mesh::LightMesh;
 use crate::render::{GpuMesh, GridType, MeshDrawCall, Renderer};
@@ -325,7 +325,7 @@ impl App {
 
     }
 
-    pub fn draw_beatmap_editor(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame, shift: bool, ctrl: bool, alt: bool) {
+    pub fn draw_beatmap_editor(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame, _shift: bool, _ctrl: bool, alt: bool) {
         let gl = frame.gl().unwrap();
 
         egui::TopBottomPanel::top("menu_bar_beatmap_editor").show(ctx, |ui| {
@@ -457,14 +457,14 @@ impl App {
         egui::SidePanel::left("left_panel")
             .exact_width(300.)
             .resizable(false)
-            .show(ctx, |ui| {
+            .show(ctx, |_ui| {
                 //
             });
 
         egui::SidePanel::right("right_panel")
             .exact_width(300.)
             .resizable(false)
-            .show(ctx, |ui| {
+            .show(ctx, |_ui| {
                 //
             });
 
@@ -490,6 +490,7 @@ impl App {
                         );
 
                         let mut to_open = None;
+                        let mut to_remove = None;
                         egui::ScrollArea::horizontal()
                             .max_width(ui.available_width())
                             .id_salt("recent beatmap panel")
@@ -498,16 +499,16 @@ impl App {
                                     [ui.available_width(), 200.].into(),
                                     egui::Layout::left_to_right(egui::Align::Min),
                                     |ui| {
-                                        for (modified, path, img) in self.data.recents
-                                            .iter()
-                                            .filter_map(|p| if let ProjectType::Beatmap{img} = &p.kind { Some((p.modified, &p.path, img)) } else { None })
+                                        for (i, modified, path, img) in self.data.recents
+                                            .iter().enumerate()
+                                            .filter_map(|(i, p)| if let ProjectType::Beatmap{img} = &p.kind { Some((i, p.modified, &p.path, img)) } else { None })
                                         {
                                             let ext = path.with_extension("");
                                             let Some(label) = ext.file_name() else { continue };
                                             let label = label.to_string_lossy();
                                             let full_path = path.to_string_lossy();
                                             ui.allocate_ui_with_layout(
-                                                [225., 200.].into(),
+                                                [225., 400.].into(),
                                                 egui::Layout::top_down(egui::Align::Center),
                                                 |ui| {
                                                     if let Some(img) = img {
@@ -518,9 +519,22 @@ impl App {
                                                     ui.label(egui::RichText::new(label).strong())
                                                         .on_hover_text(full_path);
                                                     ui.label(modified.to_string());
-                                                    if ui.button("Open").clicked() {
-                                                        to_open = Some(path);
-                                                    }
+
+                                                    ui.allocate_ui_with_layout(
+                                                        [225., ui.available_height().max(1.)].into(),
+                                                        egui::Layout::bottom_up(egui::Align::Center),
+                                                        |ui| {
+                                                            ui.add_space(20.);
+                                                            if ui.button("Remove").clicked() {
+                                                                to_remove = Some(i);
+                                                            }
+                                                            ui.add_space(10.);
+                                                            if ui.button("Open").clicked() {
+                                                                to_open = Some(path);
+                                                            }
+
+                                                        }
+                                                    );
                                                 }
                                             );
                                         }
@@ -530,6 +544,9 @@ impl App {
 
                         if let Some(path) = to_open {
                             let _ = self2.load_beatmap(&mut self.audio_system, path.clone(), &self.state.gl, &mut self.render.renderer, self.data.audio_volume);
+                        }
+                        if let Some(i) = to_remove {
+                            self.data.recents.remove(i);
                         }
                     },
                     Some(map) => {
