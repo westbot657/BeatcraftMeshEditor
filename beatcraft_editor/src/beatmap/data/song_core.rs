@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
-
+use super::is_value_f;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InfoCustomDataV2 {
     #[serde(rename = "_contributors")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contributors: Vec<ContributorV2>,
     #[serde(rename = "_customEnvironment")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -97,10 +98,13 @@ pub struct DifficultyBeatmapCustomDataV2 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub show_rotation_note_spawn_lines: Option<bool>,
     #[serde(rename = "_difficultyLabel")]
-    pub difficulty_label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub difficulty_label: Option<String>,
     #[serde(rename = "_editorOffset")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub editor_offset: f32,
     #[serde(rename = "_editorOldOffset")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub editor_old_offset: f32,
     #[serde(rename = "_colorLeft")]
     #[serde(default, skip_serializing_if = "Option::is_none")]

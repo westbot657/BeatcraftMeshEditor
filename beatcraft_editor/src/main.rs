@@ -334,7 +334,7 @@ impl App {
                                         },
                                     );
                                 });
-                                ui.label(egui::RichText::new(kind.to_string()).weak());
+                                ui.label(egui::RichText::new(kind.kind().to_string()).weak());
                                 ui.label(egui::RichText::new(format!("Last Opened: {modified}")).small());
                             }
                         );
@@ -342,15 +342,15 @@ impl App {
                     }
                     if let Some((kind, path)) = to_open {
                         match kind {
-                            config::ProjectKind::EnvironmentMesh => {
+                            config::ProjectType::EnvironmentMesh => {
                                 self.reset_context();
                                 let gl = Arc::clone(&self.state.gl);
                                 let _ = self.load_session(&path, &gl);
                                 self.context = editor::EditorContext::Model(editor::ModelEditorContext::Environment);
                             }
-                            config::ProjectKind::SaberMesh => todo!(),
-                            config::ProjectKind::NoteMesh => todo!(),
-                            config::ProjectKind::Beatmap => {
+                            config::ProjectType::SaberMesh => todo!(),
+                            config::ProjectType::NoteMesh => todo!(),
+                            config::ProjectType::Beatmap { .. } => {
                                 self.reset_context();
                                 let gl = Arc::clone(&self.state.gl);
                                 let rd = RefDuper;
@@ -358,7 +358,7 @@ impl App {
                                 let _ = s.load_beatmap(&mut self.audio_system, path, &gl, &mut self.render.renderer, self.data.audio_volume);
                                 self.context = editor::EditorContext::Map(editor::MapEditorContext::Beatmap);
                             },
-                            config::ProjectKind::Lightshow => todo!(),
+                            config::ProjectType::Lightshow => todo!(),
                         }
                     }
 

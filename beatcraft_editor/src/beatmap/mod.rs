@@ -1,17 +1,18 @@
 use std::path::PathBuf;
 use std::sync::mpsc;
-use std::thread;
+use std::{fs, thread};
 
 use eframe::glow::{self, Context, HasContext};
-use egui::TextBuffer;
+use egui::{ImageSource, TextBuffer};
 use glam::{Mat4, Vec4};
 use indexmap::IndexMap;
 
 use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
+use crate::config::{ProjectKind, ProjectType};
 use crate::data::LightMeshData;
 use crate::light_mesh::LightMesh;
 use crate::render::{GpuMesh, GridType, MeshDrawCall, Renderer};
-use crate::{DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, RefDuper, UnsafeMutRef, editor, get_data_folder};
+use crate::{DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, MISSING_EDITOR_ICON, RefDuper, UnsafeMutRef, editor, get_data_folder};
 use crate::editor::{App, EditorContext, RoutineAction, ViewStyle};
 
 use self::data::song_core::DifficultyBeatmapCustomDataV2;
@@ -475,7 +476,61 @@ impl App {
                 match self2.map_editor.map.as_mut() {
                     None => {
                         // No map selected
-                        ui.label("TODO: recent map selector");
+
+                        ui.allocate_ui_with_layout(
+                            [ui.available_width(), 100.].into(),
+                            egui::Layout::top_down(egui::Align::Center),
+                            |ui| {
+                                ui.add_space(5.);
+                                if ui.button("Open Map Folder...").clicked() {
+                                    self.await_beatmap_open();
+                                }
+                                ui.allocate_space(ui.available_size());
+                            }
+                        );
+
+                        let mut to_open = None;
+                        egui::ScrollArea::horizontal()
+                            .max_width(ui.available_width())
+                            .id_salt("recent beatmap panel")
+                            .show(ui, |ui| {
+                                ui.allocate_ui_with_layout(
+                                    [ui.available_width(), 200.].into(),
+                                    egui::Layout::left_to_right(egui::Align::Min),
+                                    |ui| {
+                                        for (modified, path, img) in self.data.recents
+                                            .iter()
+                                            .filter_map(|p| if let ProjectType::Beatmap{img} = &p.kind { Some((p.modified, &p.path, img)) } else { None })
+                                        {
+                                            let ext = path.with_extension("");
+                                            let Some(label) = ext.file_name() else { continue };
+                                            let label = label.to_string_lossy();
+                                            let full_path = path.to_string_lossy();
+                                            ui.allocate_ui_with_layout(
+                                                [225., 200.].into(),
+                                                egui::Layout::top_down(egui::Align::Center),
+                                                |ui| {
+                                                    if let Some(img) = img {
+                                                        ui.image(format!("file://{}", path.join(img).to_string_lossy()));
+                                                    } else {
+                                                        ui.image(MISSING_EDITOR_ICON.clone());
+                                                    }
+                                                    ui.label(egui::RichText::new(label).strong())
+                                                        .on_hover_text(full_path);
+                                                    ui.label(modified.to_string());
+                                                    if ui.button("Open").clicked() {
+                                                        to_open = Some(path);
+                                                    }
+                                                }
+                                            );
+                                        }
+                                    }
+                                );
+                            });
+
+                        if let Some(path) = to_open {
+                            let _ = self2.load_beatmap(&mut self.audio_system, path.clone(), &self.state.gl, &mut self.render.renderer, self.data.audio_volume);
+                        }
                     },
                     Some(map) => {
                         match map.controller.as_ref() {
