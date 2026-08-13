@@ -5,16 +5,22 @@ use glam::{Quat, Vec4};
 use num_traits::{Num, Zero};
 use serde::{Deserialize, Serialize};
 
+
+use serde::{Deserializer, Serializer};
+use serde::de::Error as _;
+
 use crate::easing::Easing;
 
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod custom_data;
 pub mod song_core;
 pub mod settings_setter;
 pub mod tracks;
 pub mod noodle;
 pub mod chroma;
+pub mod beatcraft;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum VersionClass {
@@ -159,14 +165,17 @@ impl CutDirection {
     }
 }
 
-
+#[inline(always)]
 pub(crate) fn is_value_i<const N: i8>(v: &(impl Num + From<i8>)) -> bool {
     *v == N.into()
 }
+
+#[inline(always)]
 pub(crate) fn is_value_u<const N: u8>(v: &(impl Num + From<u8>)) -> bool {
     *v == N.into()
 }
 
+#[inline(always)]
 pub(crate) fn is_value_f<const N: u32>(v: &f32) -> bool {
     *v == f32::from_bits(N)
 }
@@ -175,10 +184,12 @@ pub(crate) fn is_value_f<const N: u32>(v: &f32) -> bool {
 //     N.into()
 // }
 
+#[inline(always)]
 pub(crate) fn default_u<T: Num + From<u8>, const N: u8>() -> T {
     N.into()
 }
 
+#[inline(always)]
 pub(crate) fn default_f<const N: u32>() -> f32 {
     f32::from_bits(N)
 }
@@ -994,9 +1005,6 @@ convert_u8! { ObstacleV2Type: 0..=2 }
 convert_u8! { ArcMidAnchorMode: 0..=2 }
 
 
-use serde::{Deserializer, Serializer};
-use serde::de::Error as _;
-
 use self::v2::{AudioDataFileV2, BeatmapFileV2, InfoV2};
 use self::v3::BeatmapFileV3;
 use self::v4::{AudioDataFileV4, BeatmapFileV4, InfoV4};
@@ -1068,5 +1076,73 @@ pub(crate) mod easing_as_i8 {
     {
         let val = i8::deserialize(deserializer)?;
         Easing::try_from(val).map_err(D::Error::custom)
+    }
+}
+
+
+pub(crate) mod vec4_array {
+    use serde::{Deserialize, Serialize, Deserializer, Serializer};
+    use glam::Vec4;
+
+    pub fn serialize<S>(v: &Vec4, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if v.w == 1.0 {
+            [v.x, v.y, v.z].serialize(serializer)
+        } else {
+            [v.x, v.y, v.z, v.w].serialize(serializer)
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec4, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Xyz([f32; 3]),
+            Xyzw([f32; 4]),
+        }
+
+        match Repr::deserialize(deserializer)? {
+            Repr::Xyz([x, y, z]) => Ok(Vec4::new(x, y, z, 1.0)),
+            Repr::Xyzw([x, y, z, w]) => Ok(Vec4::new(x, y, z, w)),
+        }
+    }
+}
+
+pub(crate) mod vec4_array_opt {
+    use serde::{Deserialize, Serialize, Deserializer, Serializer};
+    use glam::Vec4;
+
+    pub fn serialize<S>(v: &Option<Vec4>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match v {
+            Some(v) if v.w == 1.0 => Some([v.x, v.y, v.z].to_vec()).serialize(serializer),
+            Some(v) => Some([v.x, v.y, v.z, v.w].to_vec()).serialize(serializer),
+            None => Option::<()>::None.serialize(serializer),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec4>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Xyz([f32; 3]),
+            Xyzw([f32; 4]),
+        }
+
+        match Option::<Repr>::deserialize(deserializer)? {
+            None => Ok(None),
+            Some(Repr::Xyz([x, y, z])) => Ok(Some(Vec4::new(x, y, z, 1.0))),
+            Some(Repr::Xyzw([x, y, z, w])) => Ok(Some(Vec4::new(x, y, z, w))),
+        }
     }
 }

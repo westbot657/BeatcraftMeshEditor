@@ -54,8 +54,6 @@ uniform mat4 u_projection;
 uniform mat4 u_view;
 uniform mat4 u_camera_pos;
 
-uniform float u_beat_distance;
-
 uniform int u_render_mode;
 
 out vec2 v_uv;
@@ -185,7 +183,7 @@ void main() {
         vec3 wall_vert = vec3(
             (left + right) * wall_size.x * in_position.x * 0.6,
             top * wall_size.y * 0.6,
-            back * wall_size.z * u_beat_distance * 0.6
+            back * wall_size.z * 0.6
         );
 
         pos = instance_model * vec4(wall_vert, 1.0);

@@ -15,7 +15,7 @@ use tracing::Level;
 use crate::audio::AudioSystem;
 use crate::beatmap::BeatmapEditor;
 use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
-use crate::config::AppData;
+use crate::config::{AppData, KeyMaps};
 use crate::data::{
     EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData, MeshType, NormalId, SessionData, SpectrogramData, TypeData, UvId, VertexId
 };
@@ -563,7 +563,19 @@ impl ViewStyle {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SettingsPage {
+    Keymaps,
+    Language,
+}
+
+pub struct SettingsScreen {
+    pub page: SettingsPage,
+    pub cached_binds: Option<KeyMaps>,
+}
+
 pub struct State {
+    pub settings_screen: Option<SettingsScreen>,
     pub vp_rect: egui::Rect,
     pub wireframe: bool,
     pub show_grid: bool,
@@ -577,7 +589,7 @@ pub struct State {
     pub dirty: bool,
     pub gl: Arc<Context>,
     pub ui: UiState,
-    pub view_style: ViewStyle
+    pub view_style: ViewStyle,
 }
 
 pub struct PartCollapseToggles {
@@ -1140,6 +1152,7 @@ impl App {
                 spectrogram: None,
             },
             state: State {
+                settings_screen: None,
                 title_content: None,
                 vp_rect: egui::Rect {
                     min: egui::Pos2 { x: 0., y: 0. },

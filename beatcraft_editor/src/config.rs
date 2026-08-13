@@ -1,13 +1,25 @@
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use chrono::DateTime;
 use egui::{Key, KeyboardShortcut, Modifiers};
+use fluent_templates::{LanguageIdentifier, Loader, static_loader};
+use fluent_templates::fluent_bundle::FluentValue;
 use serde::{Deserialize, Serialize};
 
 use crate::beatmap::data::InfoFile;
+
+static_loader! {
+    static LOCALES = {
+        locales: "src/assets/locales",
+        fallback_language: "en-US",
+    };
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct RawAppData {
@@ -16,16 +28,19 @@ pub struct RawAppData {
     #[serde(default)]
     keymaps: KeyMaps,
 
+    locale: String,
+
     #[serde(flatten)]
     /// Intended to catch any malformed data to prevent intact data from being lost.
     catch_all: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug)]
 pub struct AppData {
     pub recents: RecentProjects,
     pub audio_volume: f32,
     pub keymaps: KeyMaps,
+    locale: LocaleCache,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -175,6 +190,35 @@ impl Default for KeyMaps {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct LocaleCache {
+    locale: LanguageIdentifier,
+    cache: HashMap<&'static str, String>,
+}
+
+impl LocaleCache {
+
+    pub fn new(lang: &str) -> Self {
+        Self {
+            locale: LanguageIdentifier::from_str(lang).unwrap_or_default(),
+            cache: Default::default(),
+        }
+    }
+
+    pub fn get(&mut self, key: &'static str) -> &str {
+        self.cache.entry(key).or_insert_with(|| LOCALES.lookup(&self.locale, key))
+    }
+
+    pub fn get_with_args(&self, key: &'static str, args: &HashMap<Cow<'static, str>, FluentValue>) -> String {
+        LOCALES.lookup_with_args(&self.locale, key, args)
+    }
+
+    pub fn set(&mut self, lang: LanguageIdentifier) {
+        self.locale = lang;
+        self.cache.clear();
+    }
+
+}
 
 impl ProjectType {
     pub fn kind(&self) -> ProjectKind {
@@ -209,7 +253,6 @@ pub struct RawRecentProject {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RecentProject {
-    /// Unix Timestamp
     pub modified: DateTime<chrono::Utc>,
     pub path: PathBuf,
     pub kind: ProjectType,
@@ -221,6 +264,7 @@ impl From<RawAppData> for AppData {
             recents: value.recents.into(),
             audio_volume: value.audio_volume,
             keymaps: value.keymaps,
+            locale: LocaleCache::new(&value.locale),
         }
     }
 }
@@ -288,6 +332,7 @@ impl From<&AppData> for RawAppData {
             recents: (&value.recents).into(),
             audio_volume: value.audio_volume,
             keymaps: value.keymaps.clone(),
+            locale: value.locale.locale.to_string(),
             catch_all: None,
         }
     }

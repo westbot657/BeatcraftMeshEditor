@@ -1372,8 +1372,6 @@ impl Renderer {
             let tex = self.atlas.or(Some(self.missing_texture));
             self.set_sampler(gl, self.mesh, "u_texture", tex, 0);
             self.set_sampler(gl, self.mesh, "u_noise", Some(self.blue_noise), 1);
-            // TODO: change this uniform for fancy render mode
-            self.set_float(gl, self.mesh, "u_beat_distance", self.beatmap.beat_spacing);
             let mut u_camera_pos = Mat4::from_translation(cam_pos);
             u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());
             self.set_mat4(gl, self.mesh, "u_camera_pos", &u_camera_pos);
@@ -1936,7 +1934,6 @@ impl BloomfogRenderer {
             let tex = renderer.atlas.or(Some(renderer.missing_texture));
             renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
             renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.extra_buffer.color), 1);
-            renderer.set_float(gl, renderer.mesh, "u_beat_distance", renderer.beatmap.beat_spacing);
             renderer.set_int(gl, renderer.mesh, "passType", 2);
             renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
 
@@ -1988,8 +1985,6 @@ impl BloomfogRenderer {
             renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.blurred_buffer.color), 1);
             renderer.set_int(gl, renderer.mesh, "passType", RenderPass::Normal.into());
             renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
-            // TODO: change this uniform for fancy render mode
-            renderer.set_float(gl, renderer.mesh, "u_beat_distance", renderer.beatmap.beat_spacing);
             let mut u_camera_pos = Mat4::from_translation(cam_pos);
             u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());
             renderer.set_mat4(gl, renderer.mesh, "u_camera_pos", &u_camera_pos);
@@ -2056,8 +2051,6 @@ impl BloomfogRenderer {
             renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.blurred_buffer.color), 1);
             renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
             renderer.set_sampler(gl, renderer.mesh, "u_depth", Some(self.light_depth.depth), 2);
-            // TODO: change this uniform for fancy render mode
-            renderer.set_float(gl, renderer.mesh, "u_beat_distance", renderer.beatmap.beat_spacing);
             renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
             renderer.set_int(gl, renderer.mesh, "passType", 0);
             for call in calls {
@@ -2156,8 +2149,6 @@ impl BloomfogRenderer {
             renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.grab_target.color), 1);
             renderer.set_sampler(gl, renderer.mesh, "u_depth", Some(self.grab_target.depth), 2);
             renderer.set_int(gl, renderer.mesh, "passType", RenderPass::Obstacle.into());
-            // TODO: change this uniform for fancy render mode
-            renderer.set_float(gl, renderer.mesh, "u_beat_distance", renderer.beatmap.beat_spacing);
             renderer.set_float(gl, renderer.mesh, "u_time", self.inst.elapsed().as_secs_f32());
             let mut u_camera_pos = Mat4::from_translation(cam_pos);
             u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());

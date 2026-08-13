@@ -9,10 +9,13 @@ use rand::{rngs::ThreadRng, RngExt};
 use crate::easing::Easing;
 use crate::render::GameObjectInstanceData;
 
+use self::spline::BezierCurve;
+
 use super::BeatmapProjectDiff;
 use super::data::{BeatmapDataError, BeatmapFile, BpmRegion, Color, CutDirection, InfoFile, v2};
 use super::render::BeatmapRenderer;
 
+pub mod spline;
 
 pub trait Lerp<T>
 where
@@ -477,6 +480,7 @@ pub struct Obstacle {
     pub beat: f32,
     pub color: ObjectColor<Self>,
     pub grid_pos: Vec2,
+    pub duration: f32,
     pub size: Vec3,
     pub lane_rotation_deg: f32,
 
@@ -566,7 +570,7 @@ impl GameObject for Obstacle {
     fn beat(&self) -> f32 { self.beat }
     fn grid_pos(&self) -> Vec2 { self.grid_pos }
     fn get_orientation(&self) -> Quat { Quat::IDENTITY }
-    fn duration(&self) -> f32 { self.size.z }
+    fn duration(&self) -> f32 { self.duration }
     fn lane_rotation_degrees(&self) -> f32 { self.lane_rotation_deg }
     fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData {
         GameObjectInstanceData::obstacle(
@@ -624,7 +628,7 @@ impl ChainNote {
         let f = self.cut_direction.world_angle_radians() - 90f32.to_radians();
         let ctrl = Vec3::new(f.cos() * 0.5 * mag, f.sin() * 0.5 * mag, 0.);
 
-        let spline = BezierCurve { p0: Vec3::ZERO, p1: ctrl, p2: tail_offset };
+        let spline = BezierCurve::new(Vec3::ZERO, ctrl, tail_offset);
 
         let gap = self.squish_factor / slice_count as f32;
         let beat_span = self.tail_beat - self.head_beat;
@@ -673,28 +677,6 @@ impl GameObject for ChainNoteLink {
     }
 }
 
-struct BezierCurve {
-    p0: Vec3,
-    p1: Vec3,
-    p2: Vec3,
-}
-impl BezierCurve {
-    fn position(&self, t: f32) -> Vec3 {
-        let n = 1. - t;
-        let x = n * n * self.p0.x + 2. * n * t * self.p1.x + t * t * self.p2.x;
-        let y = n * n * self.p0.y + 2. * n * t * self.p1.y + t * t * self.p2.y;
-        let z = n * n * self.p0.z + 2. * n * t * self.p1.z + t * t * self.p2.z;
-        Vec3::new(x, y, z)
-    }
-    fn derivative(&self, t: f32) -> Vec3 {
-        let n = 1. - t;
-        let x = 2. * n * (self.p1.x - self.p0.x) + 2. * t * (self.p2.x - self.p1.x);
-        let y = 2. * n * (self.p1.y - self.p0.y) + 2. * t * (self.p2.y - self.p1.y);
-        let z = 2. * n * (self.p1.z - self.p0.z) + 2. * t * (self.p2.z - self.p1.z);
-        Vec3::new(x, y, z)
-    }
-}
-
 
 impl BeatmapController {
     pub fn new(info: &InfoFile, diff_data: &BeatmapProjectDiff, diff: &BeatmapFile, bpm_regions: Vec<BpmRegion>, sample_count: usize, sample_rate: u32) -> Result<Self, BeatmapDataError> {
@@ -711,6 +693,11 @@ impl BeatmapFile {
         let mut bomb_notes = Vec::new();
         let mut obstacles = Vec::new();
         let mut chain_notes = Vec::new();
+
+        let bpm = info.bpm();
+        let spb = 60. / bpm;
+        let njs = diff_data.njs;
+        let dist_beats_to_meters = njs * spb;
 
         match self {
             Self::V2(v2) => {
@@ -771,15 +758,15 @@ impl BeatmapFile {
                     let (grid_pos, size) = match obst.typ {
                         super::data::ObstacleV2Type::FullHeight => (
                             Vec2::new(obst.line_index + ((obst.width / 2.) - 0.5), obst.line_layer - 0.8),
-                            Vec3::new(obst.width, 5., obst.duration),
+                            Vec3::new(obst.width, 5., obst.duration * dist_beats_to_meters),
                         ),
                         super::data::ObstacleV2Type::Crouch => (
                             Vec2::new(obst.line_index + ((obst.width / 2.) - 0.5), obst.line_layer + 1.2),
-                            Vec3::new(obst.width, 3., obst.duration)
+                            Vec3::new(obst.width, 3., obst.duration * dist_beats_to_meters)
                         ),
                         super::data::ObstacleV2Type::Free => (
                             Vec2::new(obst.line_index + ((obst.width / 2.) - 0.5), obst.line_layer - 0.8),
-                            Vec3::new(obst.width, obst.height, obst.duration)
+                            Vec3::new(obst.width, obst.height, obst.duration * dist_beats_to_meters)
                         ),
                     };
                     let beat = obst.beat;
@@ -794,6 +781,7 @@ impl BeatmapFile {
                         color: ObjectColor::default(),
                         grid_pos,
                         lane_rotation_deg: lane_rotation_deg as f32,
+                        duration: obst.duration,
                         size,
                         dissolve: 0.,
                         index,
@@ -903,7 +891,8 @@ impl BeatmapFile {
                         beat,
                         color: ObjectColor::default(),
                         grid_pos: Vec2::new(obst.line_index + ((obst.width / 2.) - 0.5), obst.line_layer - 0.8),
-                        size: Vec3::new(obst.width, obst.height, obst.duration),
+                        size: Vec3::new(obst.width, obst.height, obst.duration * dist_beats_to_meters),
+                        duration: obst.duration,
                         lane_rotation_deg,
                         dissolve: 0.,
                         index,
@@ -978,7 +967,8 @@ impl BeatmapFile {
                         beat: obst.beat,
                         color: ObjectColor::default(),
                         grid_pos: Vec2::new(data.line_index + ((data.width / 2.) - 0.5), data.line_layer - 0.8),
-                        size: Vec3::new(data.width, data.height, data.duration),
+                        size: Vec3::new(data.width, data.height, data.duration * dist_beats_to_meters),
+                        duration: data.duration,
                         lane_rotation_deg: obst.rotation_lane as f32,
                         dissolve: 0.,
                         index,

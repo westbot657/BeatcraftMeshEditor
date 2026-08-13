@@ -36,7 +36,7 @@ use tracing_subscriber::{fmt, EnvFilter, prelude::*};
 use self::config::{AppData, RawAppData, RecentProject};
 use self::data::{BillboardData, LightGroup, LightMeshData, MaterialType, NormalId, ShaderSettingsData, ShaderStyle, SpectrogramData, UvId, VertexId};
 use self::easing::Easing;
-use self::editor::{ActionType, App, CreateEnv, MINECRAFT_F, RingType, RoutineAction, SOURCE_CODE_F, Selection, SpinSide, ViewPlacement, ViewStyle, WorkingRenameKey, setup_fonts};
+use self::editor::{ActionType, App, CreateEnv, MINECRAFT_F, RingType, RoutineAction, SOURCE_CODE_F, Selection, SettingsPage, SettingsScreen, SpinSide, ViewPlacement, ViewStyle, WorkingRenameKey, setup_fonts};
 use self::light_mesh::{BloomfogStyle, ComputeNormal, ComputeVertex, Part, Triangle};
 use self::renaming::light_mesh::rehash;
 use self::render::{GridType, HandleDrawCall, InstanceData, LIGHT_COLORS, MeshDrawCall, PointDrawCall};
@@ -52,7 +52,6 @@ pub mod renaming;
 pub mod render;
 pub mod widgets;
 pub mod beatmap;
-pub mod appdata;
 pub mod ui_elements;
 pub mod config;
 pub mod audio;
@@ -77,6 +76,10 @@ pub static NOTE_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/te
 pub static BEATMAP_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/beatmap_editor.png");
 
 pub static MISSING_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/svg/missing_editor.svg");
+
+pub static PKG_NAME: &str = env!("CARGO_PKG_NAME");
+pub static VERSION: &str = env!("CARGO_PKG_VERSION");
+
 
 pub fn get_data_folder() -> Option<PathBuf> {
     dirs::data_local_dir()
@@ -220,19 +223,24 @@ impl eframe::App for App {
             }
         }
 
-        match self.context {
-            editor::EditorContext::Model(model_editor_context) => match model_editor_context {
-                editor::ModelEditorContext::Environment => self.draw_environment_editor(ctx, frame, shift, ctrl),
-                editor::ModelEditorContext::Saber => todo!(),
-                editor::ModelEditorContext::Notes => todo!(),
-            },
-            editor::EditorContext::Map(map_editor_context) => match map_editor_context {
-                editor::MapEditorContext::Beatmap => self.draw_beatmap_editor(ctx, frame, shift, ctrl, alt),
-                editor::MapEditorContext::Lightshow => todo!(),
-                editor::MapEditorContext::Audio => todo!(),
-            },
-            editor::EditorContext::None => self.draw_welcome_page(ctx, frame),
+        if let Some(settings_page) = self.state.settings_screen.as_mut() {
+            Self::draw_settings_page(ctx, settings_page);
+        } else {
+            match self.context {
+                editor::EditorContext::Model(model_editor_context) => match model_editor_context {
+                    editor::ModelEditorContext::Environment => self.draw_environment_editor(ctx, frame, shift, ctrl),
+                    editor::ModelEditorContext::Saber => todo!(),
+                    editor::ModelEditorContext::Notes => todo!(),
+                },
+                editor::EditorContext::Map(map_editor_context) => match map_editor_context {
+                    editor::MapEditorContext::Beatmap => self.draw_beatmap_editor(ctx, frame, shift, ctrl, alt),
+                    editor::MapEditorContext::Lightshow => todo!(),
+                    editor::MapEditorContext::Audio => todo!(),
+                },
+                editor::EditorContext::None => self.draw_welcome_page(ctx, frame),
+            }
         }
+
         ctx.request_repaint();
     }
 }
@@ -262,6 +270,36 @@ impl App {
         self.history.history.clear();
         self.history.future.clear();
         self.rebuild_meshes(&gl);
+    }
+
+    fn draw_settings_page(ctx: &egui::Context, settings: &mut SettingsScreen) {
+
+        egui::SidePanel::new(egui::panel::Side::Left, "setting selector")
+            .exact_width(300.)
+            .show(ctx, |ui| {
+                let mut b = ui.button("Keybinds");
+                if settings.page == SettingsPage::Keymaps {
+                    b = b.highlight();
+                }
+                if b.clicked() {
+                    settings.page = SettingsPage::Keymaps;
+                }
+                let mut b2 = ui.button("Language");
+                if settings.page == SettingsPage::Language {
+                    b2 = b2.highlight();
+                }
+                if b2.clicked() {
+                    settings.page = SettingsPage::Language;
+                }
+            });
+
+        egui::CentralPanel::default()
+            .show(ctx, |ui| {
+                match settings.page {
+                    SettingsPage::Keymaps => {},
+                    SettingsPage::Language => {},
+                }
+            });
     }
 
     fn draw_welcome_page(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -687,7 +725,7 @@ impl App {
                             tracing::debug!(target: DB_LOGIC, "Enabling Minecraft font");
                             setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], ctx);
                         } else {
-                            tracing::debug!(target: DB_LOGIC, "Enabling SOurce Code font");
+                            tracing::debug!(target: DB_LOGIC, "Enabling Source Code font");
                             setup_fonts(&[SOURCE_CODE_F, MINECRAFT_F], ctx);
                         }
                         ui.memory_mut(|m| m.data.insert_persisted("use_minecraft_font".into(), minecraft_font));
@@ -704,21 +742,21 @@ impl App {
             });
         });
 
-        egui::TopBottomPanel::bottom("bottom_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                let display = match self.mode {
-                    editor::EditorMode::View =>
-                        " View       | [Ctrl+S] Save session",
-                    editor::EditorMode::Assembly =>
-                        " Assembly   | [Ctrl+S] Save mesh | [E]dit parts | [I] View ",
-                    editor::EditorMode::Edit =>
-                        " Edit part  | [Ctrl+S] Save mesh | [E] Assembly | [I] View | [C]reate vertex | [N] Add/Remove tris | [R]ewind triangles",
-                };
-                ui.label(display);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label("[F] Vfx | [W]ireframe | [G]rid | [V]ertices \u{0}")
-                });
-            });
+        egui::TopBottomPanel::bottom("bottom_bar").show(ctx, |_ui| {
+            // ui.horizontal(|ui| {
+            //     let display = match self.mode {
+            //         editor::EditorMode::View =>
+            //             " View       | [Ctrl+S] Save session",
+            //         editor::EditorMode::Assembly =>
+            //             " Assembly   | [Ctrl+S] Save mesh | [E]dit parts | [I] View ",
+            //         editor::EditorMode::Edit =>
+            //             " Edit part  | [Ctrl+S] Save mesh | [E] Assembly | [I] View | [C]reate vertex | [N] Add/Remove tris | [R]ewind triangles",
+            //     };
+            //     ui.label(display);
+            //     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            //         ui.label("[F] Vfx | [W]ireframe | [G]rid | [V]ertices \u{0}")
+            //     });
+            // });
         });
 
         egui::SidePanel::left("left_panel")

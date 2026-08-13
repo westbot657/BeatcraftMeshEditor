@@ -1,4 +1,6 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::ser::SerializeMap;
+use super::beatcraft::{APP_NAME, BeatcraftEditorInfoV2};
 use super::is_value_f;
 use super::settings_setter::CustomSettingsV2;
 
@@ -22,13 +24,69 @@ pub struct InfoCustomDataV2 {
     pub extra: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct EditorInfoV2 {
-    #[serde(rename = "_lastEditedBy")]
-    pub last_edited_by: String,
-
-    #[serde(flatten)]
+    pub last_edited_by: Option<String>,
+    pub beatcraft: BeatcraftEditorInfoV2,
     pub editor_info: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+impl Serialize for EditorInfoV2 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(None)?;
+        if let Some(last_edited_by) = &self.last_edited_by {
+            map.serialize_entry("_lastEditedBy", last_edited_by)?;
+        }
+        map.serialize_entry(APP_NAME, &self.beatcraft)?;
+        if let Some(extra) = &self.editor_info {
+            for (k, v) in extra {
+                map.serialize_entry(k, v)?;
+            }
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for EditorInfoV2 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut map = serde_json::Map::deserialize(deserializer)?;
+
+        let last_edited_by = match map.remove("_lastEditedBy") {
+            Some(v) => serde_json::from_value(v).map_err(serde::de::Error::custom)?,
+            None => None,
+        };
+
+        let beatcraft = match map.remove(APP_NAME) {
+            Some(v) => serde_json::from_value(v).map_err(serde::de::Error::custom)?,
+            None => BeatcraftEditorInfoV2::default(),
+        };
+
+        let editor_info = if map.is_empty() { None } else { Some(map) };
+
+        Ok(EditorInfoV2 {
+            last_edited_by,
+            beatcraft,
+            editor_info,
+        })
+    }
+}
+
+impl Default for EditorInfoV2 {
+    fn default() -> Self {
+        Self {
+            last_edited_by: Some(String::from("BeatcraftEditor")),
+
+            beatcraft: Default::default(),
+
+            editor_info: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -90,7 +148,7 @@ impl RequirementModName {
             Self::Chroma => "Chroma",
             Self::Noodle => "Noodle Extensions",
             Self::Vivify => "Vivify",
-            ////////////////////////// => "////////",
+            //////////// => "////////",
             Self::MappingExtensions => "Mapping Extensions",
             Self::AudioLink => "AudioLink",
             Self::Custom(s) => s.as_str(),
