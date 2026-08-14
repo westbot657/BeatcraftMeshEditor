@@ -1614,7 +1614,6 @@ pub(crate) enum PassType {
     GaussianH,
     BlueNoise,
     Blit,
-    FlippedBlit,
     Comp,
 }
 
@@ -1846,9 +1845,9 @@ impl BloomfogRenderer {
             gl.bind_framebuffer(glow::FRAMEBUFFER, main_target.map(|t| t.fbo));
             if let Some(t) = main_target {
                 t.bind(gl);
+                gl.clear_color(bg_color.0, bg_color.1, bg_color.2, bg_color.3);
+                gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
             }
-            gl.clear_color(bg_color.0, bg_color.1, bg_color.2, bg_color.3);
-            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
 
 
             self.framebuffer.bind(gl);
@@ -2224,7 +2223,7 @@ impl BloomfogRenderer {
                 PassType::GaussianV => self.gaussian_v,
                 PassType::GaussianH => self.gaussian_h,
                 PassType::BlueNoise => self.blue_noise,
-                PassType::Blit | PassType::FlippedBlit => self.blit,
+                PassType::Blit => self.blit,
                 PassType::Comp => self.comp,
             };
 
@@ -2243,20 +2242,14 @@ impl BloomfogRenderer {
                 renderer.set_vec2(gl, shader, "texelSize", Vec2::new(radius / window.0 as f32, radius / window.1 as f32));
             }
 
-            let (a, b) = if matches!(pass, PassType::FlippedBlit) {
-                (0., 1.)
-            } else {
-                (1., 0.)
-            };
-
             let data: [f32; 30] = [
                 -quad_size, -quad_size, 0.,  0., 0.,
-                 quad_size, -quad_size, 0.,  a, b,
+                 quad_size, -quad_size, 0.,  1., 0.,
                  quad_size,  quad_size, 0.,  1., 1.,
 
                 -quad_size, -quad_size, 0.,  0., 0.,
                  quad_size,  quad_size, 0.,  1., 1.,
-                -quad_size,  quad_size, 0.,  b, a,
+                -quad_size,  quad_size, 0.,  0., 1.,
             ];
             gl.bind_vertex_array(Some(self.vao));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));

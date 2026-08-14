@@ -8,6 +8,7 @@ use glam::{Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
+use crate::config::LocaleCache;
 use crate::easing::Easing;
 use crate::editor::{ActionType, Camera, ViewPlacement};
 
@@ -220,11 +221,11 @@ impl ShaderStyle {
             Self::None => 0,
         }
     }
-    pub fn name(&self) -> &'static str {
-        match self {
-            ShaderStyle::None => "Default",
-            ShaderStyle::Circle => "Circle",
-        }
+    pub fn translation_text<'l>(&self, locale: &'l mut LocaleCache) -> &'l str {
+        locale.get(match self {
+            ShaderStyle::None => "default",
+            ShaderStyle::Circle => "circle",
+        })
     }
     pub fn iter_all() -> impl Iterator<Item = Self> {
         [Self::None, Self::Circle].into_iter()

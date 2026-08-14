@@ -9,6 +9,7 @@ use glam::{FloatExt, Mat4, Quat, Vec2, Vec3};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 
+use crate::config::LocaleCache;
 use crate::{DB_DATA, DB_MATH, RefDuper};
 use crate::data::{
     BillboardData, ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, MaterialFlags, MeshType, NormalId, PartData, PlacementData, ShaderSettingsData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId
@@ -1414,12 +1415,12 @@ pub enum BloomfogStyle {
 }
 
 impl BloomfogStyle {
-    pub fn label(&self) -> &'static str {
-        match self {
-            BloomfogStyle::BloomOnly => "Bloom Only",
-            BloomfogStyle::Everything => "Everything",
-            BloomfogStyle::Nothing => "Nothing",
-        }
+    pub fn label<'l>(&self, locale: &'l mut LocaleCache) -> &'l str {
+        locale.get(match self {
+            BloomfogStyle::BloomOnly => "bloomfog-style-bloom",
+            BloomfogStyle::Everything => "bloomfog-style-everything",
+            BloomfogStyle::Nothing => "bloomfog-style-nothing",
+        })
     }
 }
 

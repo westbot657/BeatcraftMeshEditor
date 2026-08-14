@@ -12,6 +12,7 @@ use fluent_templates::{LanguageIdentifier, Loader, static_loader};
 use fluent_templates::fluent_bundle::FluentValue;
 use serde::{Deserialize, Serialize};
 
+use crate::DB_DATA;
 use crate::beatmap::data::InfoFile;
 
 static_loader! {
@@ -21,7 +22,8 @@ static_loader! {
     };
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RawAppData {
     recents: RawRecentProjects,
     audio_volume: f32,
@@ -35,15 +37,27 @@ pub struct RawAppData {
     catch_all: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
+impl Default for RawAppData {
+    fn default() -> Self {
+        Self {
+            recents: RawRecentProjects(Default::default()),
+            audio_volume: 0.5,
+            keymaps: Default::default(),
+            locale: "en-US".to_string(),
+            catch_all: None,
+        }
+    }
+}
+
 #[derive(Default, Debug)]
 pub struct AppData {
     pub recents: RecentProjects,
     pub audio_volume: f32,
     pub keymaps: KeyMaps,
-    locale: LocaleCache,
+    pub locale: LocaleCache,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RawRecentProjects(Vec<RawRecentProject>);
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -244,7 +258,7 @@ impl Display for ProjectKind {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RawRecentProject {
     modified: i64,
     path: PathBuf,
@@ -260,6 +274,7 @@ pub struct RecentProject {
 
 impl From<RawAppData> for AppData {
     fn from(value: RawAppData) -> Self {
+        tracing::debug!(target: DB_DATA, ?value, "Loading from raw data");
         Self {
             recents: value.recents.into(),
             audio_volume: value.audio_volume,
@@ -328,6 +343,7 @@ impl DerefMut for RecentProjects {
 
 impl From<&AppData> for RawAppData {
     fn from(value: &AppData) -> Self {
+        tracing::debug!(target: DB_DATA, ?value, "Saving app data");
         Self {
             recents: (&value.recents).into(),
             audio_volume: value.audio_volume,

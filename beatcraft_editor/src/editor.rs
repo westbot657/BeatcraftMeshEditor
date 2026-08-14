@@ -1850,8 +1850,6 @@ impl App {
             .cycle_history(HistoryCycleDir::Future, self2, gl);
     }
 
-    pub fn frame_to_geometry(&mut self) {}
-
     fn finish_marquee(&mut self, rect: Vec4, gl: &Context) {
         let sx0 = rect.x.min(rect.z);
         let sx1 = rect.x.max(rect.z);
@@ -1917,11 +1915,11 @@ impl App {
     }
 
     pub fn get_current_view_mesh(&self) -> Option<&ViewMesh> {
-        self.view.meshes.get(self.editor.mesh.as_deref().unwrap()).unwrap().as_ref()
+        self.view.meshes.get(self.editor.mesh.as_deref()?)?.as_ref()
     }
 
     pub fn get_current_view_mesh_mut(&mut self) -> Option<&mut ViewMesh> {
-        self.view.meshes.get_mut(self.editor.mesh.as_deref()?).unwrap().as_mut()
+        self.view.meshes.get_mut(self.editor.mesh.as_deref()?)?.as_mut()
     }
 
     pub fn get_current_mesh_id(&self) -> Option<&str> {

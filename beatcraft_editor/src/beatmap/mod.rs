@@ -288,9 +288,10 @@ impl App {
     fn await_beatmap_open(&mut self) {
         tracing::debug!(target: DB_LOGIC, "Spawning thread for opening beatmap project");
         let (sx, rx) = mpsc::channel();
+        let title = self.data.locale.get("open-beatmap-title").to_string();
         thread::spawn(move || {
             let Some(map_folder) = rfd::FileDialog::new()
-                .set_title("Open Beatmap...")
+                .set_title(title)
                 .pick_folder() else {
                     tracing::debug!(target: DB_LOGIC, "Canceled opening beatmap");
                     return;
@@ -315,7 +316,8 @@ impl App {
                     }
                     s.render.renderer.beatmap.seek(0.);
                     if let Err(e) = s.load_beatmap(&mut s2.audio_system, folder, gl, &mut s2.render.renderer, s2.data.audio_volume) {
-                        s.set_status(None, "Failed to load beatmap", 2.);
+                        let st = s.data.locale.get("failed-to-load-beatmap").to_string();
+                        s.set_status(None, st, 2.);
                         tracing::error!(target: DB_MAIN, "Failed to load beatmap: {e}");
                     }
                     RoutineAction::Remove
@@ -331,11 +333,26 @@ impl App {
         egui::TopBottomPanel::top("menu_bar_beatmap_editor").show(ctx, |ui| {
             ui.add_space(2.);
             egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("Open map\u{2026} \u{2502}").clicked() {
+                ui.menu_button(self.data.locale.get("file-menu-label").to_string(), |ui| {
+                    let mut options = [
+                        (
+                            self.data.locale.get("open-beatmap").to_string(),
+                            None
+                        ),
+                        (
+                            self.data.locale.get("menu-label").to_string(),
+                            None
+                        )
+                    ];
+                    Self::pad_menu_text(&mut options);
+                    let [
+                        (open_map, _),
+                        (menu, _),
+                    ] = options;
+                    if ui.button(open_map).clicked() {
                         self.await_beatmap_open();
                     }
-                    if ui.button("Menu      \u{2502}").clicked() {
+                    if ui.button(menu).clicked() {
                         tracing::debug!(target: DB_LOGIC, "Returning to menu");
                         self.context = EditorContext::None;
                         self.render.renderer.beatmap.seek(0.);
@@ -425,7 +442,9 @@ impl App {
                 let mut volume = vol;
                 ui.add_sized(
                     [150., 20.],
-                    egui::Slider::new(&mut volume, 0..=100).suffix("%").text("Audio volume")
+                    egui::Slider::new(&mut volume, 0..=100)
+                        .suffix("%")
+                        .text(self.data.locale.get("audio-volume"))
                 );
                 if volume != vol {
                     let vol = volume as f32 / 100.;
@@ -441,7 +460,9 @@ impl App {
                 let mut speed = spd;
                 ui.add_sized(
                     [150., 20.],
-                    egui::Slider::new(&mut speed, 0..=200).suffix("%").text("Playback speed")
+                    egui::Slider::new(&mut speed, 0..=200)
+                        .suffix("%")
+                        .text(self.data.locale.get("playback-speed"))
                 );
                 if speed != spd {
                     let spd = speed as f32 / 100.;
@@ -482,7 +503,7 @@ impl App {
                             egui::Layout::top_down(egui::Align::Center),
                             |ui| {
                                 ui.add_space(5.);
-                                if ui.button("Open Map Folder...").clicked() {
+                                if ui.button(self.data.locale.get("open-beatmap-folder")).clicked() {
                                     self.await_beatmap_open();
                                 }
                                 ui.allocate_space(ui.available_size());
@@ -525,11 +546,11 @@ impl App {
                                                         egui::Layout::bottom_up(egui::Align::Center),
                                                         |ui| {
                                                             ui.add_space(20.);
-                                                            if ui.button("Remove").clicked() {
+                                                            if ui.button(self.data.locale.get("remove-from-list")).clicked() {
                                                                 to_remove = Some(i);
                                                             }
                                                             ui.add_space(10.);
-                                                            if ui.button("Open").clicked() {
+                                                            if ui.button(self.data.locale.get("open")).clicked() {
                                                                 to_open = Some(path);
                                                             }
 

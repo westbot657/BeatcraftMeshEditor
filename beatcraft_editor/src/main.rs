@@ -18,6 +18,7 @@
 //   Ctrl+S                 save JSON
 //   Escape                 deselect all
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::ops::Deref;
@@ -33,15 +34,16 @@ use indexmap::map::MutableKeys;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt, EnvFilter, prelude::*};
 
-use self::config::{AppData, RawAppData, RecentProject};
+use self::config::{AppData, LocaleCache, RawAppData, RecentProject};
 use self::data::{BillboardData, LightGroup, LightMeshData, MaterialType, NormalId, ShaderSettingsData, ShaderStyle, SpectrogramData, UvId, VertexId};
 use self::easing::Easing;
-use self::editor::{ActionType, App, CreateEnv, MINECRAFT_F, RingType, RoutineAction, SOURCE_CODE_F, Selection, SettingsPage, SettingsScreen, SpinSide, ViewPlacement, ViewStyle, WorkingRenameKey, setup_fonts};
+use self::editor::{ActionType, App, CreateEnv, MINECRAFT_F, RingType, RoutineAction, SOURCE_CODE_F, Selection, SettingsPage, SettingsScreen, SpinSide, UiState, ViewPlacement, ViewStyle, WorkingRenameKey, setup_fonts};
 use self::light_mesh::{BloomfogStyle, ComputeNormal, ComputeVertex, Part, Triangle};
 use self::renaming::light_mesh::rehash;
 use self::render::{GridType, HandleDrawCall, InstanceData, LIGHT_COLORS, MeshDrawCall, PointDrawCall};
 use self::widgets::{MathDragValue, TextInput};
 use self::ui_elements::*;
+use fluent_templates::fluent_bundle::FluentValue;
 
 pub mod data;
 pub mod easing;
@@ -80,6 +82,15 @@ pub static MISSING_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets
 pub static PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub static VERSION: &str = env!("CARGO_PKG_VERSION");
 
+const MODIFIER_NAMES: egui::ModifierNames<'_> = egui::ModifierNames {
+    is_short: false,
+    alt: "Alt",
+    ctrl: "Ctrl",
+    shift: "Shift",
+    mac_cmd: "Cmd",
+    mac_alt: "Alt",
+    concat: "+"
+};
 
 pub fn get_data_folder() -> Option<PathBuf> {
     dirs::data_local_dir()
@@ -224,7 +235,7 @@ impl eframe::App for App {
         }
 
         if let Some(settings_page) = self.state.settings_screen.as_mut() {
-            Self::draw_settings_page(ctx, settings_page);
+            Self::draw_settings_page(&mut self.data.locale, ctx, settings_page);
         } else {
             match self.context {
                 editor::EditorContext::Model(model_editor_context) => match model_editor_context {
@@ -252,6 +263,7 @@ impl App {
 
         self.click_cycle.reset();
         self.audio_system.remove_dead_audio();
+        self.state.ui = UiState::default();
         self.map_editor.map = None;
         self.editor.hovered = None;
         self.editor.mesh = None;
@@ -263,28 +275,30 @@ impl App {
         self.view.mirror_id = None;
         self.view.mirror_geometry.clear();
         self.view.env_path = None;
-        self.selection = Selection::None;
+        self.view.meshes.clear();
         self.assembly.hovered = None;
         self.assembly.handles.clear();
+        self.selection = Selection::None;
+        self.mode = editor::EditorMode::View;
         self.context = editor::EditorContext::None;
         self.history.history.clear();
         self.history.future.clear();
         self.rebuild_meshes(&gl);
     }
 
-    fn draw_settings_page(ctx: &egui::Context, settings: &mut SettingsScreen) {
+    fn draw_settings_page(lang: &mut LocaleCache, ctx: &egui::Context, settings: &mut SettingsScreen) {
 
         egui::SidePanel::new(egui::panel::Side::Left, "setting selector")
             .exact_width(300.)
             .show(ctx, |ui| {
-                let mut b = ui.button("Keybinds");
+                let mut b = ui.button(lang.get("keybind-label"));
                 if settings.page == SettingsPage::Keymaps {
                     b = b.highlight();
                 }
                 if b.clicked() {
                     settings.page = SettingsPage::Keymaps;
                 }
-                let mut b2 = ui.button("Language");
+                let mut b2 = ui.button(lang.get("language-label"));
                 if settings.page == SettingsPage::Language {
                     b2 = b2.highlight();
                 }
@@ -307,10 +321,10 @@ impl App {
             .show(ctx, |ui| {
                 ui.add_space(2.);
                 egui::MenuBar::new().ui(ui, |ui| {
-                    ui.menu_button("Settings", |ui| {
+                    ui.menu_button(self.data.locale.get("settings-label").to_string(), |ui| {
                         let mut minecraft_font: bool = ui.memory_mut(|m| m.data.get_persisted("use_minecraft_font".into()).unwrap_or(true));
                         let old = minecraft_font;
-                        ui.checkbox(&mut minecraft_font, "Minecraft Font");
+                        ui.checkbox(&mut minecraft_font, self.data.locale.get("minecraft-font-label"));
                         if old != minecraft_font {
                             if minecraft_font {
                                 setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], ctx);
@@ -335,7 +349,7 @@ impl App {
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(8.);
-                    ui.add(egui::Label::new(egui::RichText::new("Recent Projects").size(20.).strong()));
+                    ui.add(egui::Label::new(egui::RichText::new(self.data.locale.get("recent-projects")).size(20.).strong()));
 
                     let mut to_open = None;
                     for RecentProject { modified, path, kind } in self.data.recents.iter() {
@@ -369,7 +383,7 @@ impl App {
                                                 });
 
                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                if ui.button("Open").clicked() {
+                                                if ui.button(self.data.locale.get("open")).clicked() {
                                                     to_open = Some((kind, path.to_path_buf()));
                                                 }
                                             });
@@ -377,7 +391,19 @@ impl App {
                                     );
                                 });
                                 ui.label(egui::RichText::new(kind.kind().to_string()).weak());
-                                ui.label(egui::RichText::new(format!("Last Opened: {modified}")).small());
+                                ui.label(
+                                    egui::RichText::new(
+                                        self.data.locale.get_with_args(
+                                            "last-opened",
+                                            &[(
+                                                Cow::Borrowed("modified"),
+                                                FluentValue::String(
+                                                    modified.to_string().into()
+                                                )
+                                            )].into()
+                                        )
+                                    ).small()
+                                );
                             }
                         );
 
@@ -440,31 +466,35 @@ impl App {
                         [610., 200.].into(),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
-                        self.draw_context_selector(
-                            ctx, ui,
-                            "env_edit_scale".into(),
-                            ENVIRONMENT_EDITOR_ICON.clone(),
-                            &["Environment", "Editor"],
-                            |s| s.context = editor::EditorContext::Model(editor::ModelEditorContext::Environment),
-                        );
+                            let ee: Vec<String> = self.data.locale.get("environment-editor").split("\n").map(ToString::to_string).collect();
+                            self.draw_context_selector(
+                                ctx, ui,
+                                "env_edit_scale".into(),
+                                ENVIRONMENT_EDITOR_ICON.clone(),
+                                &ee,
+                                |s| s.context = editor::EditorContext::Model(editor::ModelEditorContext::Environment),
+                            );
 
-                        self.draw_context_selector(
-                            ctx, ui,
-                            "saber_edit_scale".into(),
-                            SABER_EDITOR_ICON.clone(),
-                            &["Saber", "Editor"],
-                            |_s| ()//s.context = editor::EditorContext::Model(editor::ModelEditorContext::Saber),
-                        );
+                            let se: Vec<String> = self.data.locale.get("saber-editor").split("\n").map(ToString::to_string).collect();
+                            self.draw_context_selector(
+                                ctx, ui,
+                                "saber_edit_scale".into(),
+                                SABER_EDITOR_ICON.clone(),
+                                &se,
+                                |_s| ()//s.context = editor::EditorContext::Model(editor::ModelEditorContext::Saber),
+                            );
 
-                        self.draw_context_selector(
-                            ctx, ui,
-                            "note_edit_scale".into(),
-                            NOTE_EDITOR_ICON.clone(),
-                            &["Note/Bomb", "Editor"],
-                            |_s| ()//s.context = editor::EditorContext::Model(editor::ModelEditorContext::Notes),
-                        );
+                            let ne: Vec<String> = self.data.locale.get("note-editor").split("\n").map(ToString::to_string).collect();
+                            self.draw_context_selector(
+                                ctx, ui,
+                                "note_edit_scale".into(),
+                                NOTE_EDITOR_ICON.clone(),
+                                &ne,
+                                |_s| ()//s.context = editor::EditorContext::Model(editor::ModelEditorContext::Notes),
+                            );
 
-                    });
+                        }
+                    );
 
                     #[cfg(all(feature = "mapper", feature = "mesh-editor"))]
                     ui.add_space(12.5);
@@ -475,19 +505,21 @@ impl App {
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
 
+                        let ee: Vec<String> = self.data.locale.get("beatmap-editor").split("\n").map(ToString::to_string).collect();
                         self.draw_context_selector(
                             ctx, ui,
                             "beatmap_edit_scale".into(),
                             BEATMAP_EDITOR_ICON.clone(),
-                            &["Beatmap", "Editor"],
+                            &ee,
                             |s| s.context = editor::EditorContext::Map(editor::MapEditorContext::Beatmap),
                         );
 
+                        let ee: Vec<String> = self.data.locale.get("lightshow-editor").split("\n").map(ToString::to_string).collect();
                         self.draw_context_selector(
                             ctx, ui,
                             "lightshow_edit_scale".into(),
                             MISSING_EDITOR_ICON.clone(),
-                            &["Lightshow", "Editor"],
+                            &ee,
                             |_s| ()//s.context = editor::EditorContext::Map(editor::MapEditorContext::Lightshow),
                         );
                     });
@@ -505,7 +537,7 @@ impl App {
         ui: &mut Ui,
         scale_id: egui::Id,
         img_source: ImageSource,
-        overlay_text: &[&'static str],
+        overlay_text: &[String],
         on_click: impl Fn(&mut Self),
         ) {
         let scale = ui
@@ -576,32 +608,65 @@ impl App {
 
     }
 
+    fn pad_menu_text(text: &mut [(String, Option<String>)]) {
+        let Some(max_width) = text.iter().map(|(t, _)| t.len()).max() else {
+            tracing::warn!(target: DB_MAIN, "pad_menu_text was called without any input text");
+            return;
+        };
+        for (text, after) in text.iter_mut() {
+            *text = match after {
+                Some(keys) => format!("{text:<max_width$} \u{2502} [{keys}]"),
+                None => format!("{text:<max_width$} \u{2502}"),
+            };
+        }
+    }
+
     fn draw_environment_editor(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame, shift: bool, ctrl: bool) {
         let gl = frame.gl().unwrap();
 
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             ui.add_space(2.);
             egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("Create new\u{2026}       \u{2502}").clicked() && !self.block_input()
+                ui.menu_button(self.data.locale.get("file-menu-label").to_string(), |ui| {
+                    let mut options = [
+                        (self.data.locale.get("create-new-menu-label").to_string(), None),
+                        (self.data.locale.get("open-environment-menu-label").to_string(), None),
+                        (self.data.locale.get("open-menu-label").to_string(), None),
+                        (
+                            self.data.locale.get("save-menu-label").to_string(),
+                            Some(self.data.keymaps.save.format(&MODIFIER_NAMES, cfg!(target_os = "macos")))
+                        ),
+                        (self.data.locale.get("menu-label").to_string(), None),
+                    ];
+                    Self::pad_menu_text(&mut options);
+                    let [
+                        (create_new, _),
+                        (open_env, _),
+                        (open_mesh, _),
+                        (save, _),
+                        (menu, _),
+                    ] = options;
+                    if ui.button(create_new).clicked() && !self.block_input()
                     {
                         tracing::debug!(target: DB_LOGIC, "Spawning thread for environment creation");
                         let (sx, rx) = mpsc::channel();
+                        let title = self.data.locale.get("create-env-file").to_string();
+                        let title2 = self.data.locale.get("create-editor-data-file").to_string();
                         std::thread::spawn(move || {
                             let Some(env_path) = rfd::FileDialog::new()
-                                .set_title("Create environment file...")
+                                .set_title(title)
                                 .set_file_name("env")
                                 .add_filter("json", &["json"])
                                 .save_file() else {
-                                    tracing::debug!(target: DB_LOGIC, "Cenceled environment creation");
+                                    tracing::debug!(target: DB_LOGIC, "Canceled environment creation");
                                     return; // Cancel
                                 };
                             let Some(session_path) = rfd::FileDialog::new()
-                                .set_title("Create editor data file...")
+                                .set_title(title2)
                                 .set_file_name("my_env")
                                 .add_filter("json", &["json"])
                                 .save_file() else {
-                                    tracing::debug!(target: DB_LOGIC, "Cenceled environment creation");
+                                    tracing::debug!(target: DB_LOGIC, "Canceled environment creation");
                                     return; // Cancel
                                 };
 
@@ -616,23 +681,26 @@ impl App {
                                     s.view.env_path = Some(env_path);
                                     s.view.session = Some(session_path);
                                     if let Err(e) = s.save_session() {
-                                        s.set_status(None, "Failed to save environment/session", 2.);
+                                        let st = s.data.locale.get("failed-to-save-environment").to_string();
+                                        s.set_status(None, st, 2.);
                                         eprintln!("Failed to save environment/session: {e}");
                                     } else {
-                                        s.set_status(None, "Created new environment", 2.);
+                                        let st = s.data.locale.get("created-environment").to_string();
+                                        s.set_status(None, st, 2.);
                                     }
                                     RoutineAction::Remove
                                 }
                             }
                         }));
                     }
-                    if ui.button("Open environment\u{2026} \u{2502}").clicked() && !self.block_input()
+                    if ui.button(open_env).clicked() && !self.block_input()
                     {
                         tracing::debug!(target: DB_LOGIC, "Spawning thread for opening environment");
                         let (sx, rx) = mpsc::channel();
+                        let title = self.data.locale.get("open-environment").to_string();
                         std::thread::spawn(move || {
                             if let Some(session) = rfd::FileDialog::new()
-                                .set_title("Open environment...")
+                                .set_title(title)
                                 .add_filter("json", &["json"])
                                 .pick_file()
                             {
@@ -653,13 +721,14 @@ impl App {
                             }
                         }));
                     }
-                    if ui.button("Open\u{2026}             \u{2502}").clicked() && !self.block_input()
+                    if ui.button(open_mesh).clicked() && !self.block_input()
                     {
                         tracing::debug!(target: DB_LOGIC, "Spawning thread for opening meshes");
                         let (sx, rx) = mpsc::channel();
+                        let title = self.data.locale.get("open-meshes").to_string();
                         std::thread::spawn(move || {
                             if let Some(meshes) = rfd::FileDialog::new()
-                                .set_title("Open Meshes...")
+                                .set_title(title)
                                 .add_filter("json", &["json"])
                                 .pick_files()
                             {
@@ -682,7 +751,7 @@ impl App {
                             }
                         }));
                     }
-                    if ui.button("Save              \u{2502} [Ctrl+S]").clicked() {
+                    if ui.button(save).clicked() {
                         match self.mode {
                             editor::EditorMode::View => {}
                             editor::EditorMode::Assembly | editor::EditorMode::Edit => {}
@@ -690,36 +759,68 @@ impl App {
                         let _ = self.save_session();
                         ui.close();
                     }
-                    if ui.button("Menu              \u{2502}").clicked() {
+                    if ui.button(menu).clicked() {
                         tracing::debug!(target: DB_LOGIC, "Closing current environment and returning to menu");
                         self.context = editor::EditorContext::None;
                         let gl = Arc::clone(&self.state.gl);
                         close_environment(self, &gl);
                     }
                 });
-                ui.menu_button("Edit", |ui| {
-                    if ui.button("Undo  \u{2502}       [Ctrl+Z]").clicked() {
+                ui.menu_button(self.data.locale.get("edit").to_string(), |ui| {
+                    let mut options = [
+                        (
+                            self.data.locale.get("undo").to_string(),
+                            Some(self.data.keymaps.undo.format(&MODIFIER_NAMES, cfg!(target_os = "macos")))
+                        ),
+                        (
+                            self.data.locale.get("redo").to_string(),
+                            Some(self.data.keymaps.redo.format(&MODIFIER_NAMES, cfg!(target_os = "macos")))
+                        )
+                    ];
+                    Self::pad_menu_text(&mut options);
+                    let [
+                        (undo, _),
+                        (redo, _)
+                    ] = options;
+                    if ui.button(undo).clicked() {
                         self.undo(gl);
                         ui.close();
                     }
-                    if ui.button("Redo  \u{2502} [Ctrl+Shift+Z]").clicked() {
+                    if ui.button(redo).clicked() {
                         self.redo(gl);
                         ui.close();
                     }
                 });
-                ui.menu_button("View", |ui| {
-                    ui.checkbox(&mut self.state.wireframe,  "Wireframe     \u{2502} [W]");
-                    ui.checkbox(&mut self.state.show_grid,  "Show grid     \u{2502} [G]");
-                    ui.checkbox(&mut self.state.show_verts, "Vertices      \u{2502} [C]");
-                    if ui.button("Reframe camera  \u{2502} [F]").clicked() {
-                        self.frame_to_geometry();
-                        ui.close();
-                    }
+                ui.menu_button(self.data.locale.get("view-menu-label").to_string(), |ui| {
+                    let mut options = [
+                        (
+                            self.data.locale.get("wireframe").to_string(),
+                            Some(self.data.keymaps.toggle_wireframe.format(&MODIFIER_NAMES, cfg!(target_os = "macos")))
+                        ),
+                        (
+                            self.data.locale.get("show-grid").to_string(),
+                            Some(self.data.keymaps.toggle_grid.format(&MODIFIER_NAMES, cfg!(target_os = "macos")))
+                        ),
+                        (
+                            self.data.locale.get("show-vertices").to_string(),
+                            Some(self.data.keymaps.toggle_vertices.format(&MODIFIER_NAMES, cfg!(target_os = "macos")))
+                        ),
+                    ];
+                    Self::pad_menu_text(&mut options);
+                    let [
+                        (wireframe, _),
+                        (show_grid, _),
+                        (vertices, _),
+                    ] = options;
+
+                    ui.checkbox(&mut self.state.wireframe,  wireframe);
+                    ui.checkbox(&mut self.state.show_grid,  show_grid);
+                    ui.checkbox(&mut self.state.show_verts, vertices);
                 });
-                ui.menu_button("Settings", |ui| {
+                ui.menu_button(self.data.locale.get("settings-label").to_string(), |ui| {
                     let mut minecraft_font: bool = ui.memory_mut(|m| m.data.get_persisted("use_minecraft_font".into()).unwrap_or(true));
                     let old = minecraft_font;
-                    ui.checkbox(&mut minecraft_font, "Minecraft Font");
+                    ui.checkbox(&mut minecraft_font, self.data.locale.get("minecraft-font-label"));
                     if old != minecraft_font {
                         if minecraft_font {
                             tracing::debug!(target: DB_LOGIC, "Enabling Minecraft font");
@@ -814,7 +915,7 @@ impl App {
                                     MathDragValue::new(&mut target.z, &mut vars).speed(0.01),
                                 );
                             });
-                            ui.label("Camera pivot");
+                            ui.label(self.data.locale.get("camera-pivot"));
                             if h > 45. {
                                 ui.add_space(5.);
                                 ui.allocate_ui_with_layout(
@@ -824,7 +925,7 @@ impl App {
                                         if ui
                                             .add_sized(
                                                 ui.available_size(),
-                                                egui::Button::new("Show UV editor")
+                                                egui::Button::new(self.data.locale.get("show-uv-editor"))
                                                     .selected(self.state.ui.show_uv_window),
                                             )
                                             .clicked()
@@ -916,7 +1017,7 @@ impl App {
             });
 
         if self.mode == editor::EditorMode::Edit && self.state.ui.show_uv_window {
-            egui::Window::new("UV editor")
+            egui::Window::new(self.data.locale.get("uv-editor"))
                 .id(egui::Id::new("uv_editor"))
                 .min_size([200., 200.])
                 .pivot(Align2::CENTER_CENTER)
@@ -927,7 +1028,7 @@ impl App {
         }
 
         if self.mode == editor::EditorMode::View && self.state.ui.show_mirror_window {
-            egui::Window::new("Mirror geometry editor")
+            egui::Window::new(self.data.locale.get("mirror-geometry-editor"))
                 .id(egui::Id::new("mirror_editor"))
                 .min_size([200., 200.])
                 .pivot(Align2::CENTER_CENTER)
@@ -954,7 +1055,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         if ui.small_button(icon).clicked() {
             s2.state.ui.meshes_collapse = !s2.state.ui.meshes_collapse;
         }
-        ui.label("Meshes");
+        ui.label(s.data.locale.get("meshes"));
     });
 
     if !s2.state.ui.meshes_collapse {
@@ -978,10 +1079,10 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 .horizontal(|ui| {
                     ui.checkbox(&mut mesh.visible, "");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Close").clicked() {
+                        if ui.button(s.data.locale.get("button-close")).clicked() {
                             to_remove = Some(id.clone());
                         }
-                        if ui.button("Edit").clicked() {
+                        if ui.button(s.data.locale.get("button-edit")).clicked() {
                             s.editor.mesh = Some(id.clone());
                             s.last_mode = s.mode;
                             s.mode = editor::EditorMode::Assembly;
@@ -1018,13 +1119,14 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
 
         if ui
-            .add_sized([w, 20.], egui::Button::new("Create mesh"))
+            .add_sized([w, 20.], egui::Button::new(s.data.locale.get("button-create-mesh")))
             .clicked()
         {
             let (sx, rx) = mpsc::channel();
+            let title = s.data.locale.get("title-create-mesh").to_string();
             std::thread::spawn(move || {
                 if let Some(file) = rfd::FileDialog::new()
-                    .set_title("Create new mesh")
+                    .set_title(title)
                     .set_file_name("new_mesh")
                     .add_filter("json", &["json"])
                     .save_file()
@@ -1075,7 +1177,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 if ui.small_button(icon).clicked() {
                                     s2.state.ui.spectrogram_collapse = !s2.state.ui.spectrogram_collapse;
                                 }
-                                ui.label("Spectrogram");
+                                ui.label(s.data.locale.get("spectrogram"));
                         }
                         );
                     }
@@ -1083,19 +1185,19 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             });
 
             if !s2.state.ui.spectrogram_collapse {
-                ui.label("Position");
+                ui.label(s.data.locale.get("position"));
                 vec3_row(ui, &mut spect.position, w3,
                     || Some(spect2.clone()),
                     |s| s3.add_history(editor::HistoryEntry::Spectrogram(s)),
                     || s2.rebuild_meshes(gl)
                 );
-                ui.label("Offset");
+                ui.label(s.data.locale.get("offset"));
                 vec3_row(ui, &mut spect.offset, w3,
                     || Some(spect2.clone()),
                     |s| s3.add_history(editor::HistoryEntry::Spectrogram(s)),
                     || s2.rebuild_meshes(gl),
                 );
-                ui.label("Rotation");
+                ui.label(s.data.locale.get("rotation"));
                 quat_row(ui, &mut spect.rotation, &mut s2.state.ui.spectrogram_mode, (w2, w3),
                     || Some(spect2.clone()),
                     |s| s3.add_history(editor::HistoryEntry::Spectrogram(s)),
@@ -1106,7 +1208,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         [w2, 45.].into(),
                         Layout::top_down(egui::Align::Min),
                         |ui| {
-                            ui.label("Count");
+                            ui.label(s.data.locale.get("item-count"));
                             let resp = ui.add_sized(
                                 [w2, 20.],
                                 egui::DragValue::new(&mut spect.count)
@@ -1124,7 +1226,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         [w2, 45.].into(),
                         Layout::top_down(egui::Align::Min),
                         |ui| {
-                            ui.label("Style");
+                            ui.label(s.data.locale.get("visual-style"));
                             let old = spect.style;
                             ui.allocate_ui_with_layout(
                                 [w2, 20.].into(),
@@ -1150,10 +1252,14 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         [w2, 45.].into(),
                         Layout::top_down(egui::Align::Min),
                         |ui| {
-                            ui.label("Half split");
+                            ui.label(s.data.locale.get("tower-half-split"));
                             ui.add_sized(
                                 [w2, 20.],
-                                egui::Button::new(if spect.half_split { "ENABLED" } else { "DISABLED" })
+                                egui::Button::new(if spect.half_split {
+                                    s.data.locale.get("enabled")
+                                } else {
+                                    s.data.locale.get("disabled")
+                                })
                             )
                         }
                     ).inner.clicked() {
@@ -1165,7 +1271,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         [w2, 45.].into(),
                         Layout::top_down(egui::Align::Min),
                         |ui| {
-                            ui.label("Level modifier");
+                            ui.label(s.data.locale.get("tower-height-modifier"));
                             let resp = ui.add_sized(
                                 [w2, 20.],
                                 egui::DragValue::new(&mut spect.level_modifier)
@@ -1185,7 +1291,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         [w3, 45.].into(),
                         Layout::top_down(egui::Align::Min),
                         |ui| {
-                            ui.label("Height");
+                            ui.label(s.data.locale.get("tower-height-position"));
                             let resp = ui.add_sized(
                                 [w3 + 5., 20.],
                                 egui::DragValue::new(&mut spect.base_height)
@@ -1203,7 +1309,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         [w2, 45.].into(),
                         Layout::top_down(egui::Align::Min),
                         |ui| {
-                            ui.label("Easing");
+                            ui.label(s.data.locale.get("easing"));
                             let old = spect.easing;
                             ui.allocate_ui_with_layout(
                                 [w - w3 - 12.5, 22.].into(),
@@ -1236,7 +1342,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         remove_plane = ui.with_layout(Layout::right_to_left(egui::Align::Min), |ui| {
                             let clicked = ui.small_button(SMALL_X).clicked();
                             ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
-                                ui.label("Mirror plane");
+                                ui.label(s.data.locale.get("mirror-geometry-plane"));
                             });
                             clicked
                         }).inner;
@@ -1287,7 +1393,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 [w2, 45.].into(),
                                 Layout::top_down(egui::Align::Min),
                                 |ui| {
-                                    ui.label("Offset");
+                                    ui.label(s.data.locale.get("offset"));
                                     ui.add_sized(
                                         [w2, 20.],
                                         egui::DragValue::new(&mut v4.w)
@@ -1307,7 +1413,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                         if ui.add_sized(
                             [w, 20.],
-                            egui::Button::new("normalize")
+                            egui::Button::new(s.data.locale.get("normalize-vector-button"))
                         ).clicked() {
                             s2.add_history(editor::HistoryEntry::Spectrogram(Some(spect2.clone())));
                             *v4 = v4.xyz().normalize().extend(v4.w);
@@ -1317,7 +1423,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     None => {
                         add_plane = ui.add_sized(
                             [w, 20.],
-                            egui::Button::new("Add mirror plane")
+                            egui::Button::new(s.data.locale.get("add-mirror-plane"))
                         ).clicked();
                     }
                 }
@@ -1335,7 +1441,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
         }
         None => {
-            if ui.add_sized([w, 20.], egui::Button::new("Add spectrogram")).clicked() {
+            if ui.add_sized([w, 20.], egui::Button::new(s.data.locale.get("add-spectrogram"))).clicked() {
                 s.add_history(editor::HistoryEntry::Spectrogram(None));
                 s.view.spectrogram = Some(SpectrogramData::default())
             }
@@ -1358,7 +1464,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     |ui| {
                         if ui.add_sized(
                             [w2, 20.],
-                            egui::Button::new("Edit").selected(s2.state.ui.show_mirror_window)
+                            egui::Button::new(s.data.locale.get("button-edit")).selected(s2.state.ui.show_mirror_window)
                         ).clicked() {
                             s2.state.ui.show_mirror_window = !s2.state.ui.show_mirror_window;
                         }
@@ -1366,7 +1472,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             [w2, 20.].into(),
                             Layout::left_to_right(egui::Align::Min),
                             |ui| {
-                                ui.label("Mirror");
+                                ui.label(s.data.locale.get("mirror"));
                             }
                         );
                     }
@@ -1379,9 +1485,10 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     .clicked()
                 {
                     let (sx, rx) = mpsc::channel();
+                    let title = s.data.locale.get("open-mirror-file").to_string();
                     std::thread::spawn(move || {
                         if let Some(path) = rfd::FileDialog::new()
-                            .set_title("Open mirror file")
+                            .set_title(title)
                             .add_filter("json", &["json"])
                             .pick_file()
                         {
@@ -1394,7 +1501,8 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
                             Ok(src) => {
                                 if let Err(e) = s.load_mirror(src.as_path(), gl) {
-                                    s.set_status(None, "Failed to load mirror geometry", 2.);
+                                    let st = s.data.locale.get("failed-to-load-mirror").to_string();
+                                    s.set_status(None, st, 2.);
                                     eprintln!("Failed to load mirror geometry: {e}");
                                 } else {
                                     s.view.mirror_path = Some(src);
@@ -1409,7 +1517,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             });
         }
         None => {
-            if ui.add_sized([w, 20.], egui::Button::new("Add mirror")).clicked() {
+            if ui.add_sized([w, 20.], egui::Button::new(s.data.locale.get("add-mirror"))).clicked() {
                 s.add_history(editor::HistoryEntry::Mirror(s.view.mirror_id.clone(), s.view.mirror_path.clone(), s.view.mirror_geometry.clone()));
                 s.view.mirror_id = Some("env:mirror".to_string());
             }
@@ -1430,7 +1538,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let mut remove_heights = false;
     match s.view.fog_heights.as_mut() {
         Some(heights) => {
-            ui.label("Fog heights");
+            ui.label(s.data.locale.get("fog-heights"));
             ui.horizontal(|ui| {
                 let [low, high] = *heights;
                 let r0 = ui.add_sized(
@@ -1455,7 +1563,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             });
         }
         None => {
-            if ui.add_sized([w, 20.], egui::Button::new("Add fog heights")).clicked() {
+            if ui.add_sized([w, 20.], egui::Button::new(s.data.locale.get("add-fog-heights"))).clicked() {
                 let h = s.view.fog_heights.replace([-50., -30.]);
                 s.add_history(editor::HistoryEntry::FogHeights(h));
             }
@@ -1470,7 +1578,7 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
     if s.view.session.is_some()
         && ui
-            .add_sized([w, 20.], egui::Button::new("Close environment"))
+            .add_sized([w, 20.], egui::Button::new(s.data.locale.get("close-environment")))
             .clicked()
     {
         close_environment(s, gl);
@@ -1511,7 +1619,11 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         ui.add_space(5.);
 
         let mut renamed = None;
-        ui.add_sized([w, 20.], TextInput::new(&format!("Rename {}", sel), &mut renamed));
+        let rename = s.data.locale.get_with_args(
+            "rename-asset",
+            &[(Cow::Borrowed("name"), FluentValue::String(sel.into()))].into()
+        );
+        ui.add_sized([w, 20.], TextInput::new(&rename, &mut renamed));
         if let Some(new_name) = renamed {
             let mut meshes = std::mem::take(&mut s2.view.meshes);
             for (id, _) in meshes.iter_mut2() {
@@ -1542,7 +1654,11 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 if ui.button(icon).clicked() {
                     *is_collapsed = !*is_collapsed;
                 }
-                ui.label(format!("Placement {}", p_i + 1));
+                let placement = s.data.locale.get_with_args(
+                    "placement-counter",
+                    &[(Cow::Borrowed("index"), (p_i + 1).into())].into()
+                );
+                ui.label(placement);
             });
 
             if !*is_collapsed {
@@ -1556,7 +1672,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 let [ori_mode, rot_mode, ori_off_mode, off_mode] =
                     &mut s.state.ui.view_rotation_modes.get_mut(sel).unwrap()[p_i];
 
-                ui.label("Position");
+                ui.label(s.data.locale.get("position"));
                 vec3_row(
                     ui,
                     &mut placement.position,
@@ -1574,13 +1690,13 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 );
 
                 ui.horizontal(|ui| {
-                    ui.label("Orientation");
+                    ui.label(s.data.locale.get("orientation"));
 
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new("?").small().color(ui.visuals().weak_text_color())
                         )
-                    ).on_hover_text("Orientation applies before lightshow rotation events");
+                    ).on_hover_text(s.data.locale.get("orientation-desc"));
                 });
                 quat_row(
                     ui,
@@ -1600,13 +1716,13 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 );
 
                 ui.horizontal(|ui| {
-                    ui.label("Rotation");
+                    ui.label(s.data.locale.get("rotation"));
 
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new("?").small().color(ui.visuals().weak_text_color())
                         )
-                    ).on_hover_text("Rotation applies after lightshow rotation events");
+                    ).on_hover_text(s.data.locale.get("rotation-desc"));
                 });
                 quat_row(
                     ui,
@@ -1637,10 +1753,10 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             );
                         },
                     );
-                    ui.label("Count");
+                    ui.label(s.data.locale.get("item-count"));
                 });
 
-                ui.label("Offset position");
+                ui.label(s.data.locale.get("offset-position"));
                 vec3_row(
                     ui,
                     &mut placement.offset,
@@ -1657,7 +1773,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     || s3.rebuild_meshes(gl),
                 );
 
-                ui.label("Offset orientation");
+                ui.label(s.data.locale.get("offset-orientation"));
                 quat_row(
                     ui,
                     &mut placement.orientation_offset,
@@ -1675,7 +1791,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     || s3.rebuild_meshes(gl),
                 );
 
-                ui.label("Offset rotation");
+                ui.label(s.data.locale.get("offset-rotation"));
                 quat_row(
                     ui,
                     &mut placement.rotation_offset,
@@ -1693,7 +1809,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     || s3.rebuild_meshes(gl),
                 );
 
-                ui.label("IDs");
+                ui.label(s.data.locale.get("id-label"));
                 ui.horizontal(|ui| {
                     let layout = Layout::left_to_right(egui::Align::Min);
                     ui.allocate_ui_with_layout([w2, 20.].into(), layout, |ui| { ui.set_width(w2); ui.label("ID group") });
@@ -1773,7 +1889,10 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             });
                         }
                         (true, None) => {
-                            add_entry = ui.add_sized([w, 20.], egui::Button::new("Add ID")).clicked();
+                            add_entry = ui.add_sized(
+                                [w, 20.],
+                                egui::Button::new(s.data.locale.get("add-id"))
+                            ).clicked();
                             first_none = false;
                         }
                         (false, None) => {
@@ -1791,7 +1910,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 }
 
 
-                ui.label("Action group settings");
+                ui.label(s.data.locale.get("action-group-settings"));
                 let mut repl = None;
                 match &mut placement.action_type {
                     editor::ActionType::Spinning { side, axis } => {
@@ -1823,7 +1942,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 ui.allocate_ui_with_layout(
                                     [w - if axis.is_some() { 25. } else { 0. }, 20.].into(),
                                     Layout::left_to_right(egui::Align::Min),
-                                    |ui| ui.label("Spin Axis")
+                                    |ui| ui.label(s.data.locale.get("spin-Axis"))
                                 );
                             }
                         );
@@ -1833,7 +1952,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             None => {
                                 set_axis = ui.add_sized(
                                     [w, 20.],
-                                    egui::Button::new("Set spin axis")
+                                    egui::Button::new(s.data.locale.get("set-spin-axis"))
                                 ).clicked();
                             }
                             Some(axs) => {
@@ -1855,7 +1974,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                         ui.add_space(5.);
 
-                        if ui.add_sized([w, 20.], egui::Button::new("Remove action")).clicked() {
+                        if ui.add_sized([w, 20.], egui::Button::new(s.data.locale.get("remove-action"))).clicked() {
                             repl = Some(ActionType::Static);
                         }
                     },
@@ -1890,7 +2009,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 ui.allocate_ui_with_layout(
                                     [w - if start.is_some() { 25. } else { 0. }, 20.].into(),
                                     Layout::left_to_right(egui::Align::Min),
-                                    |ui| ui.label("Default positions")
+                                    |ui| ui.label(s.data.locale.get("default-positions"))
                                 );
                             }
                         );
@@ -1900,7 +2019,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             Some([in_angle, in_offset, out_angle, out_offset]) => {
                                 let (resp, vals) = ui.horizontal(|ui| {
                                     let (a, b, ia, io) = ui.vertical(|ui| {
-                                        ui.label("Inner angle");
+                                        ui.label(s.data.locale.get("inner-ring-angle"));
                                         let mut ia = *in_angle;
                                         let a = ui.add_sized(
                                             [w2, 20.],
@@ -1909,7 +2028,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                                 .range(-360..=360)
                                         );
 
-                                        ui.label("Inner offset");
+                                        ui.label(s.data.locale.get("inner-ring-offset"));
                                         let mut io = *in_offset;
                                         let b = ui.add_sized(
                                             [w2, 20.],
@@ -1921,7 +2040,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                         (a, b, ia, io)
                                     }).inner;
                                     let (c, d, oa, oo) = ui.vertical(|ui| {
-                                        ui.label("Outer angle");
+                                        ui.label(s.data.locale.get("outer-ring-angle"));
                                         let mut ia = *out_angle;
                                         let a = ui.add_sized(
                                             [w2, 20.],
@@ -1930,7 +2049,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                                 .range(-360..=360)
                                         );
 
-                                        ui.label("Outer offset");
+                                        ui.label(s.data.locale.get("outer-ring-offset"));
                                         let mut io = *out_offset;
                                         let b = ui.add_sized(
                                             [w2, 20.],
@@ -1961,7 +2080,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             None => {
                                 add_start = ui.add_sized(
                                     [w, 20.],
-                                    egui::Button::new("Add default positions")
+                                    egui::Button::new(s.data.locale.get("add-default-positions"))
                                 ).clicked()
                             }
                         }
@@ -1977,8 +2096,8 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                     [w2, 0.].into(),
                                     Layout::top_down(egui::Align::Min),
                                     |ui| {
-                                        ui.label("Angles")
-                                            .on_hover_text("Possible first ring spin offsets");
+                                        ui.label(s.data.locale.get("ring-angles"))
+                                            .on_hover_text(s.data.locale.get("ring-angles-desc"));
 
                                         let mut to_remove = None;
                                         for (i, angle) in angles.iter_mut().enumerate() {
@@ -2014,7 +2133,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                         }
                                         if ui.add_sized(
                                             [w2, 20.],
-                                            egui::Button::new("Add")
+                                            egui::Button::new(s.data.locale.get("add"))
                                         ).clicked() {
                                             angles.push(0.);
                                         }
@@ -2024,8 +2143,8 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                     [w2, 0.].into(),
                                     Layout::top_down(egui::Align::Min),
                                     |ui| {
-                                        ui.label("Deltas")
-                                            .on_hover_text("Possible ring cascade offsets");
+                                        ui.label(s.data.locale.get("ring-deltas"))
+                                            .on_hover_text(s.data.locale.get("ting-deltas-desc"));
 
                                         let mut to_remove = None;
                                         for (i, angle) in deltas.iter_mut().enumerate() {
@@ -2061,7 +2180,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                         }
                                         if ui.add_sized(
                                             [w2, 20.],
-                                            egui::Button::new("Add")
+                                            egui::Button::new(s.data.locale.get("add"))
                                         ).clicked() {
                                             deltas.push(0.);
                                         }
@@ -2072,19 +2191,19 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                         ui.add_space(5.);
 
-                        if ui.add_sized([w, 20.], egui::Button::new("Remove action")).clicked() {
+                        if ui.add_sized([w, 20.], egui::Button::new(s.data.locale.get("remove-action"))).clicked() {
                             repl = Some(ActionType::Static);
                         }
                     },
                     editor::ActionType::Static => {
                         ui.horizontal(|ui| {
-                            if ui.add_sized([w2, 20.], egui::Button::new("Add spinning")).clicked() {
+                            if ui.add_sized([w2, 20.], egui::Button::new(s.data.locale.get("add-spinning"))).clicked() {
                                 repl = Some(ActionType::Spinning {
                                     side: editor::SpinSide::Left,
                                     axis: None
                                 })
                             }
-                            if ui.add_sized([w2, 20.], egui::Button::new("Add rings")).clicked() {
+                            if ui.add_sized([w2, 20.], egui::Button::new(s.data.locale.get("add-rings"))).clicked() {
                                 repl = Some(ActionType::Ring {
                                     layer: editor::RingType::Inner,
                                     angles: Vec::new(),
@@ -2108,7 +2227,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 ui.add_space(5.);
 
                 if ui
-                    .add_sized([ui.available_width(), 20.0], egui::Button::new("Delete"))
+                    .add_sized([ui.available_width(), 20.0], egui::Button::new(s.data.locale.get("delete")))
                     .clicked()
                 {
                     to_remove = Some(p_i);
@@ -2128,7 +2247,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
         }
 
-        if ui.add_sized([w, 20.], egui::Button::new("Add Placement")).clicked() {
+        if ui.add_sized([w, 20.], egui::Button::new(s.data.locale.get("add-Placement"))).clicked() {
             mesh.view_placements.push(ViewPlacement::default());
             s.state.ui.collapsed.entry(sel.to_string()).or_default().push(false);
             s.state
@@ -2225,7 +2344,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 toggles.placements = !toggles.placements;
             }
-            ui.label("Placements");
+            ui.label(self2.data.locale.get("placements"));
         });
 
         if !toggles.placements {
@@ -2264,10 +2383,10 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     let rot_mode = &mut pt_collapsed.1;
 
                     ui.horizontal(|ui| {
-                        ui.label("Position");
+                        ui.label(self2.data.locale.get("position"));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("Paste").clicked() { /* TODO */ }
-                            if ui.small_button("Copy").clicked() { /* TODO */ }
+                            // if ui.small_button("Paste").clicked() { /* TODO */ }
+                            // if ui.small_button("Copy").clicked() { /* TODO */ }
                         });
                     });
                     vec3_row(
@@ -2287,10 +2406,10 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     );
 
                     ui.horizontal(|ui| {
-                        ui.label("Rotation");
+                        ui.label(self2.data.locale.get("rotation"));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("Paste").clicked() { /* TODO */ }
-                            if ui.small_button("Copy").clicked() { /* TODO */ }
+                            // if ui.small_button("Paste").clicked() { /* TODO */ }
+                            // if ui.small_button("Copy").clicked() { /* TODO */ }
                         });
                     });
                     quat_row(
@@ -2311,10 +2430,10 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     );
 
                     ui.horizontal(|ui| {
-                        ui.label("Scale");
+                        ui.label(self2.data.locale.get("scale"));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("Paste").clicked() { /* TODO */ }
-                            if ui.small_button("Copy").clicked() { /* TODO */ }
+                            // if ui.small_button("Paste").clicked() { /* TODO */ }
+                            // if ui.small_button("Copy").clicked() { /* TODO */ }
                             // TODO: re-add lock system when it works
                             // correctly
                             // let lock_icon = if pt_collapsed.0[2] { "[#]" } else { "[ ]" };
@@ -2345,12 +2464,12 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             ui.horizontal(|ui| {
                                 ui.add_sized(
                                     [w - ui.spacing().item_spacing.x - 24., 20.],
-                                    egui::Label::new("Billboard"),
+                                    egui::Label::new(self2.data.locale.get("graphics-billboard")),
                                 );
 
                                 delete_bb = ui.small_button(SMALL_X).clicked();
                             });
-                            ui.label("Origin");
+                            ui.label(self2.data.locale.get("billboard-origin"));
                             vec3_row(ui, &mut bb.origin, w3,
                                 || mesh2.data.placements.clone(),
                                 |t| {
@@ -2363,7 +2482,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 },
                                 || self4.rebuild_meshes(gl),
                             );
-                            ui.label("Axis");
+                            ui.label(self2.data.locale.get("billboard-axis"));
                             vec3_row(ui, &mut bb.axis, w3,
                                 || mesh2.data.placements.clone(),
                                 |t| {
@@ -2376,7 +2495,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 },
                                 || self4.rebuild_meshes(gl),
                             );
-                            ui.label("Normal");
+                            ui.label(self2.data.locale.get("billboard-normal"));
                             vec3_row(ui, &mut bb.normal, w3,
                                 || mesh2.data.placements.clone(),
                                 |t| {
@@ -2389,7 +2508,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 },
                                 || self4.rebuild_meshes(gl),
                             );
-                            if ui.add_sized([w, 20.], egui::Button::new("Camera locked").selected(bb.camera_lock)).clicked() {
+                            if ui.add_sized([w, 20.], egui::Button::new(self2.data.locale.get("camera-lock")).selected(bb.camera_lock)).clicked() {
                                 self3.add_history(editor::HistoryEntry::MeshPlacement(
                                     light_mesh::LightMeshPlacementSnapshot {
                                         view_id: self3.get_current_mesh_id().unwrap().to_string(),
@@ -2401,7 +2520,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             }
                         }
                         None => {
-                            if ui.add_sized([w, 20.], egui::Button::new("Set billboard")).clicked() {
+                            if ui.add_sized([w, 20.], egui::Button::new(self2.data.locale.get("set-billboard"))).clicked() {
                                 placement.billboard = Some(BillboardData::default());
                             }
                         }
@@ -2416,18 +2535,18 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             ui.horizontal(|ui| {
                                 ui.add_sized(
                                     [w - ui.spacing().item_spacing.x - 24., 20.],
-                                    egui::Label::new("Shader settings"),
+                                    egui::Label::new(self2.data.locale.get("shader-settings")),
                                 );
 
                                 remove_settings = ui.small_button(SMALL_X).clicked();
                             });
 
                             let mut current = sets.style;
-                            egui::ComboBox::new(format!("shader-style-{}", pi), "Style")
-                                .selected_text(sets.style.name())
+                            egui::ComboBox::new(format!("shader-style-{}", pi), self2.data.locale.get("visual-style"))
+                                .selected_text(sets.style.translation_text(&mut self2.data.locale))
                                 .show_ui(ui, |ui| {
                                     for style in ShaderStyle::iter_all() {
-                                        ui.selectable_value(&mut current, style, style.name());
+                                        ui.selectable_value(&mut current, style, style.translation_text(&mut self2.data.locale));
                                     }
                                 });
 
@@ -2444,7 +2563,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                         }
                         None => {
-                            if ui.add_sized([w, 20.], egui::Button::new("Set shader settings")).clicked() {
+                            if ui.add_sized([w, 20.], egui::Button::new(self2.data.locale.get("set-shader-settings"))).clicked() {
                                 placement.shader_settings = Some(ShaderSettingsData::default());
                             }
                         }
@@ -2456,7 +2575,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         if ui.small_button(icon).clicked() {
                             pt_collapsed.0[1] = !pt_collapsed.0[1];
                         }
-                        ui.label("Remap data");
+                        ui.label(self2.data.locale.get("remap-data"));
                     });
 
                     if !pt_collapsed.0[1] {
@@ -2477,7 +2596,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         if let Some(ri) = remap_to_remove {
                             placement.remap_data.shift_remove_index(ri);
                         }
-                        if ui.add_sized([w, 20.], egui::Button::new("+ Add")).clicked() {
+                        if ui.add_sized([w, 20.], egui::Button::new(self2.data.locale.get("add-data"))).clicked() {
                             placement.remap_data.insert(String::new(), String::new());
                         }
                     }
@@ -2492,7 +2611,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 self3.rebuild_meshes(gl);
             }
             if ui
-                .add_sized([w, 20.], egui::Button::new("Add Placement"))
+                .add_sized([w, 20.], egui::Button::new(self2.data.locale.get("add-placement")))
                 .clicked()
                 && let Some(first) = part_names.first()
             {
@@ -2518,7 +2637,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 toggles.data = !toggles.data;
             }
-            ui.label("Data");
+            ui.label(self2.data.locale.get("data"));
         });
 
         if !toggles.data {
@@ -2589,8 +2708,12 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         self3.rebuild_meshes(gl);
                     }
                     let mut current = entry.color;
+                    let ch = self2.data.locale.get_with_args(
+                        "data-channel",
+                        &[("channel".into(), current.into())].into(),
+                    );
                     egui::ComboBox::from_id_salt(egui::Id::new("data_ch").with(di))
-                        .selected_text(format!("Channel {}", current))
+                        .selected_text(ch)
                         .show_ui(ui, |ui| {
                             for ch in 0u8..8 {
                                 ui.selectable_value(&mut current, ch, ch.to_string());
@@ -2605,7 +2728,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     }
 
                     ui.horizontal(|ui| {
-                        ui.label("Texture");
+                        ui.label(self2.data.locale.get("texture"));
                         let mut current = entry.texture;
                         let resp = ui.add(
                             egui::DragValue::new(&mut current)
@@ -2634,7 +2757,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
 
             if ui
-                .add_sized([w, 20.], egui::Button::new("Add Data"))
+                .add_sized([w, 20.], egui::Button::new(self2.data.locale.get("add-data-label")))
                 .clicked()
             {
                 self3.add_history(editor::HistoryEntry::MeshMeta(
@@ -2653,7 +2776,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 toggles.textures = !toggles.textures;
             }
-            ui.label("Textures");
+            ui.label(self2.data.locale.get("textures"));
         });
 
         if !toggles.textures {
@@ -2674,9 +2797,10 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     {
                         let (sx, rx) = mpsc::channel();
                         let id = val.clone();
+                        let title = self2.data.locale.get("title-choose-image").to_string();
                         std::thread::spawn(move || {
                             if let Some(path) = rfd::FileDialog::new()
-                                .set_title("Choose image")
+                                .set_title(title)
                                 .add_filter("png", &["png"])
                                 .pick_file()
                             {
@@ -2707,7 +2831,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
 
             if ui
-                .add_sized([w, 20.], egui::Button::new("Add Texture"))
+                .add_sized([w, 20.], egui::Button::new(self2.data.locale.get("add-texture")))
                 .clicked()
             {
                 let next_key = (0..)
@@ -2724,7 +2848,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 toggles.settings = !toggles.settings;
             }
-            ui.label("Render settings");
+            ui.label(self2.data.locale.get("label-render-settings"));
         });
 
         if !toggles.settings {
@@ -2733,11 +2857,11 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 let layout = egui::Layout::left_to_right(egui::Align::Center);
                 ui.allocate_ui_with_layout(size, layout, |ui| {
                     ui.set_min_width(w2);
-                    ui.checkbox(&mut mesh.data.cull, "Cull")
+                    ui.checkbox(&mut mesh.data.cull, self2.data.locale.get("setting-cull"))
                 });
                 ui.allocate_ui_with_layout(size, layout, |ui| {
                     ui.set_min_width(w2);
-                    ui.checkbox(&mut mesh.data.do_bloom, "Bloom")
+                    ui.checkbox(&mut mesh.data.do_bloom, self2.data.locale.get("setting-bloom"))
                 });
             });
             ui.horizontal(|ui| {
@@ -2745,15 +2869,15 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 let layout = egui::Layout::left_to_right(egui::Align::Center);
                 ui.allocate_ui_with_layout(size, layout, |ui| {
                     ui.set_min_width(w2);
-                    ui.checkbox(&mut mesh.data.do_mirroring, "Mirror")
+                    ui.checkbox(&mut mesh.data.do_mirroring, self2.data.locale.get("setting-mirror"))
                 });
                 ui.allocate_ui_with_layout(size, layout, |ui| {
                     ui.set_min_width(w2);
-                    ui.checkbox(&mut mesh.data.do_solid, "Solid")
+                    ui.checkbox(&mut mesh.data.do_solid, self2.data.locale.get("setting-solid"))
                 });
             });
             egui::ComboBox::from_id_salt("bloomfog_style")
-                .selected_text(mesh.data.bloomfog_style.label())
+                .selected_text(mesh.data.bloomfog_style.label(&mut self2.data.locale))
                 .width(w)
                 .show_ui(ui, |ui| {
                     for style in [
@@ -2761,7 +2885,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         BloomfogStyle::Everything,
                         BloomfogStyle::Nothing,
                     ] {
-                        ui.selectable_value(&mut mesh.data.bloomfog_style, style, style.label());
+                        ui.selectable_value(&mut mesh.data.bloomfog_style, style, style.label(&mut self2.data.locale));
                     }
                 });
         }
@@ -2771,7 +2895,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 toggles.credits = !toggles.credits;
             }
-            ui.label("Credits");
+            ui.label(self2.data.locale.get("credits"));
         });
 
         if !toggles.credits {
@@ -2792,7 +2916,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 self3.rebuild_meshes(gl);
             }
             if ui
-                .add_sized([w, 20.], egui::Button::new("+ Add Credit"))
+                .add_sized([w, 20.], egui::Button::new(self2.data.locale.get("add-credit")))
                 .clicked()
             {
                 mesh.data.credits.push(String::new());
@@ -2806,7 +2930,7 @@ fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let s2 = unsafe { rd.detach_mut_ref(s) };
     let w = ui.available_width();
     if let Some(mesh) = s.get_current_view_mesh_mut() {
-        ui.label("Parts");
+        ui.label(s2.data.locale.get("parts-label"));
         let mesh2 = unsafe { rd.detach_mut_ref(mesh) };
         for name in mesh.data.part_names.iter() {
             if ui
@@ -2841,7 +2965,7 @@ fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             };
         }
         let mut new_part = None;
-        ui.add_sized([w, 20.], TextInput::new("+ Part", &mut new_part));
+        ui.add_sized([w, 20.], TextInput::new(s2.data.locale.get("add-part"), &mut new_part));
         if let Some(name) = new_part {
             s2.add_history(editor::HistoryEntry::Mesh(light_mesh::LightMeshSnapshot {
                 id: s2.get_current_mesh_id().unwrap().to_string(),
@@ -2960,7 +3084,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *verts = !*verts;
             }
-            ui.label("Indexed vertices");
+            ui.label(self3.data.locale.get("indexed-vertices"));
         });
 
         if !*verts {
@@ -2991,7 +3115,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *verts = !*verts;
             }
-            ui.label("Named vertices");
+            ui.label(self3.data.locale.get("named-vertices"));
         });
 
         if !*verts {
@@ -3055,7 +3179,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *verts = !*verts;
             }
-            ui.label("Compute vertices");
+            ui.label(self3.data.locale.get("compute-vertices"));
         });
 
         if !*verts {
@@ -3104,7 +3228,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *uvs = !*uvs;
             }
-            ui.label("Indexed UVs");
+            ui.label(self3.data.locale.get("indexed-uvs"));
         });
 
         if !*uvs {
@@ -3151,7 +3275,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 );
             }
             ui.separator();
-            if ui.button("+ UV").clicked() {
+            if ui.button(self3.data.locale.get("add-indexed-uv")).clicked() {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
                         id: self3.get_current_mesh_id().unwrap().to_string(),
@@ -3170,7 +3294,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *uvs = !*uvs;
             }
-            ui.label("Named UVs");
+            ui.label(self3.data.locale.get("named-uvs"));
         });
 
         if !*uvs {
@@ -3247,7 +3371,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
             ui.separator();
             let mut new_uv = None;
-            ui.add_sized([w, 20.], TextInput::new("+ Named UV", &mut new_uv));
+            ui.add_sized([w, 20.], TextInput::new(self3.data.locale.get("add-named-uv"), &mut new_uv));
             if let Some(name) = new_uv {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
@@ -3267,7 +3391,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *norms = !*norms;
             }
-            ui.label("Indexed normals");
+            ui.label(self3.data.locale.get("indexed-normals"));
         });
 
         if !*norms {
@@ -3314,7 +3438,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 );
             }
             ui.separator();
-            if ui.button("+ Normal").clicked() {
+            if ui.button(self3.data.locale.get("add-indexed-normal")).clicked() {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
                         id: self3.get_current_mesh_id().unwrap().to_string(),
@@ -3333,7 +3457,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *norms = !*norms;
             }
-            ui.label("Named normals");
+            ui.label(self3.data.locale.get("named-normals"));
         });
 
         if !*norms {
@@ -3408,7 +3532,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 );
             }
             let mut new_norm = None;
-            ui.add_sized([w, 20.], TextInput::new("+ Named Normal", &mut new_norm));
+            ui.add_sized([w, 20.], TextInput::new(self3.data.locale.get("add-named-normal"), &mut new_norm));
             if let Some(name) = new_norm {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
@@ -3428,7 +3552,7 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui.small_button(icon).clicked() {
                 *norms = !*norms;
             }
-            ui.label("Compute normals");
+            ui.label(self3.data.locale.get("compute-normals"));
         });
 
         if !*norms {
@@ -3533,13 +3657,30 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
     let w = ui.available_width();
 
-    ui.label("Cycle part [A / D]");
+    let label = s.data.locale.get_with_args(
+        "cycle-part-keys",
+        &[
+            (
+                "left".into(),
+                s.data.keymaps.toggle_mesh_part_back.format(&MODIFIER_NAMES, cfg!(target_os = "macos")).into()
+            ),
+            (
+                "right".into(),
+                s.data.keymaps.toggle_mesh_part_forward.format(&MODIFIER_NAMES, cfg!(target_os = "macos")).into()
+            )
+        ].into()
+    );
+    ui.label(label);
 
     if let Some(current) = s2.get_current_part_name() {
         let mut rename = None;
+        let ren = s.data.locale.get_with_args(
+            "rename-asset",
+            &[("name".into(), current.into())].into()
+        );
         ui.add_sized(
             [w, 20.],
-            TextInput::new(&format!("rename {}", current), &mut rename),
+            TextInput::new(&ren, &mut rename),
         );
         if let Some(rename) = rename {
             let _ = s.rename(editor::Rename::Part {
@@ -3563,7 +3704,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         let w2 = (w - ui.spacing().item_spacing.x) / 2.;
         let w3 = (w - ui.spacing().item_spacing.x * 2.) / 3.;
 
-        ui.label("Multi-vertex");
+        ui.label(self3.data.locale.get("multi-vertex"));
         multi_vec3_row(
             ui,
             &mut values,
@@ -3604,7 +3745,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 }
             } {
                 VertVal::V3(v3) => {
-                    ui.label("Vertex position");
+                    ui.label(self3.data.locale.get("vertex-position"));
                     vec3_row(
                         ui,
                         v3,
@@ -3623,7 +3764,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     );
                 }
                 VertVal::C3(c3) => {
-                    ui.label("Compute position");
+                    ui.label(self3.data.locale.get("compute-position"));
                     let VertexId::Named(key) = vert else {
                         unreachable!()
                     };
@@ -3636,7 +3777,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             && let [v1, v2] = verts2.as_slice()
         {
             let mut comp_name = None;
-            ui.add_sized([w, 20.], TextInput::new("+ Compute Vertex", &mut comp_name));
+            ui.add_sized([w, 20.], TextInput::new(self3.data.locale.get("add-compute-vertex"), &mut comp_name));
             if let Some(name) = comp_name {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
@@ -3679,17 +3820,19 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             let mut v2 = *v2;
             let mut v3 = *v3;
 
-            let mut hint = "+ Compute Normal";
 
-            if tris.len() == 1
+            let hint = if tris.len() == 1
                 && let Some(tri) = part4.filter_triangles(&[v1, v2, v3]).next()
             {
                 let [a, b, c] = &tri.vertices;
                 v1 = &a.vertex;
                 v2 = &b.vertex;
                 v3 = &c.vertex;
-                hint = "+ Compute Normal [Tri]";
-            }
+                "add-compute-normal-wound"
+            } else {
+                "add-compute-normal"
+            };
+            let hint = self3.data.locale.get(hint);
 
             let mut comp_name = None;
             ui.add_sized([w, 20.], TextInput::new(hint, &mut comp_name));
@@ -3710,9 +3853,9 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
 
         if !tris.is_empty() {
-            ui.label("Multi-triangle data");
+            ui.label(self3.data.locale.get("multi-triangle-data"));
 
-            ui.label("Normals");
+            ui.label(self3.data.locale.get("normals"));
             ui.horizontal(|ui| {
                 for (idx, v) in [(0, "a"), (1, "b"), (2, "c")] {
                     let mut normal = NormalId::Named(String::new());
@@ -3744,7 +3887,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 }
             });
 
-            ui.label("UVs");
+            ui.label(self3.data.locale.get("uvs"));
             ui.horizontal(|ui| {
                 for (idx, v) in [(0, "a"), (1, "b"), (2, "c")] {
                     let mut uv = UvId::Named(String::new());
@@ -3775,7 +3918,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     }
                 }
             });
-            ui.label("Material");
+            ui.label(self3.data.locale.get("material"));
             ui.horizontal(|ui| {
                 let mut mat = String::new();
                 egui::ComboBox::from_id_salt("multi-material")
@@ -3806,7 +3949,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
 
         if !verts.is_empty()
-        && ui.add_sized([w, 20.], egui::Button::new("Dedupe vertices")).clicked() {
+        && ui.add_sized([w, 20.], egui::Button::new(self3.data.locale.get("dedupe-vertices"))).clicked() {
             self3.add_history(editor::HistoryEntry::MeshPart(
                 light_mesh::LightMeshPartSnapshot {
                     id: self3.get_current_mesh_id().unwrap().to_string(),
@@ -4016,10 +4159,14 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
 
         if unique_texture_ids.len() > 1 {
             ui.horizontal(|ui| {
-                for (ref_id, display_id, _path) in &unique_texture_ids {
+                for (ref_id, display_id, _path) in unique_texture_ids.iter() {
                     let selected = *ref_id == s.state.ui.selected_group;
+                    let tex_label = s.data.locale.get_with_args(
+                        "texture-label",
+                        &[("id".into(), (*display_id).into())].into(),
+                    );
                     if ui
-                        .selectable_label(selected, format!("Tex {display_id}"))
+                        .selectable_label(selected, tex_label)
                         .clicked()
                         && !selected
                     {
@@ -4045,7 +4192,11 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                     ui.horizontal(|ui| {
                         for ti in 0..tris_in_group {
                             let selected = ti == sel_tri;
-                            if ui.selectable_label(selected, format!("Tri {ti}")).clicked() {
+                            let tri_label = s.data.locale.get_with_args(
+                                "triangle-label",
+                                &[("id".into(), ti.into())].into(),
+                            );
+                            if ui.selectable_label(selected, tri_label).clicked() {
                                 s.state.ui.selected_tris.insert(sel_group, ti);
                                 s.state.ui.hovered_uv = None;
                                 s.state.ui.dragging_uv = None;
@@ -4392,7 +4543,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
         let rect = ui.available_rect_before_wrap();
         ui.add_sized(
             rect.size(),
-            egui::Label::new("Select triangles to edit UVs"),
+            egui::Label::new(s.data.locale.get("uv-edit-hint")),
         );
     }
 }
@@ -4600,9 +4751,15 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
             let end = (start + 3).min(total_verts);
             let count = end - start;
             let label = if count == 3 {
-                format!("Tri {ti}")
+                s.data.locale.get_with_args(
+                    "triangle-label",
+                    &[("id".into(), ti.into())].into()
+                )
             } else {
-                format!("Tri {ti} ({count}v)")
+                s.data.locale.get_with_args(
+                    "counted-triangle-label",
+                    &[("id".into(), ti.into()), ("count".into(), count.into())].into()
+                )
             };
             let active = s.state.ui.mirror_editor.active_tri == ti;
             if ui.selectable_label(active, label).clicked() {
@@ -4612,7 +4769,7 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
     });
 
     ui.horizontal(|ui| {
-        if ui.button("Add tri").clicked() {
+        if ui.button(s.data.locale.get("mirror-add-triangle")).clicked() {
             let me = &s.state.ui.mirror_editor;
             let cx = me.pan.x;
             let cy = me.pan.y;
@@ -4625,7 +4782,7 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
             s.rebuild_meshes(gl);
         }
 
-        if ui.button("Add vert").clicked() {
+        if ui.button(s.data.locale.get("mirror-add-vertex")).clicked() {
             let me = &s.state.ui.mirror_editor;
             let cx = me.pan.x;
             let cy = me.pan.y;
