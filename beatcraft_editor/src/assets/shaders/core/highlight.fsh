@@ -10,9 +10,10 @@ in vec2 texCoord0;
 out vec4 fragColor;
 
 void main() {
-    float c = texture(Sampler0, texCoord0).r;
-    if (c <= 0.1 || c > 0.5) {
+    vec3 col = texture(Sampler0, texCoord0).rgb;
+    float c = max(col.r, max(col.g, col.b));
+    if (c <= 0.2 || c > 0.5) {
         discard;
     }
-    fragColor = vec4(0.5 + c);
+    fragColor = vec4(col + vec3(0.5), 1.0);
 }

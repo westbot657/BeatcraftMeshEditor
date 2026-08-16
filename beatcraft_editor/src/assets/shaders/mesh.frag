@@ -166,7 +166,7 @@ void main() {
         }
     }
     if (passType == PASS_HIGHLIGHT) {
-        fragColor = vec4(1.0);
+        fragColor = v_color;
         return;
     }
 

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
@@ -13,7 +14,7 @@ use crate::data::LightMeshData;
 use crate::light_mesh::LightMesh;
 use crate::render::{GpuMesh, GridType, InstanceData, MeshDrawCall, Renderer};
 use crate::{DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, MISSING_EDITOR_ICON, RefDuper, UnsafeMutRef, editor, get_data_folder};
-use crate::editor::{App, EditorContext, RoutineAction, ViewStyle};
+use crate::editor::{App, EditorContext, RoutineAction, Selection, ViewStyle};
 
 use self::data::song_core::DifficultyBeatmapCustomDataV2;
 use self::data::v2::{CharacteristicSetV2, DifficultyBeatmapV2};
@@ -608,7 +609,7 @@ impl App {
                                     None => {},
                                 }
 
-                                draw_map_diffs(ui, map);
+                                draw_map_diffs(self, ui, map);
                             },
                             Some(controller) => {
                                 let rect = ui.available_rect_before_wrap();
@@ -618,13 +619,11 @@ impl App {
 
                                 let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
                                 self.handle_3d_input(&resp, ctx, gl);
+                                let (click, shift) = ui.input(|i| (i.pointer.primary_clicked(), i.modifiers.shift));
                                 let mouse_pos = ui.input(|i| i.pointer.latest_pos())
-                                    .map(|p| Vec2::new(p.x - rect.min.x, p.y - rect.min.y))
-                                    .unwrap_or(Vec2::new(0., h));
+                                    .map(|p| Vec2::new(p.x - rect.min.x, p.y - rect.min.y));
 
-                                let mx = mouse_pos.x;
-                                let my = h - mouse_pos.y;
-
+                                let mouse_pos = mouse_pos.map(|mp| (mp.x, h - mp.y));
 
                                 if let Some(audio) = map.audio.as_ref()
                                     && audio.is_playing() {
@@ -658,8 +657,7 @@ impl App {
                                                 gl.enable(glow::DEPTH_TEST);
                                                 gl.depth_mask(true);
 
-
-                                                draw_map_gl(&s, gl, &view, &proj, (w as i32, h as i32), (mx, my));
+                                                draw_map_gl(&s, gl, &view, &proj, (w as i32, h as i32), mouse_pos, click, shift);
 
                                                 if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
                                                     s.render.renderer.draw_map_grid(gl, &view, &proj);
@@ -686,7 +684,7 @@ impl App {
     }
 }
 
-fn draw_map_diffs(ui: &mut egui::Ui, map: &mut BeatmapProject) {
+fn draw_map_diffs(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
     ui.horizontal(|ui| {
         for set in map.sets.iter_mut() {
             ui.allocate_ui_with_layout(
@@ -712,6 +710,7 @@ fn draw_map_diffs(ui: &mut egui::Ui, map: &mut BeatmapProject) {
                                                     r
                                                 }
                                             };
+                                            app.selection = Selection::None;
                                             map.controller = Some(BeatmapController::new(
                                                 map.info.as_ref().unwrap(),
                                                 diff,
@@ -767,6 +766,8 @@ impl HitBox {
 
 struct Hit {
     distance: f32,
+    typ: ObjectType,
+    index: usize,
 }
 
 fn check_collision(
@@ -774,6 +775,8 @@ fn check_collision(
     hitbox: HitBox,
     ray_pos: Vec3,
     ray_dir: Vec3,
+    typ: ObjectType,
+    index: usize,
 ) -> Option<Hit> {
 
     let corners: [Vec4; 8] = hitbox.corners().into_iter().map(|p| mat * p.extend(1.)).collect::<Vec<_>>().try_into().unwrap();
@@ -814,19 +817,21 @@ fn check_collision(
     check_axis! { z }
 
     if t_max >= t_min && t_max >= 0. {
-        Some(Hit { distance: t_min.max(0.) })
+        Some(Hit { distance: t_min.max(0.), typ, index })
     } else {
         None
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_map_gl(
     s: &UnsafeMutRef<App>, gl: &glow::Context,
     view: &Mat4, proj: &Mat4,
     window: (i32, i32),
-    mouse: (f32, f32),
+    mouse: Option<(f32, f32)>,
+    click: bool,
+    shift: bool,
 ) {
-    let (mx, my) = mouse;
     let (w, h) = window;
     let vp = proj * view;
     let controller = s.ref_mut().map_editor.map.as_mut().unwrap().controller.as_mut().unwrap();
@@ -844,15 +849,48 @@ fn draw_map_gl(
     let mut dot_instances = Vec::new();
     let mut chain_dot_instances = Vec::new();
 
+    let mut note_highlights = Vec::new();
+    let mut bomb_highlights = Vec::new();
+    let mut obstacle_highlights = Vec::new();
+    let mut chain_head_highlights = Vec::new();
+    let mut chain_tail_highlights = Vec::new();
+
+    let mut arrow_highlights = Vec::new();
+    let mut dot_highlights = Vec::new();
+    let mut chain_dot_highlights = Vec::new();
+
+
     let beatmap = &s.render.renderer.beatmap;
     let beat = beatmap.beat();
 
-    let (orig, dir) = App::unproject(Vec2::new(mx, my), Vec2::new(w as f32, h as f32), &vp);
+    let mut note_sel_filter = HashSet::new();
+    let mut bomb_sel_filter = HashSet::new();
+    let mut obstacle_sel_filter = HashSet::new();
+    let mut chain_sel_filter = HashSet::new();
+    let mut arc_sel_filter = HashSet::new();
+
+    if let Selection::BeatmapObject(objects) = &s.selection {
+        for (t, i) in objects {
+            match t {
+                ObjectType::ColorNote => note_sel_filter.insert(*i),
+                ObjectType::BombNote => bomb_sel_filter.insert(*i),
+                ObjectType::Obstacle => obstacle_sel_filter.insert(*i),
+                ObjectType::ChainHead |
+                ObjectType::ChainLink => chain_sel_filter.insert(*i),
+                ObjectType::ArcHead |
+                ObjectType::ArcTail => arc_sel_filter.insert(*i),
+            };
+        }
+    }
+
+    let (orig, dir) = if let Some((mx, my)) = mouse {
+        App::unproject(Vec2::new(mx, my), Vec2::new(w as f32, h as f32), &vp)
+    } else { (Vec3::ZERO, Vec3::ZERO) };
     let mut hits = Vec::new();
-    for (t, object) in controller.color_notes.iter().map(|x| (ObjectType::ColorNote, x as &dyn GameObject))
-        .chain(controller.bomb_notes.iter().map(|x| (ObjectType::BombNote, x as &dyn GameObject)))
-        .chain(controller.obstacles.iter().map(|x| (ObjectType::Obstacle, x as &dyn GameObject)))
-        .chain(controller.chain_notes.iter().map(|x| (ObjectType::ChainHead, x as &dyn GameObject))) {
+    for (i, t, object) in controller.color_notes.iter().enumerate().map(|(i, x)| (i, ObjectType::ColorNote, x as &dyn GameObject))
+        .chain(controller.bomb_notes.iter().enumerate().map(|(i, x)| (i, ObjectType::BombNote, x as &dyn GameObject)))
+        .chain(controller.obstacles.iter().enumerate().map(|(i, x)| (i, ObjectType::Obstacle, x as &dyn GameObject)))
+        .chain(controller.chain_notes.iter().enumerate().map(|(i, x)| (i, ObjectType::ChainHead, x as &dyn GameObject))) {
 
         let wp = Mat4::IDENTITY;
 
@@ -861,13 +899,31 @@ fn draw_map_gl(
             ViewStyle::Beatcraft { .. } => object.animate_complex(wp, beat, &controller.runtime_data),
         } {
             let inst = object.get_instance(Vec4::ZERO, mat, &controller.runtime_data.color_scheme);
-            if object.upcast_chain_head().is_none() && let Some(hit) = check_collision(mat, object.editor_hitbox(), orig, dir) {
+            if mouse.is_some() && object.upcast_chain_head().is_none() && let Some(hit) = check_collision(mat, object.editor_hitbox(), orig, dir, t, i) {
                 hits.push((hit, t, inst, None));
             }
-            match t {
-                ObjectType::ColorNote => note_instances.push(inst.into()),
-                ObjectType::BombNote => bomb_instances.push(inst.into()),
-                ObjectType::Obstacle => obstacle_instances.push(inst.into()),
+            let is_highlighted = match t {
+                ObjectType::ColorNote => {
+                    note_instances.push(inst.into());
+                    if note_sel_filter.contains(&i) {
+                        note_highlights.push(inst.into_data().highlight(Vec4::splat(1.)));
+                        true
+                    } else { false }
+                },
+                ObjectType::BombNote => {
+                    bomb_instances.push(inst.into());
+                    if bomb_sel_filter.contains(&i) {
+                        bomb_highlights.push(inst.into_data().highlight(Vec4::splat(1.)));
+                        true
+                    } else { false }
+                },
+                ObjectType::Obstacle => {
+                    obstacle_instances.push(inst.into());
+                    if obstacle_sel_filter.contains(&i) {
+                        obstacle_highlights.push(inst.into_data().highlight(Vec4::splat(1.)));
+                        true
+                    } else { false }
+                },
                 ObjectType::ChainHead => {
                     chain_head_instances.push(inst.into());
                     arrow_instances.push(inst.into());
@@ -875,7 +931,8 @@ fn draw_map_gl(
                     let links = chain.get_links();
                     let mut hit0 = None;
                     let mut insts = Vec::with_capacity(links.len() + 1);
-                    if let Some(hit) = check_collision(mat, object.editor_hitbox(), orig, dir) {
+                    let sel = chain_sel_filter.contains(&i);
+                    if mouse.is_some() && let Some(hit) = check_collision(mat, object.editor_hitbox(), orig, dir, t, i) {
                         hit0 = Some(hit);
                     }
                     for link in links {
@@ -883,25 +940,44 @@ fn draw_map_gl(
                             ViewStyle::Edit => link.animate_simple(wp, beat, &controller.runtime_data, beatmap),
                             ViewStyle::Beatcraft { .. } => link.animate_complex(wp, beat, &controller.runtime_data),
                         } {
-                            if hit0.is_none() && let Some(hit) = check_collision(mat, link.editor_hitbox(), orig, dir) {
+                            if mouse.is_some() && hit0.is_none() && let Some(hit) = check_collision(mat, link.editor_hitbox(), orig, dir, t, i) {
                                 hit0 = Some(hit);
                             }
                             let inst = link.get_instance(Vec4::ZERO, mat, &controller.runtime_data.color_scheme);
                             chain_tail_instances.push(inst.into());
                             chain_dot_instances.push(inst.into());
+                            if sel {
+                                chain_tail_highlights.push(inst.into_data().highlight(Vec4::splat(1.)));
+                                chain_dot_highlights.push(inst.into_data().highlight(Vec4::splat(1.)));
+                            }
                             insts.push(inst);
                         }
                     }
                     if let Some(hit) = hit0 {
                         hits.push((hit, t, inst, Some(insts)));
                     }
+                    if sel {
+                        chain_head_highlights.push(inst.into_data().highlight(Vec4::splat(1.)));
+                        arrow_highlights.push(inst.into_data().highlight(Vec4::splat(1.)));
+                    }
+                    false
                 }
-                _ => {}
-            }
+                _ => { false }
+            };
             match object.arrow_type() {
                 object::ArrowType::None => {},
-                object::ArrowType::Arrow => arrow_instances.push(inst.into()),
-                object::ArrowType::Dot => dot_instances.push(inst.into()),
+                object::ArrowType::Arrow => {
+                    arrow_instances.push(inst.into());
+                    if is_highlighted {
+                        arrow_highlights.push(inst.into_data().highlight(Vec4::splat(1.)));
+                    }
+                },
+                object::ArrowType::Dot => {
+                    dot_instances.push(inst.into());
+                    if is_highlighted {
+                        dot_highlights.push(inst.into_data().highlight(Vec4::splat(1.)));
+                    }
+                },
                 object::ArrowType::ChainDot => chain_dot_instances.push(inst.into()),
             }
         }
@@ -1013,24 +1089,127 @@ fn draw_map_gl(
             mirror: false,
             obstacle: true,
             highlight: false,
-        }
+        },
+        MeshDrawCall {
+            mesh: m,
+            instances: note_highlights,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: false,
+            bloom: false,
+            mirror: false,
+            obstacle: false,
+            highlight: true,
+        },
+        MeshDrawCall {
+            mesh: c,
+            instances: chain_head_highlights,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: false,
+            bloom: false,
+            mirror: false,
+            obstacle: false,
+            highlight: true,
+        },
+        MeshDrawCall {
+            mesh: cl,
+            instances: chain_tail_highlights,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: false,
+            bloom: false,
+            mirror: false,
+            obstacle: false,
+            highlight: true,
+        },
+        MeshDrawCall {
+            mesh: a,
+            instances: arrow_highlights,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: false,
+            bloom: false,
+            mirror: false,
+            obstacle: false,
+            highlight: true,
+        },
+        MeshDrawCall {
+            mesh: d,
+            instances: dot_highlights,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: false,
+            bloom: false,
+            mirror: false,
+            obstacle: false,
+            highlight: true,
+        },
+        MeshDrawCall {
+            mesh: cd,
+            instances: chain_dot_highlights,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: false,
+            bloom: false,
+            mirror: false,
+            obstacle: false,
+            highlight: true,
+        },
+        MeshDrawCall {
+            mesh: b,
+            instances: bomb_highlights,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: false,
+            bloom: false,
+            mirror: false,
+            obstacle: false,
+            highlight: true,
+        },
+        MeshDrawCall {
+            mesh: o,
+            instances: obstacle_highlights,
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: false,
+            bloom: false,
+            mirror: false,
+            obstacle: false,
+            highlight: true,
+        },
     ];
 
 
     hits.sort_by(|(hit0, _, _, _), (hit1, _, _, _)| hit0.distance.partial_cmp(&hit1.distance).unwrap());
-    if let Some((_, closest_ty, closest, links)) = hits.first() {
-        let (m, m2) = match (closest_ty, links) {
-            (ObjectType::ChainHead, Some(link_insts)) => (c, Some(link_insts.iter().map(|i| Into::<InstanceData>::into(*i)).collect::<Vec<_>>())),
-            (ObjectType::ColorNote, None) => (m, None),
-            (ObjectType::BombNote, None) => (b, None),
-            (ObjectType::Obstacle, None) => (o, None),
+    if let Some((Hit { distance: _, typ, index }, closest_ty, closest, links)) = hits.first() {
+        if click {
+            if shift && let Selection::BeatmapObject(sel) = &mut s.ref_mut().selection {
+                sel.push((*typ, *index));
+            } else {
+                s.ref_mut().selection = Selection::BeatmapObject(vec![(*typ, *index)]);
+            }
+        }
+        let (m, a, m2) = match (closest_ty, links) {
+            (ObjectType::ChainHead, Some(link_insts)) => (c, Some(a), Some(link_insts.iter().map(|i| Into::<InstanceData>::into(*i)).collect::<Vec<_>>())),
+            (ObjectType::ColorNote, None) => (m, Some(a), None),
+            (ObjectType::BombNote, None) => (b, None, None),
+            (ObjectType::Obstacle, None) => (o, None, None),
             // (ObjectType::ArcHead, None) => todo!(),
             // (ObjectType::ArcTail, None) => todo!(),
             (t, n) => unreachable!("Hit check encountered unexpected type-link combo: {t:?}, {n:?}"),
         };
         calls.push(MeshDrawCall {
             mesh: m,
-            instances: vec![(*closest).into()],
+            instances: vec![Into::<InstanceData>::into(*closest).highlight(Vec4::new(0.2, 1.0, 0.2, 1.0))],
             wireframe: false,
             cull: true,
             bloomfog: false,
@@ -1040,10 +1219,36 @@ fn draw_map_gl(
             obstacle: false,
             highlight: true,
         });
+        if let Some(arrow) = a {
+            calls.push(MeshDrawCall {
+                mesh: arrow,
+                instances: vec![Into::<InstanceData>::into(*closest).highlight(Vec4::new(0.2, 1.0, 0.2, 1.0))],
+                wireframe: false,
+                cull: true,
+                bloomfog: false,
+                solid: false,
+                bloom: false,
+                mirror: false,
+                obstacle: false,
+                highlight: true,
+            });
+        }
         if let Some(instances) = m2 {
-            let instances = instances.into_iter().collect();
+            let instances: Vec<InstanceData> = instances.into_iter().map(|i| i.highlight(Vec4::new(0.2, 1.0, 0.2, 1.0))).collect();
             calls.push(MeshDrawCall {
                 mesh: cl,
+                instances: instances.clone(),
+                wireframe: false,
+                cull: true,
+                bloomfog: false,
+                solid: false,
+                bloom: false,
+                mirror: false,
+                obstacle: false,
+                highlight: true
+            });
+            calls.push(MeshDrawCall {
+                mesh: cd,
                 instances,
                 wireframe: false,
                 cull: true,

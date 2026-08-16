@@ -195,6 +195,10 @@ void main() {
         }
     }
 
+    if (passType == PASS_HIGHLIGHT) {
+        v_color = c0;
+    }
+
     pos = u_view * pos;
     worldPos = pos.xyz;
     vec4 wp = u_camera_pos * pos;

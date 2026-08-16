@@ -14,6 +14,7 @@ use tracing::Level;
 
 use crate::audio::AudioSystem;
 use crate::beatmap::BeatmapEditor;
+use crate::beatmap::object::ObjectType;
 use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
 use crate::config::{AppData, KeyMaps};
 use crate::data::{
@@ -401,6 +402,7 @@ pub enum Selection {
     None,
     Vertices(Vec<VertexId>),
     Instances(Vec<usize>),
+    BeatmapObject(Vec<(ObjectType, usize)>),
 }
 
 impl Selection {
@@ -2390,6 +2392,7 @@ impl App {
                     ));
                 }
             }
+            Selection::BeatmapObject(_) => {},
             Selection::None => {
                 if let Some(buf) = self.render.sel_points.take() {
                     buf.destroy(gl);

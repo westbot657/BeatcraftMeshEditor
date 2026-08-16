@@ -97,6 +97,11 @@ impl InstanceData {
             colors
         }
     }
+
+    pub fn highlight(mut self, color: Vec4) -> Self {
+        self.colors[0] = color;
+        self
+    }
 }
 
 impl GameObjectInstanceData {
@@ -168,6 +173,11 @@ impl GameObjectInstanceData {
             index, Vec4::ZERO,
         )
     }
+
+    pub fn into_data(self) -> InstanceData {
+        self.into()
+    }
+
 }
 
 impl From<GameObjectInstanceData> for InstanceData {
