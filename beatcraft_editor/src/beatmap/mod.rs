@@ -28,12 +28,18 @@ pub mod render;
 #[cfg(test)]
 pub mod tests;
 
+pub struct V4BeatmapProjectDiffData {
+    pub mappers: Vec<String>,
+    pub lighters: Vec<String>,
+}
+
 pub struct BeatmapProjectDiff {
     pub difficulty: MapDifficulty,
     pub beatmap_file: Option<PathBuf>,
     pub njs: f32,
     pub njs_offset: f32,
     pub custom_data: Option<DifficultyBeatmapCustomDataV2>,
+    pub v4_data: Option<V4BeatmapProjectDiffData>,
 }
 
 pub struct BeatmapProjectSet {
@@ -60,6 +66,7 @@ impl From<&DifficultyBeatmapV2> for BeatmapProjectDiff {
             njs: value.note_jump_movement_speed,
             njs_offset: value.note_jump_start_beat_offset,
             custom_data: value.custom_data.clone(),
+            v4_data: None,
         }
     }
 }
@@ -74,6 +81,9 @@ pub struct BeatmapProject {
     pub cover_image: Option<PathBuf>,
     pub sets: Vec<BeatmapProjectSet>,
     pub controller: Option<BeatmapController>,
+
+    /// Option<(sets index, diff index)>
+    pub selected_diff: Option<(usize, usize)>,
 }
 
 pub struct BeatmapMeshSet {
@@ -235,6 +245,10 @@ impl BeatmapEditor {
                             njs: diff.note_jump_movement_speed,
                             njs_offset: diff.note_jump_start_beat_offset,
                             custom_data: None,
+                            v4_data: Some(V4BeatmapProjectDiffData {
+                                mappers: diff.beatmap_authors.mappers.clone(),
+                                lighters: diff.beatmap_authors.lighters.clone(),
+                            })
                         });
                     }
                     for (ch, diffs) in sts.into_iter() {
@@ -276,6 +290,7 @@ impl BeatmapEditor {
             cover_image,
             sets,
             controller: None,
+            selected_diff: None,
         };
 
         self.map = Some(project);
@@ -479,8 +494,37 @@ impl App {
         egui::SidePanel::left("left_panel")
             .exact_width(300.)
             .resizable(false)
-            .show(ctx, |_ui| {
-                //
+            .show(ctx, |ui| {
+
+                ui.allocate_ui_with_layout(
+                    ui.available_size(),
+                    egui::Layout::top_down(egui::Align::Center),
+                    |ui| {
+                        ui.add_space(10.);
+                        if ui.add_sized(
+                            [ui.available_width() / 2., 20.],
+                            egui::Button::new("Menu")
+                        ).clicked() {
+                            tracing::debug!(target: DB_LOGIC, "Returning to menu");
+                            self.context = EditorContext::None;
+                            self.render.renderer.beatmap.seek(0.);
+                            if let Some(map) = self.map_editor.map.take()
+                            && let Some(audio) = map.audio {
+                                audio.stop();
+                                drop(audio);
+                                self.audio_system.remove_dead_audio();
+                                self.state.playback_speed = 1.;
+                            }
+                        }
+                        ui.add_space(10.);
+
+                        if self.map_editor.map.is_some()
+                        && ui.add_sized([ui.available_width() / 2., 20.], egui::Button::new("Close Map")).clicked() {
+                            self.map_editor.map = None;
+                        }
+                    }
+                );
+
             });
 
         egui::SidePanel::right("right_panel")
@@ -574,42 +618,15 @@ impl App {
                     Some(map) => {
                         match map.controller.as_ref() {
                             None => {
-                                ui.label(map.folder.to_string_lossy().as_str());
-
-                                #[allow(clippy::single_match)]
-                                match map.info.as_mut() {
-                                    Some(i) => {
-                                        match i {
-                                            InfoFile::V2(v2) => {
-                                                ui.label("Info V2");
-                                                ui.label(&v2.song_name);
-                                                ui.label(&v2.song_sub_name);
-                                                ui.horizontal(|ui| {
-                                                    ui.label(format!(
-                                                        "Artist: {}  BPM: {:.2}  Mappers: {}",
-                                                        v2.song_author_name,
-                                                        v2.bpm,
-                                                        v2.level_author_name
-                                                    ));
-                                                });
-                                            },
-                                            InfoFile::V4(v4) => {
-                                                ui.label("Info V4");
-                                                ui.label(&v4.song.title);
-                                                ui.label(&v4.song.sub_title);
-                                                ui.label(format!(
-                                                    "Artist: {}  BPM: {:.2}",
-                                                    v4.song.author,
-                                                    v4.audio.bpm,
-                                                ));
-                                            }
-                                        }
-                                        ui.add_space(15.);
-                                    },
-                                    None => {},
-                                }
-
-                                draw_map_diffs(self, ui, map);
+                                ui.allocate_ui_with_layout(
+                                    ui.available_size(),
+                                    egui::Layout::top_down(egui::Align::Min),
+                                    |ui| {
+                                        draw_map_info(self, ui, map);
+                                        draw_map_diffs(self, ui, map);
+                                        draw_map_diff(self, ui, map);
+                                    }
+                                );
                             },
                             Some(controller) => {
                                 let rect = ui.available_rect_before_wrap();
@@ -684,58 +701,179 @@ impl App {
     }
 }
 
-fn draw_map_diffs(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
-    ui.horizontal(|ui| {
-        for set in map.sets.iter_mut() {
-            ui.allocate_ui_with_layout(
-                [200., 50.].into(),
-                egui::Layout::top_down(egui::Align::Min),
-                |ui| {
-                    ui.label(set.set.display_name());
-                    ui.separator();
-                    for diff in set.diffs.iter_mut() {
-                        if ui.button(diff.difficulty.display_name()).clicked() {
-                            let path = diff.beatmap_file.as_deref().unwrap();
-                            let path = map.folder.join(path);
-                            let data = std::fs::read(path).unwrap();
-                            match serde_json::from_slice::<BeatmapFile>(&data) {
-                                Ok(diff2) => {
-                                    if let Some(audio) = map.audio.as_ref() {
-                                        if let Some(sample_count) = audio.sample_count() {
-                                            let bpm_regions = match map.audio_info.as_ref() {
-                                                None => Vec::new(),
-                                                Some(info) => {
-                                                    let r = info.bpm_regions();
-                                                    tracing::debug!(target: DB_DATA, ?r, "Loaded BPM regions:");
-                                                    r
-                                                }
-                                            };
-                                            app.selection = Selection::None;
-                                            map.controller = Some(BeatmapController::new(
-                                                map.info.as_ref().unwrap(),
-                                                diff,
-                                                &diff2,
-                                                bpm_regions,
-                                                sample_count,
-                                                audio.sample_rate,
-                                            ).unwrap());
-                                        } else {
-                                            tracing::warn!(target: DB_AUDIO, "Audio sample_count is None");
-                                        }
+fn draw_map_info(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
+    if let Some(i) = map.info.as_mut() {
+        ui.add_space(15.);
+        match i {
+            InfoFile::V2(v2) => {
+                ui.allocate_ui_with_layout(
+                    [ui.available_width(), 200.].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
+                        ui.add_space(15.);
+                        let cover = map.folder.join(&v2.cover_image_filename);
+                        ui.add_sized(
+                            [200., 200.],
+                            if cover.exists() {
+                                egui::Image::new(format!("file://{}", cover.to_string_lossy()))
+                            } else {
+                                egui::Image::new(MISSING_EDITOR_ICON.clone())
+                            }
+                        );
+                        ui.allocate_ui_with_layout(
+                            [ui.available_width(), 200.].into(),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                ui.label("Info V2");
+                                ui.label(&v2.song_name);
+                                ui.label(&v2.song_sub_name);
+                                ui.label(format!(
+                                        "Artist: {}  BPM: {:.2}  Mappers: {}",
+                                        v2.song_author_name,
+                                        v2.bpm,
+                                        v2.level_author_name
+                                ));
 
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::error!(target: DB_DATA, "Error loading beatmap file:\n{}", e);
+                            }
+                        );
+                    }
+                );
+            },
+            InfoFile::V4(v4) => {
+                ui.allocate_ui_with_layout(
+                    [ui.available_width(), 200.].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
+                        ui.add_space(15.);
+                        let cover = map.folder.join(&v4.cover_image_filename);
+                        ui.add_sized(
+                            [200., 200.],
+                            if cover.exists() {
+                                egui::Image::new(format!("file://{}", cover.to_string_lossy()))
+                            } else {
+                                egui::Image::new(MISSING_EDITOR_ICON.clone())
+                            }
+                        );
+                        ui.allocate_ui_with_layout(
+                            [ui.available_width(), 200.].into(),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                ui.label("Info V2");
+                                ui.label(&v4.song.title);
+                                ui.label(&v4.song.sub_title);
+                                ui.label(format!(
+                                        "Artist: {}  BPM: {:.2}",
+                                        v4.song.author,
+                                        v4.audio.bpm,
+                                ));
+                            }
+                        );
+                    }
+                );
+            }
+        }
+        ui.add_space(15.);
+    }
+}
+
+fn draw_map_diffs(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
+    ui.allocate_ui_with_layout(
+        [ui.available_width(), 200.].into(),
+        egui::Layout::left_to_right(egui::Align::Min),
+        |ui| {
+            ui.add_space(15.);
+            for (si, set) in map.sets.iter_mut().enumerate() {
+                ui.allocate_ui_with_layout(
+                    [200., 200.].into(),
+                    egui::Layout::top_down(egui::Align::Center),
+                    |ui| {
+                        ui.label(set.set.display_name());
+                        ui.separator();
+                        for (di, diff) in set.diffs.iter_mut().enumerate() {
+                            let sel = if let Some((si0, di0)) = map.selected_diff { si0 == si && di0 == di } else { false };
+                            if ui.add_sized(
+                                [180., 25.],
+                                egui::Button::new(diff.difficulty.display_name())
+                                .selected(sel)
+                            ).clicked() {
+                                if sel {
+                                    map.selected_diff = None;
+                                } else {
+                                    map.selected_diff = Some((si, di));
                                 }
                             }
                         }
+                        ui.add_space(ui.available_height());
                     }
-                }
-            );
+                );
+            }
         }
-    });
+    );
 
+}
+
+fn draw_map_diff(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
+    if let Some((si, di)) = map.selected_diff
+    && let Some(set) = map.sets.get_mut(si)
+    && let Some(diff) = set.diffs.get_mut(di) {
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), 200.].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                ui.add_space(15.);
+                ui.allocate_ui_with_layout(
+                    [ui.available_width(), 200.].into(),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        ui.label(format!("NJS: {}  OFFSET: {}", diff.njs, diff.njs_offset));
+                        if let Some(v4_data) = diff.v4_data.as_mut() {
+                            ui.label(format!("MAPPERS: {}", v4_data.mappers.join(", ")));
+                            ui.label(format!("LIGHTERS: {}", v4_data.lighters.join(", ")));
+                        }
+                        if let Some(path) = diff.beatmap_file.as_deref() {
+                            ui.label(format!("PATH: {}", path.to_string_lossy()));
+                            if ui.button("Open").clicked() {
+                                let path = map.folder.join(path);
+                                let data = std::fs::read(path).unwrap();
+                                match serde_json::from_slice::<BeatmapFile>(&data) {
+                                    Ok(diff2) => {
+                                        if let Some(audio) = map.audio.as_ref() {
+                                            if let Some(sample_count) = audio.sample_count() {
+                                                let bpm_regions = match map.audio_info.as_ref() {
+                                                    None => Vec::new(),
+                                                    Some(info) => {
+                                                        let r = info.bpm_regions();
+                                                        tracing::debug!(target: DB_DATA, ?r, "Loaded BPM regions:");
+                                                        r
+                                                    }
+                                                };
+                                                app.selection = Selection::None;
+                                                map.controller = Some(BeatmapController::new(
+                                                        map.info.as_ref().unwrap(),
+                                                        diff,
+                                                        &diff2,
+                                                        bpm_regions,
+                                                        sample_count,
+                                                        audio.sample_rate,
+                                                ).unwrap());
+                                            } else {
+                                                tracing::warn!(target: DB_AUDIO, "Audio sample_count is None");
+                                            }
+
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(target: DB_DATA, "Error loading beatmap file:\n{}", e);
+                                    }
+                                }
+
+                            }
+                        }
+                    }
+                );
+            }
+        );
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -747,20 +885,6 @@ pub struct HitBox {
 impl HitBox {
     pub const fn new(min: Vec3, max: Vec3) -> Self {
         Self { min, max }
-    }
-    pub const fn corners(&self) -> [Vec3; 8] {
-        let [x0, y0, z0] = self.min.to_array();
-        let [x1, y1, z1] = self.max.to_array();
-        [
-            self.min,
-            Vec3::new(x0, y0, z1),
-            Vec3::new(x0, y1, z0),
-            Vec3::new(x0, y1, z1),
-            Vec3::new(x1, y0, z0),
-            Vec3::new(x1, y0, z1),
-            Vec3::new(x1, y1, z0),
-            self.max,
-        ]
     }
 }
 
@@ -778,34 +902,24 @@ fn check_collision(
     typ: ObjectType,
     index: usize,
 ) -> Option<Hit> {
+    let inv = mat.inverse();
 
-    let corners: [Vec4; 8] = hitbox.corners().into_iter().map(|p| mat * p.extend(1.)).collect::<Vec<_>>().try_into().unwrap();
-    let mut min = *unsafe { corners.get_unchecked(0) };
-    let mut max = min;
-
-    for corner in corners[1..].iter() {
-        min.x = min.x.min(corner.x);
-        min.y = min.y.min(corner.y);
-        min.z = min.z.min(corner.z);
-
-        max.x = max.x.max(corner.x);
-        max.y = max.y.max(corner.y);
-        max.z = max.z.max(corner.z);
-    }
+    let local_origin = inv.transform_point3(ray_pos);
+    let local_dir = inv.transform_vector3(ray_dir);
 
     let mut t_min = f32::NEG_INFINITY;
     let mut t_max = f32::INFINITY;
 
     macro_rules! check_axis {
         ($axis:tt) => {
-            if ray_dir.$axis != 0. {
-                let mut t1 = (min.$axis - ray_pos.$axis) / ray_dir.$axis;
-                let mut t2 = (max.$axis - ray_pos.$axis) / ray_dir.$axis;
+            if local_dir.$axis != 0. {
+                let mut t1 = (hitbox.min.$axis - local_origin.$axis) / local_dir.$axis;
+                let mut t2 = (hitbox.max.$axis - local_origin.$axis) / local_dir.$axis;
                 if t1 > t2 { std::mem::swap(&mut t1, &mut t2) }
                 t_min = t_min.max(t1);
                 t_max = t_max.min(t2);
             } else {
-                if ray_pos.$axis < min.$axis || ray_pos.$axis > max.$axis {
+                if local_origin.$axis < hitbox.min.$axis || local_origin.$axis > hitbox.max.$axis {
                     return None;
                 }
             }
