@@ -85,6 +85,7 @@ const int PASS_BLOOM       = 1;
 const int PASS_BLOOMFOG    = 2;
 const int PASS_LATE_LIGHTS = 3;
 const int PASS_OBSTACLE    = 4;
+const int PASS_HIGHLIGHT   = 5;
 
 
 const int MODE_BEATCRAFT        = 0;

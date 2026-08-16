@@ -44,6 +44,7 @@ const int PASS_BLOOM       = 1;
 const int PASS_BLOOMFOG    = 2;
 const int PASS_LATE_LIGHTS = 3;
 const int PASS_OBSTACLE    = 4;
+const int PASS_HIGHLIGHT   = 5;
 
 
 const int MODE_BEATCRAFT        = 0;
@@ -163,6 +164,10 @@ void main() {
         if (length(v_uv - 0.5) > 0.5) {
             discard;
         }
+    }
+    if (passType == PASS_HIGHLIGHT) {
+        fragColor = vec4(1.0);
+        return;
     }
 
     if (u_render_mode == MODE_EDITOR) {

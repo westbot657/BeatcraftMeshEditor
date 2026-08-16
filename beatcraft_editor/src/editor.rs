@@ -2269,7 +2269,7 @@ impl App {
         self.drag.state = DragState::None;
     }
 
-    fn unproject(point: Vec2, screen_size: Vec2, vp: &Mat4) -> (Vec3, Vec3) {
+    pub fn unproject(point: Vec2, screen_size: Vec2, vp: &Mat4) -> (Vec3, Vec3) {
         let inv = vp.inverse();
         let nx = (point.x / screen_size.x) * 2.0 - 1.0;
         let ny = (point.y / screen_size.y) * 2.0 - 1.0;

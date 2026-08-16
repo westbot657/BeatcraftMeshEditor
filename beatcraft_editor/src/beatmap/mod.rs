@@ -4,14 +4,14 @@ use std::thread;
 
 use eframe::glow::{self, Context, HasContext};
 use egui::TextBuffer;
-use glam::{Mat4, Vec4};
+use glam::{Mat4, Vec2, Vec3, Vec3Swizzles, Vec4};
 use indexmap::IndexMap;
 
 use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
 use crate::config::ProjectType;
 use crate::data::LightMeshData;
 use crate::light_mesh::LightMesh;
-use crate::render::{GpuMesh, GridType, MeshDrawCall, Renderer};
+use crate::render::{GpuMesh, GridType, InstanceData, MeshDrawCall, Renderer};
 use crate::{DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, MISSING_EDITOR_ICON, RefDuper, UnsafeMutRef, editor, get_data_folder};
 use crate::editor::{App, EditorContext, RoutineAction, ViewStyle};
 
@@ -613,9 +613,18 @@ impl App {
                             Some(controller) => {
                                 let rect = ui.available_rect_before_wrap();
                                 self.state.vp_rect = rect;
+                                let w = rect.width();
+                                let h = rect.height();
 
                                 let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
                                 self.handle_3d_input(&resp, ctx, gl);
+                                let mouse_pos = ui.input(|i| i.pointer.latest_pos())
+                                    .map(|p| Vec2::new(p.x - rect.min.x, p.y - rect.min.y))
+                                    .unwrap_or(Vec2::new(0., h));
+
+                                let mx = mouse_pos.x;
+                                let my = h - mouse_pos.y;
+
 
                                 if let Some(audio) = map.audio.as_ref()
                                     && audio.is_playing() {
@@ -632,8 +641,6 @@ impl App {
                                         move |_info, painter| {
                                             let gl = painter.gl();
                                             unsafe {
-                                                let w = rect.width();
-                                                let h = rect.height();
                                                 let view = s.ref_mut().cam().view_mat();
                                                 let proj = s.ref_mut().cam().proj_mat(w, h);
 
@@ -652,7 +659,7 @@ impl App {
                                                 gl.depth_mask(true);
 
 
-                                                draw_map_gl(&s, gl, &view, &proj, (w as i32, h as i32));
+                                                draw_map_gl(&s, gl, &view, &proj, (w as i32, h as i32), (mx, my));
 
                                                 if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
                                                     s.render.renderer.draw_map_grid(gl, &view, &proj);
@@ -732,12 +739,96 @@ fn draw_map_diffs(ui: &mut egui::Ui, map: &mut BeatmapProject) {
 
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct HitBox {
+    min: Vec3,
+    max: Vec3,
+}
+
+impl HitBox {
+    pub const fn new(min: Vec3, max: Vec3) -> Self {
+        Self { min, max }
+    }
+    pub const fn corners(&self) -> [Vec3; 8] {
+        let [x0, y0, z0] = self.min.to_array();
+        let [x1, y1, z1] = self.max.to_array();
+        [
+            self.min,
+            Vec3::new(x0, y0, z1),
+            Vec3::new(x0, y1, z0),
+            Vec3::new(x0, y1, z1),
+            Vec3::new(x1, y0, z0),
+            Vec3::new(x1, y0, z1),
+            Vec3::new(x1, y1, z0),
+            self.max,
+        ]
+    }
+}
+
+struct Hit {
+    distance: f32,
+}
+
+fn check_collision(
+    mat: Mat4,
+    hitbox: HitBox,
+    ray_pos: Vec3,
+    ray_dir: Vec3,
+) -> Option<Hit> {
+
+    let corners: [Vec4; 8] = hitbox.corners().into_iter().map(|p| mat * p.extend(1.)).collect::<Vec<_>>().try_into().unwrap();
+    let mut min = *unsafe { corners.get_unchecked(0) };
+    let mut max = min;
+
+    for corner in corners[1..].iter() {
+        min.x = min.x.min(corner.x);
+        min.y = min.y.min(corner.y);
+        min.z = min.z.min(corner.z);
+
+        max.x = max.x.max(corner.x);
+        max.y = max.y.max(corner.y);
+        max.z = max.z.max(corner.z);
+    }
+
+    let mut t_min = f32::NEG_INFINITY;
+    let mut t_max = f32::INFINITY;
+
+    macro_rules! check_axis {
+        ($axis:tt) => {
+            if ray_dir.$axis != 0. {
+                let mut t1 = (min.$axis - ray_pos.$axis) / ray_dir.$axis;
+                let mut t2 = (max.$axis - ray_pos.$axis) / ray_dir.$axis;
+                if t1 > t2 { std::mem::swap(&mut t1, &mut t2) }
+                t_min = t_min.max(t1);
+                t_max = t_max.min(t2);
+            } else {
+                if ray_pos.$axis < min.$axis || ray_pos.$axis > max.$axis {
+                    return None;
+                }
+            }
+        };
+    }
+
+    check_axis! { x }
+    check_axis! { y }
+    check_axis! { z }
+
+    if t_max >= t_min && t_max >= 0. {
+        Some(Hit { distance: t_min.max(0.) })
+    } else {
+        None
+    }
+}
+
 fn draw_map_gl(
     s: &UnsafeMutRef<App>, gl: &glow::Context,
     view: &Mat4, proj: &Mat4,
     window: (i32, i32),
+    mouse: (f32, f32),
 ) {
-
+    let (mx, my) = mouse;
+    let (w, h) = window;
+    let vp = proj * view;
     let controller = s.ref_mut().map_editor.map.as_mut().unwrap().controller.as_mut().unwrap();
 
     let rd = RefDuper;
@@ -756,6 +847,8 @@ fn draw_map_gl(
     let beatmap = &s.render.renderer.beatmap;
     let beat = beatmap.beat();
 
+    let (orig, dir) = App::unproject(Vec2::new(mx, my), Vec2::new(w as f32, h as f32), &vp);
+    let mut hits = Vec::new();
     for (t, object) in controller.color_notes.iter().map(|x| (ObjectType::ColorNote, x as &dyn GameObject))
         .chain(controller.bomb_notes.iter().map(|x| (ObjectType::BombNote, x as &dyn GameObject)))
         .chain(controller.obstacles.iter().map(|x| (ObjectType::Obstacle, x as &dyn GameObject)))
@@ -768,6 +861,9 @@ fn draw_map_gl(
             ViewStyle::Beatcraft { .. } => object.animate_complex(wp, beat, &controller.runtime_data),
         } {
             let inst = object.get_instance(Vec4::ZERO, mat, &controller.runtime_data.color_scheme);
+            if object.upcast_chain_head().is_none() && let Some(hit) = check_collision(mat, object.editor_hitbox(), orig, dir) {
+                hits.push((hit, t, inst, None));
+            }
             match t {
                 ObjectType::ColorNote => note_instances.push(inst.into()),
                 ObjectType::BombNote => bomb_instances.push(inst.into()),
@@ -776,15 +872,28 @@ fn draw_map_gl(
                     chain_head_instances.push(inst.into());
                     arrow_instances.push(inst.into());
                     let Some(chain) = object.upcast_chain_head() else { unreachable!("only chain note heads are marked as ChainHead") };
-                    for link in chain.get_links() {
+                    let links = chain.get_links();
+                    let mut hit0 = None;
+                    let mut insts = Vec::with_capacity(links.len() + 1);
+                    if let Some(hit) = check_collision(mat, object.editor_hitbox(), orig, dir) {
+                        hit0 = Some(hit);
+                    }
+                    for link in links {
                         if let Some(mat) = match s.state.view_style {
                             ViewStyle::Edit => link.animate_simple(wp, beat, &controller.runtime_data, beatmap),
                             ViewStyle::Beatcraft { .. } => link.animate_complex(wp, beat, &controller.runtime_data),
                         } {
+                            if hit0.is_none() && let Some(hit) = check_collision(mat, link.editor_hitbox(), orig, dir) {
+                                hit0 = Some(hit);
+                            }
                             let inst = link.get_instance(Vec4::ZERO, mat, &controller.runtime_data.color_scheme);
                             chain_tail_instances.push(inst.into());
                             chain_dot_instances.push(inst.into());
+                            insts.push(inst);
                         }
+                    }
+                    if let Some(hit) = hit0 {
+                        hits.push((hit, t, inst, Some(insts)));
                     }
                 }
                 _ => {}
@@ -808,7 +917,7 @@ fn draw_map_gl(
     let d = &s.map_editor.mesh_set.dot_mesh;
     let cd = &s.map_editor.mesh_set.chain_dot_mesh;
 
-    let calls = vec![
+    let mut calls = vec![
         MeshDrawCall {
             mesh: m,
             instances: note_instances,
@@ -819,6 +928,7 @@ fn draw_map_gl(
             bloom: false,
             mirror: false,
             obstacle: false,
+            highlight: false,
         },
         MeshDrawCall {
             mesh: c,
@@ -830,6 +940,7 @@ fn draw_map_gl(
             bloom: false,
             mirror: false,
             obstacle: false,
+            highlight: false,
         },
         MeshDrawCall {
             mesh: cl,
@@ -841,6 +952,7 @@ fn draw_map_gl(
             bloom: false,
             mirror: false,
             obstacle: false,
+            highlight: false,
         },
         MeshDrawCall {
             mesh: a,
@@ -852,6 +964,7 @@ fn draw_map_gl(
             bloom: true,
             mirror: false,
             obstacle: false,
+            highlight: false,
         },
         MeshDrawCall {
             mesh: d,
@@ -863,6 +976,7 @@ fn draw_map_gl(
             bloom: true,
             mirror: false,
             obstacle: false,
+            highlight: false,
         },
         MeshDrawCall {
             mesh: cd,
@@ -874,6 +988,7 @@ fn draw_map_gl(
             bloom: true,
             mirror: false,
             obstacle: false,
+            highlight: false,
         },
         MeshDrawCall {
             mesh: b,
@@ -885,6 +1000,7 @@ fn draw_map_gl(
             bloom: false,
             mirror: false,
             obstacle: false,
+            highlight: false,
         },
         MeshDrawCall {
             mesh: o,
@@ -896,8 +1012,50 @@ fn draw_map_gl(
             bloom: false,
             mirror: false,
             obstacle: true,
+            highlight: false,
         }
     ];
+
+
+    hits.sort_by(|(hit0, _, _, _), (hit1, _, _, _)| hit0.distance.partial_cmp(&hit1.distance).unwrap());
+    if let Some((_, closest_ty, closest, links)) = hits.first() {
+        let (m, m2) = match (closest_ty, links) {
+            (ObjectType::ChainHead, Some(link_insts)) => (c, Some(link_insts.iter().map(|i| Into::<InstanceData>::into(*i)).collect::<Vec<_>>())),
+            (ObjectType::ColorNote, None) => (m, None),
+            (ObjectType::BombNote, None) => (b, None),
+            (ObjectType::Obstacle, None) => (o, None),
+            // (ObjectType::ArcHead, None) => todo!(),
+            // (ObjectType::ArcTail, None) => todo!(),
+            (t, n) => unreachable!("Hit check encountered unexpected type-link combo: {t:?}, {n:?}"),
+        };
+        calls.push(MeshDrawCall {
+            mesh: m,
+            instances: vec![(*closest).into()],
+            wireframe: false,
+            cull: true,
+            bloomfog: false,
+            solid: false,
+            bloom: false,
+            mirror: false,
+            obstacle: false,
+            highlight: true,
+        });
+        if let Some(instances) = m2 {
+            let instances = instances.into_iter().collect();
+            calls.push(MeshDrawCall {
+                mesh: cl,
+                instances,
+                wireframe: false,
+                cull: true,
+                bloomfog: false,
+                solid: false,
+                bloom: false,
+                mirror: false,
+                obstacle: false,
+                highlight: true
+            });
+        }
+    }
 
     match s.state.view_style {
         ViewStyle::Edit => {
@@ -907,6 +1065,7 @@ fn draw_map_gl(
                 None,
                 false,
                 false,
+                window,
             );
         },
         ViewStyle::Beatcraft { blackout_sky } => {

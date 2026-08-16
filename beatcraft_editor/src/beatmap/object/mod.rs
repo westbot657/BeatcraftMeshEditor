@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::f32;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Div, Mul, Sub};
 
@@ -11,7 +12,7 @@ use crate::render::GameObjectInstanceData;
 
 use self::spline::BezierCurve;
 
-use super::BeatmapProjectDiff;
+use super::{BeatmapProjectDiff, HitBox};
 use super::data::{BeatmapDataError, BeatmapFile, BpmRegion, Color, CutDirection, InfoFile, v2};
 use super::render::BeatmapRenderer;
 
@@ -174,7 +175,20 @@ pub fn get_random_spawn_quat(rng: &mut ThreadRng) -> Quat {
     Quat::from_euler(glam::EulerRot::ZYX, get_c(rng), get_c(rng), get_c(rng))
 }
 
-pub trait GameObject {
+pub const NOTE_HITBOX: HitBox = HitBox::new(
+    Vec3::splat(-0.25),
+    Vec3::splat(0.25)
+);
+pub const CHAIN_HEAD_HITBOX: HitBox = HitBox::new(
+    Vec3::new(-0.25, 0., -0.25),
+    Vec3::splat(0.25)
+);
+pub const CHAIN_LINK_HITBOX: HitBox = HitBox::new(
+    Vec3::new(-0.25, -0.25 * 2./16., -0.25),
+    Vec3::new(0.25, 0.25 * 2./16., 0.25)
+);
+
+pub trait GameObject: Debug {
 
     fn beat(&self) -> f32;
     fn grid_pos(&self) -> Vec2;
@@ -189,6 +203,8 @@ pub trait GameObject {
     fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData;
 
     fn upcast_chain_head(&self) -> Option<&ChainNote> { None }
+
+    fn editor_hitbox(&self) -> HitBox { NOTE_HITBOX }
 
     fn animate_simple(&self, mut m: Mat4, beat: f32, _data: &RuntimeData, renderer: &BeatmapRenderer) -> Option<Mat4> {
         let b = self.beat();
@@ -445,6 +461,7 @@ pub enum ObjectType {
     ArcTail,
 }
 
+#[derive(Debug)]
 pub struct ColorNote {
     pub spawn_orientation: Quat,
     pub beat: f32,
@@ -458,6 +475,7 @@ pub struct ColorNote {
     pub index: u32,
 }
 
+#[derive(Debug)]
 pub struct BombNote {
     pub beat: f32,
     pub color: ObjectColor<Self>,
@@ -476,6 +494,7 @@ impl ColorableObject for BombNote {
     }
 }
 
+#[derive(Debug)]
 pub struct Obstacle {
     pub beat: f32,
     pub color: ObjectColor<Self>,
@@ -496,11 +515,13 @@ impl ColorableObject for Obstacle {
     }
 }
 
+#[derive(Debug)]
 pub struct ChainNoteLinkData {
     pub spawn_orientation: Quat,
     pub index: u32,
 }
 
+#[derive(Debug)]
 pub struct ChainNote {
     pub spawn_orientation: Quat,
     pub head_beat: f32,
@@ -582,8 +603,15 @@ impl GameObject for Obstacle {
             self.size
         )
     }
+    fn editor_hitbox(&self) -> HitBox {
+        HitBox::new(
+            Vec3::new(-self.size.x / 2. * 0.6, 0., 0.),
+            Vec3::new(self.size.x / 2. * 0.6, self.size.y * 0.6, self.size.z * 0.6),
+        )
+    }
 }
 
+#[derive(Debug)]
 pub struct ChainNoteLink {
     grid_pos: Vec2,
     beat: f32,
@@ -613,6 +641,9 @@ impl GameObject for ChainNote {
             self.index,
             Vec4::ZERO,
         )
+    }
+    fn editor_hitbox(&self) -> HitBox {
+        CHAIN_HEAD_HITBOX
     }
 }
 impl ChainNote {
@@ -674,6 +705,9 @@ impl GameObject for ChainNoteLink {
             self.index,
             Vec4::ZERO,
         )
+    }
+    fn editor_hitbox(&self) -> HitBox {
+        CHAIN_LINK_HITBOX
     }
 }
 

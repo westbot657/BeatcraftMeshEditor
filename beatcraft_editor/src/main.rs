@@ -2281,6 +2281,7 @@ fn draw_view_gl(
                     solid: vm.data.do_solid,
                     mirror: vm.data.do_mirroring,
                     obstacle: false,
+                    highlight: false,
                 })
             }
         }
@@ -2296,6 +2297,7 @@ fn draw_view_gl(
             bloom: false,
             mirror: true,
             obstacle: false,
+            highlight: false,
         })
     }
     match s.state.view_style {
@@ -2303,7 +2305,7 @@ fn draw_view_gl(
             s.ref_mut().render.renderer.draw_meshes(
                 gl, view, proj, &calls,
                 s.render.mirror.as_ref(), s.state.wireframe,
-                true,
+                true, window,
             );
         }
         editor::ViewStyle::Beatcraft { blackout_sky } => {
@@ -2999,8 +3001,10 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                             solid: vm.data.do_solid,
                             mirror: vm.data.do_mirroring,
                             obstacle: false,
+                            highlight: false,
                         }],
                         s.render.mirror.as_ref(), s.state.wireframe, false,
+                        window,
                     );
                 }
                 editor::ViewStyle::Beatcraft { blackout_sky } => {
@@ -3017,6 +3021,7 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                             solid: vm.data.do_solid,
                             mirror: vm.data.do_mirroring,
                             obstacle: false,
+                            highlight: false,
                         }],
                         window,
                         if s.state.show_grid { GridType::WorldGrid } else { GridType::None },
@@ -3984,6 +3989,7 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
             solid: vm.data.do_solid,
             mirror: vm.data.do_mirroring,
             obstacle: false,
+            highlight: false,
         }];
 
         match s.state.view_style {
@@ -3991,6 +3997,7 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
                 s.ref_mut().render.renderer.draw_meshes(
                     gl, view, proj, &calls,
                     s.render.mirror.as_ref(), s.state.wireframe, false,
+                    window,
                 );
             }
             editor::ViewStyle::Beatcraft { blackout_sky } => {

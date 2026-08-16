@@ -3,6 +3,7 @@ use std::f32;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use eframe::egui_glow::check_for_gl_error;
 use eframe::glow::{self, HasContext, NativeProgram, SHADER_STORAGE_BUFFER};
 use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
@@ -56,11 +57,12 @@ const _: () = assert!(
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(i32)]
 pub enum RenderPass {
-    Normal   = 0,
-    Bloom    = 1,
-    Bloomfog = 2,
-    Lights   = 3,
-    Obstacle = 4,
+    Normal    = 0,
+    Bloom     = 1,
+    Bloomfog  = 2,
+    Lights    = 3,
+    Obstacle  = 4,
+    Highlight = 5,
 }
 
 impl From<RenderPass> for i32 {
@@ -199,6 +201,7 @@ pub struct MeshDrawCall<'a> {
     pub bloom: bool,
     pub mirror: bool,
     pub obstacle: bool,
+    pub highlight: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1340,9 +1343,10 @@ impl Renderer {
         mirror_mesh: Option<&GpuMesh>,
         wireframe: bool,
         draw_mirror: bool,
+        window: (i32, i32),
     ) {
         unsafe {
-            self.draw_meshes_internal(gl, view, proj, calls);
+            self.draw_meshes_internal(gl, view, proj, calls, window);
 
             let rd = RefDuper;
             let self2 = rd.detach_mut_ref(self);
@@ -1350,7 +1354,7 @@ impl Renderer {
                 self.bloomfog.draw_mirror(
                     self2, gl, view, proj, calls, mirror_mesh,
                     RenderMode::Editor, wireframe, [-50., -30.],
-                    None
+                    None, window
                 );
             }
         }
@@ -1361,12 +1365,18 @@ impl Renderer {
         gl: &glow::Context,
         view: &Mat4, proj: &Mat4,
         calls: &[MeshDrawCall<'_>],
+        window: (i32, i32),
     ) {
         unsafe {
+            let mut saved_vp = [0i32; 4];
+            gl.get_parameter_i32_slice(glow::VIEWPORT, &mut saved_vp);
+
+            if window != self.bloomfog.bloom_input.size {
+                self.bloomfog.resize(gl, window);
+            }
             let cam_pos = view.inverse().transform_point3(Vec3::ZERO);
             let cam_rot = Quat::from_mat4(view);
             gl.use_program(Some(self.mesh));
-            self.set_int(gl, self.mesh, "passType", RenderPass::Normal.into());
             self.set_mat4(gl, self.mesh, "u_view", view);
             self.set_mat4(gl, self.mesh, "u_projection", proj);
             let tex = self.atlas.or(Some(self.missing_texture));
@@ -1375,11 +1385,43 @@ impl Renderer {
             let mut u_camera_pos = Mat4::from_translation(cam_pos);
             u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());
             self.set_mat4(gl, self.mesh, "u_camera_pos", &u_camera_pos);
+
+            self.set_int(gl, self.mesh, "passType", RenderPass::Normal.into());
             for call in calls {
+                if call.highlight { continue };
                 self.set_int(gl, self.mesh, "u_render_mode", RenderMode::Editor.into());
                 call.mesh
                     .draw_tris(gl, &call.instances, call.wireframe, self, self.mesh);
             }
+
+            self.bloomfog.bloom_input.bind(gl);
+            gl.disable(glow::SCISSOR_TEST);
+            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+
+            self.set_int(gl, self.mesh, "passType", RenderPass::Highlight.into());
+            for call in calls {
+                if !call.highlight { continue };
+                self.set_int(gl, self.mesh, "u_render_mode", RenderMode::Editor.into());
+                call.mesh
+                    .draw_tris(gl, &call.instances, call.wireframe, self, self.mesh);
+            }
+
+            gl.depth_mask(false);
+            gl.disable(glow::DEPTH_TEST);
+
+            self.bloomfog.apply_effect_pass(self, gl, &self.bloomfog.bloom_input, Some(&self.bloomfog.extra_buffer), PassType::GaussianV, false, Some((0., 0., 0., 0.)), window, 1., 1.);
+            self.bloomfog.apply_effect_pass(self, gl, &self.bloomfog.extra_buffer, Some(&self.bloomfog.blurred_buffer), PassType::GaussianH, false, Some((0., 0., 0., 0.)), window, 1., 1.);
+            self.bloomfog.apply_effect_pass(self, gl, &self.bloomfog.blurred_buffer, Some(&self.bloomfog.extra_buffer), PassType::Highlight, false, Some((0., 0., 0., 0.)), window, 1., 1.);
+
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
+
+            self.bloomfog.apply_effect_pass(self, gl, &self.bloomfog.extra_buffer, None, PassType::Blit, false, None, window, 1., 1.);
+
+            gl.depth_mask(true);
+            gl.enable(glow::DEPTH_TEST);
+            gl.enable(glow::SCISSOR_TEST);
+
         }
     }
 
@@ -1599,6 +1641,7 @@ pub struct BloomfogRenderer {
     blue_noise: glow::NativeProgram,
     blit: glow::NativeProgram,
     comp: glow::NativeProgram,
+    highlight: glow::NativeProgram,
     vao: glow::VertexArray,
     vbo: glow::Buffer,
     mirror_target: RenderTarget,
@@ -1615,6 +1658,7 @@ pub(crate) enum PassType {
     BlueNoise,
     Blit,
     Comp,
+    Highlight,
 }
 
 impl BloomfogRenderer {
@@ -1666,6 +1710,13 @@ impl BloomfogRenderer {
             include_str!("assets/shaders/core/composite.fsh")
         )?;
 
+        tracing::debug!(target: DB_RENDER, "Compiling highlight shader");
+        let highlight = Renderer::build_program(
+            gl,
+            vsh,
+            include_str!("assets/shaders/core/highlight.fsh")
+        )?;
+
         unsafe {
             let vao = gl.create_vertex_array()?;
             gl.bind_vertex_array(Some(vao));
@@ -1702,6 +1753,7 @@ impl BloomfogRenderer {
                 blue_noise,
                 blit,
                 comp,
+                highlight,
                 vao,
                 vbo,
                 mirror_target: RenderTarget::new(gl, 1920, 1080),
@@ -1745,6 +1797,7 @@ impl BloomfogRenderer {
         wireframe: bool,
         fog_heights: [f32; 2],
         main_target: Option<&RenderTarget>,
+        window: (i32, i32),
     ) {
         unsafe {
 
@@ -1776,7 +1829,7 @@ impl BloomfogRenderer {
                     fog_heights
                 );
             } else {
-                renderer.draw_meshes_internal(gl, &view_f, proj, &mirrored);
+                renderer.draw_meshes_internal(gl, &view_f, proj, &mirrored, window);
                 gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
             }
 
@@ -1869,6 +1922,7 @@ impl BloomfogRenderer {
                     renderer, gl, view, proj, calls, mirror_mesh,
                     RenderMode::Beatcraft, wireframe, fog_heights,
                     main_target,
+                    window,
                 );
             }
             //   draw maps
@@ -1907,6 +1961,34 @@ impl BloomfogRenderer {
                 gl, view, proj,
                 calls,
             );
+
+            self.bloom_input.bind(gl);
+            gl.disable(glow::SCISSOR_TEST);
+            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+            gl.use_program(Some(renderer.mesh));
+            renderer.set_int(gl, renderer.mesh, "passType", RenderPass::Highlight.into());
+            for call in calls {
+                if !call.highlight { continue };
+                renderer.set_int(gl, renderer.mesh, "u_render_mode", RenderMode::Editor.into());
+                call.mesh
+                    .draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
+            }
+
+            gl.depth_mask(false);
+            gl.disable(glow::DEPTH_TEST);
+
+            self.apply_effect_pass(renderer, gl, &self.bloom_input, Some(&self.extra_buffer), PassType::GaussianV, false, Some((0., 0., 0., 0.)), window, 1., 1.);
+            self.apply_effect_pass(renderer, gl, &self.extra_buffer, Some(&self.blurred_buffer), PassType::GaussianH, false, Some((0., 0., 0., 0.)), window, 1., 1.);
+            self.apply_effect_pass(renderer, gl, &self.blurred_buffer, Some(&self.extra_buffer), PassType::Highlight, false, Some((0., 0., 0., 0.)), window, 1., 1.);
+
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
+
+            self.apply_effect_pass(renderer, gl, &self.extra_buffer, None, PassType::Blit, false, None, window, 1., 1.);
+
+            gl.depth_mask(true);
+            gl.enable(glow::DEPTH_TEST);
+            gl.enable(glow::SCISSOR_TEST);
 
         }
     }
@@ -2225,6 +2307,7 @@ impl BloomfogRenderer {
                 PassType::BlueNoise => self.blue_noise,
                 PassType::Blit => self.blit,
                 PassType::Comp => self.comp,
+                PassType::Highlight => self.highlight,
             };
 
             gl.use_program(Some(shader));
