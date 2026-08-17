@@ -4190,15 +4190,15 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             match match *vert {
                 VertexId::Index(i) => {
                     ui.label(format!("{i}"));
-                    VertVal::V3(part.vertices.indexed.get_mut(i).unwrap())
+                    VertVal::V3(part.vertices.indexed.get_mut(*i).unwrap())
                 }
                 VertexId::Named(n) => {
                     ui.label(n);
                     part.vertices
                         .named
-                        .get_mut(&n)
+                        .get_mut(n)
                         .map(VertVal::V3)
-                        .unwrap_or_else(|| VertVal::C3(part.vertices.compute.get_mut(&n).unwrap()))
+                        .unwrap_or_else(|| VertVal::C3(part.vertices.compute.get_mut(n).unwrap()))
                 }
             } {
                 VertVal::V3(v3) => {

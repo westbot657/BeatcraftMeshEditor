@@ -1,7 +1,7 @@
 use std::mem;
 
 use crate::RefDuper;
-use crate::data::{NormalId, UvId, VertexId};
+use crate::data::mesh::{NormalId, UvId, VertexId};
 use crate::editor::DataSwap;
 use crate::light_mesh::{LightMesh, Part};
 use anyhow::Result;

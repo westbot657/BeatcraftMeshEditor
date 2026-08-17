@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 
 use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
 use crate::config::ProjectType;
-use crate::data::LightMeshData;
+use crate::data::mesh::LightMeshData;
 use crate::editor::{App, EditorContext, RoutineAction, Selection, ViewStyle};
 use crate::light_mesh::LightMesh;
 use crate::render::{GpuMesh, GridType, InstanceData, MeshDrawCall, Renderer};
