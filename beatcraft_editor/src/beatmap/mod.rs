@@ -4,8 +4,7 @@ use std::sync::mpsc;
 use std::thread;
 
 use eframe::glow::{self, Context, HasContext};
-use egui::TextBuffer;
-use glam::{Mat4, Vec2, Vec3, Vec3Swizzles, Vec4};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 
 use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
@@ -502,7 +501,7 @@ impl App {
                     |ui| {
                         ui.add_space(10.);
                         if ui.add_sized(
-                            [ui.available_width() / 2., 20.],
+                            [ui.available_width() * 0.75, 20.],
                             egui::Button::new("Menu")
                         ).clicked() {
                             tracing::debug!(target: DB_LOGIC, "Returning to menu");
@@ -518,10 +517,33 @@ impl App {
                         }
                         ui.add_space(10.);
 
-                        if self.map_editor.map.is_some()
-                        && ui.add_sized([ui.available_width() / 2., 20.], egui::Button::new("Close Map")).clicked() {
-                            self.map_editor.map = None;
-                        }
+                        'map_scope: { if let Some(map) = self.map_editor.map.as_mut() {
+                            if ui.add_sized([ui.available_width() * 0.75, 20.], egui::Button::new("Close Map")).clicked() {
+                                self.render.renderer.beatmap.seek(0.);
+                                if let Some(audio) = map.audio.take() {
+                                    audio.stop();
+                                    drop(audio);
+                                    self.audio_system.remove_dead_audio();
+                                    self.state.playback_speed = 1.;
+                                }
+                                self.map_editor.map = None;
+                                break 'map_scope
+                            }
+
+                            ui.add_space(10.);
+
+                            if map.controller.is_some()
+                            && ui.add_sized([ui.available_width() * 0.75, 20.], egui::Button::new("Close Difficulty")).clicked() {
+                                self.render.renderer.beatmap.seek(0.);
+                                map.controller = None;
+                                if let Some(audio) = map.audio.take() {
+                                    audio.stop();
+                                    drop(audio);
+                                    self.audio_system.remove_dead_audio();
+                                    self.state.playback_speed = 1.;
+                                }
+                            }
+                        }}
                     }
                 );
 
@@ -557,10 +579,12 @@ impl App {
 
                         let mut to_open = None;
                         let mut to_remove = None;
+                        let scroll = ctx.input(|i| i.smooth_scroll_delta);
                         egui::ScrollArea::horizontal()
                             .max_width(ui.available_width())
                             .id_salt("recent beatmap panel")
                             .show(ui, |ui| {
+                                ui.scroll_with_delta((scroll.y * 2., 0.).into());
                                 ui.allocate_ui_with_layout(
                                     [ui.available_width(), 200.].into(),
                                     egui::Layout::left_to_right(egui::Align::Min),
@@ -637,10 +661,15 @@ impl App {
                                 let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
                                 self.handle_3d_input(&resp, ctx, gl);
                                 let (click, shift) = ui.input(|i| (i.pointer.primary_clicked(), i.modifiers.shift));
-                                let mouse_pos = ui.input(|i| i.pointer.latest_pos())
-                                    .map(|p| Vec2::new(p.x - rect.min.x, p.y - rect.min.y));
+                                let raw_mouse = ui.input(|i| i.pointer.latest_pos());
+                                let mouse_pos = raw_mouse.map(|p| Vec2::new(p.x - rect.min.x, p.y - rect.min.y));
 
-                                let mouse_pos = mouse_pos.map(|mp| (mp.x, h - mp.y));
+                                let mut mouse_pos = mouse_pos.map(|mp| (mp.x, h - mp.y));
+
+                                if let Some(mp) = raw_mouse
+                                && !rect.contains(mp) {
+                                    mouse_pos = None;
+                                }
 
                                 if let Some(audio) = map.audio.as_ref()
                                     && audio.is_playing() {
@@ -1012,7 +1041,10 @@ fn draw_map_gl(
             ViewStyle::Edit => object.animate_simple(wp, beat, &controller.runtime_data, beatmap),
             ViewStyle::Beatcraft { .. } => object.animate_complex(wp, beat, &controller.runtime_data),
         } {
-            let inst = object.get_instance(Vec4::ZERO, mat, &controller.runtime_data.color_scheme);
+            let inst = match s.state.view_style {
+                ViewStyle::Edit => object.get_editor_instance(Vec4::ZERO, mat, &controller.runtime_data.color_scheme, s.render.renderer.beatmap.beat_spacing),
+                ViewStyle::Beatcraft { .. } => object.get_instance(Vec4::ZERO, mat, &controller.runtime_data.color_scheme),
+            };
             if mouse.is_some() && object.upcast_chain_head().is_none() && let Some(hit) = check_collision(mat, object.editor_hitbox(), orig, dir, t, i) {
                 hits.push((hit, t, inst, None));
             }
@@ -1057,7 +1089,10 @@ fn draw_map_gl(
                             if mouse.is_some() && hit0.is_none() && let Some(hit) = check_collision(mat, link.editor_hitbox(), orig, dir, t, i) {
                                 hit0 = Some(hit);
                             }
-                            let inst = link.get_instance(Vec4::ZERO, mat, &controller.runtime_data.color_scheme);
+                            let inst = match s.state.view_style {
+                                ViewStyle::Edit => object.get_editor_instance(Vec4::ZERO, mat, &controller.runtime_data.color_scheme, s.render.renderer.beatmap.beat_spacing),
+                                ViewStyle::Beatcraft { .. } => object.get_instance(Vec4::ZERO, mat, &controller.runtime_data.color_scheme),
+                            };
                             chain_tail_instances.push(inst.into());
                             chain_dot_instances.push(inst.into());
                             if sel {

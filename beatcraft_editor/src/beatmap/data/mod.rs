@@ -695,6 +695,7 @@ pub struct SpawnRotationEventV3 {
 #[serde(deny_unknown_fields)]
 pub struct SpawnRotationEventV4 {
     #[serde(rename = "b")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub beat: f32,
     #[serde(rename = "i")]
     pub metadata_index: u32,
@@ -745,18 +746,23 @@ pub struct BPMEventV3 {
 #[serde(deny_unknown_fields)]
 pub struct NJSEventV4 {
     #[serde(rename = "b")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub beat: f32,
     #[serde(rename = "i")]
+    #[serde(default, skip_serializing_if = "is_value_u::<0>")]
     pub metadata_index: u32,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NJSEventDataV4 {
     #[serde(rename = "p", with="bool_u8_serde")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub extend: bool,
     #[serde(rename = "e", with="easing_as_i8")]
+    #[serde(default, skip_serializing_if = "Easing::is_default")]
     pub easing: Easing,
     #[serde(rename = "d")]
+    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub njs_diff: f32,
 }
 

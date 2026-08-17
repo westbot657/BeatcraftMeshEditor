@@ -76,6 +76,12 @@ static MOONBEAM: MapSelection = (
     "Standard", "ExpertPlus"
 );
 
+// 4.0.0 | 4.1.0
+static PLAYFUL_MASSACRE: MapSelection = (
+    "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/Playful Massacre - Song for Wemmbu",
+    "Standard", "ExpertPlus"
+);
+
 
 static TEST_MAPS_V2: [MapSelection; 7] = [
     SOMEWHERE_OUT_THERE,
@@ -94,8 +100,9 @@ static TEST_MAPS_V3: [MapSelection; 4] = [
     ASCENT,
 ];
 
-static TEST_MAPS_V4: [MapSelection; 1] = [
+static TEST_MAPS_V4: [MapSelection; 2] = [
     MOONBEAM,
+    PLAYFUL_MASSACRE,
 ];
 
 static TEST_MAPS: [MapSelection; 12] = [

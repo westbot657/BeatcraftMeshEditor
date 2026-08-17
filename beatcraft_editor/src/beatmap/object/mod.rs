@@ -123,9 +123,7 @@ impl RuntimeData {
                 return beats / seconds * 60.;
             }
         }
-        let seconds = self.sample_count as f32 / self.sample_rate as f32;
-
-        seconds / (60. / self.bpm)
+        self.bpm
     }
 
     fn calc_jumps(njs: f32, bpm: f32, spawn_offset: f32) -> (f32, f32) {
@@ -201,6 +199,9 @@ pub trait GameObject: Debug {
     fn arrow_type(&self) -> ArrowType { ArrowType::None }
     fn lane_rotation_degrees(&self) -> f32 { 0. }
     fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData;
+    fn get_editor_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme, _beat_distance: f32) -> GameObjectInstanceData {
+        self.get_instance(clipping_plane, model, cs)
+    }
 
     fn upcast_chain_head(&self) -> Option<&ChainNote> { None }
 
@@ -589,18 +590,30 @@ impl GameObject for BombNote {
 
 impl GameObject for Obstacle {
     fn beat(&self) -> f32 { self.beat }
-    fn grid_pos(&self) -> Vec2 { self.grid_pos }
+    fn grid_pos(&self) -> Vec2 {
+        self.grid_pos + Vec2::new((self.size.x / 2.) - 0.5, -0.8)
+    }
     fn get_orientation(&self) -> Quat { Quat::IDENTITY }
     fn duration(&self) -> f32 { self.duration }
     fn lane_rotation_degrees(&self) -> f32 { self.lane_rotation_deg }
     fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData {
         GameObjectInstanceData::obstacle(
             clipping_plane,
+            model * Mat4::from_translation(Vec3::new(0., 0., -0.25)),
+            self.color.color(cs),
+            self.dissolve,
+            self.index,
+            self.size,
+        )
+    }
+    fn get_editor_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme, beat_distance: f32) -> GameObjectInstanceData {
+        GameObjectInstanceData::obstacle(
+            clipping_plane,
             model,
             self.color.color(cs),
             self.dissolve,
             self.index,
-            self.size
+            Vec3::new(self.size.x, self.size.y, self.duration * beat_distance),
         )
     }
     fn editor_hitbox(&self) -> HitBox {
@@ -722,16 +735,13 @@ impl BeatmapController {
 impl BeatmapFile {
     fn to_controller(&self, info: &InfoFile, diff_data: &BeatmapProjectDiff, bpm_regions: Vec<BpmRegion>, sample_count: usize, sample_rate: u32) -> Result<BeatmapController, BeatmapDataError> {
 
+        let runtime_data = RuntimeData::new(diff_data.njs, info.bpm(), diff_data.njs_offset, bpm_regions, sample_count, sample_rate);
+
         let mut rng = rand::rng();
         let mut color_notes = Vec::new();
         let mut bomb_notes = Vec::new();
         let mut obstacles = Vec::new();
         let mut chain_notes = Vec::new();
-
-        let bpm = info.bpm();
-        let spb = 60. / bpm;
-        let njs = diff_data.njs;
-        let dist_beats_to_meters = njs * spb;
 
         match self {
             Self::V2(v2) => {
@@ -789,17 +799,19 @@ impl BeatmapFile {
                 }
                 for obst in v2.obstacles.iter() {
                     let index = obstacles.len() as u32;
+                    let local_bpm = runtime_data.bpm(TimeUnit::Beat(obst.beat));
+                    let dist_beats_to_meters = runtime_data.njs * (60. / local_bpm);
                     let (grid_pos, size) = match obst.typ {
                         super::data::ObstacleV2Type::FullHeight => (
-                            Vec2::new(obst.line_index + ((obst.width / 2.) - 0.5), obst.line_layer - 0.8),
+                            Vec2::new(obst.line_index, obst.line_layer),
                             Vec3::new(obst.width, 5., obst.duration * dist_beats_to_meters),
                         ),
                         super::data::ObstacleV2Type::Crouch => (
-                            Vec2::new(obst.line_index + ((obst.width / 2.) - 0.5), obst.line_layer + 1.2),
+                            Vec2::new(obst.line_index, obst.line_layer + 2.),
                             Vec3::new(obst.width, 3., obst.duration * dist_beats_to_meters)
                         ),
                         super::data::ObstacleV2Type::Free => (
-                            Vec2::new(obst.line_index + ((obst.width / 2.) - 0.5), obst.line_layer - 0.8),
+                            Vec2::new(obst.line_index, obst.line_layer),
                             Vec3::new(obst.width, obst.height, obst.duration * dist_beats_to_meters)
                         ),
                     };
@@ -921,10 +933,12 @@ impl BeatmapFile {
                             lane_rotation_deg += rot.rotation;
                         }
                     }
+                    let local_bpm = runtime_data.bpm(TimeUnit::Beat(beat));
+                    let dist_beats_to_meters = runtime_data.njs * (60. / local_bpm);
                     obstacles.push(Obstacle {
                         beat,
                         color: ObjectColor::default(),
-                        grid_pos: Vec2::new(obst.line_index + ((obst.width / 2.) - 0.5), obst.line_layer - 0.8),
+                        grid_pos: Vec2::new(obst.line_index, obst.line_layer),
                         size: Vec3::new(obst.width, obst.height, obst.duration * dist_beats_to_meters),
                         duration: obst.duration,
                         lane_rotation_deg,
@@ -997,10 +1011,12 @@ impl BeatmapFile {
                 for obst in v4.obstacles.iter() {
                     let index = obstacles.len() as u32;
                     let Some(data) = v4.obstacles_data.get(obst.metadata_index as usize) else { continue };
+                    let local_bpm = runtime_data.bpm(TimeUnit::Beat(obst.beat));
+                    let dist_beats_to_meters = runtime_data.njs * (60. / local_bpm);
                     obstacles.push(Obstacle {
                         beat: obst.beat,
                         color: ObjectColor::default(),
-                        grid_pos: Vec2::new(data.line_index + ((data.width / 2.) - 0.5), data.line_layer - 0.8),
+                        grid_pos: Vec2::new(data.line_index, data.line_layer),
                         size: Vec3::new(data.width, data.height, data.duration * dist_beats_to_meters),
                         duration: data.duration,
                         lane_rotation_deg: obst.rotation_lane as f32,
@@ -1014,7 +1030,7 @@ impl BeatmapFile {
         Self::check_window_snaps(&mut color_notes);
 
         Ok(BeatmapController {
-            runtime_data: RuntimeData::new(diff_data.njs, info.bpm(), diff_data.njs_offset, bpm_regions, sample_count, sample_rate),
+            runtime_data,
             color_notes,
             bomb_notes,
             obstacles,

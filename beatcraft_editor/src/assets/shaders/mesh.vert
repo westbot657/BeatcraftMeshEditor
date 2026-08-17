@@ -184,7 +184,7 @@ void main() {
         vec3 wall_vert = vec3(
             (left + right) * wall_size.x * in_position.x * 0.6,
             top * wall_size.y * 0.6,
-            back * wall_size.z * 0.6
+            back * wall_size.z
         );
 
         pos = instance_model * vec4(wall_vert, 1.0);
