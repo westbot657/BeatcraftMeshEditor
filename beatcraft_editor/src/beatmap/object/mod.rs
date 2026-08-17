@@ -619,7 +619,7 @@ impl GameObject for Obstacle {
     fn editor_hitbox(&self) -> HitBox {
         HitBox::new(
             Vec3::new(-self.size.x / 2. * 0.6, 0., 0.),
-            Vec3::new(self.size.x / 2. * 0.6, self.size.y * 0.6, self.size.z * 0.6),
+            Vec3::new(self.size.x / 2. * 0.6, self.size.y * 0.6, self.size.z),
         )
     }
 }

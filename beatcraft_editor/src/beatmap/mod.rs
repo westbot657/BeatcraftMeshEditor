@@ -488,6 +488,13 @@ impl App {
                     }
                 }
 
+                ui.add_sized(
+                    [150., 20.],
+                    egui::Slider::new(&mut self.render.renderer.beatmap.beat_spacing, 1f32..=20f32)
+                        .step_by(0.25)
+                        .text("Grid spacing")
+                ).on_hover_text("Default: 8");
+
             });
 
         egui::SidePanel::left("left_panel")
