@@ -330,6 +330,7 @@ impl App {
                         s.audio_system.remove_dead_audio();
                     }
                     s.render.renderer.beatmap.seek(0.);
+                    s.history.clear();
                     if let Err(e) = s.load_beatmap(&mut s2.audio_system, folder, gl, &mut s2.render.renderer, s2.data.audio_volume) {
                         let st = s.data.locale.get("failed-to-load-beatmap").to_string();
                         s.set_status(None, st, 2.);
@@ -371,6 +372,7 @@ impl App {
                         tracing::debug!(target: DB_LOGIC, "Returning to menu");
                         self.context = EditorContext::None;
                         self.render.renderer.beatmap.seek(0.);
+                        self.history.clear();
                         if let Some(map) = self.map_editor.map.take()
                             && let Some(audio) = map.audio {
                                 audio.stop();
@@ -488,12 +490,17 @@ impl App {
                     }
                 }
 
+                let def = self.data.locale.get_with_args(
+                    "default-value",
+                    &[("value".into(), 8.into())].into()
+                );
+
                 ui.add_sized(
                     [150., 20.],
                     egui::Slider::new(&mut self.render.renderer.beatmap.beat_spacing, 1f32..=20f32)
                         .step_by(0.25)
-                        .text("Grid spacing")
-                ).on_hover_text("Default: 8");
+                        .text(self.data.locale.get("grid-spacing"))
+                ).on_hover_text(def);
 
             });
 
@@ -509,11 +516,12 @@ impl App {
                         ui.add_space(10.);
                         if ui.add_sized(
                             [ui.available_width() * 0.75, 20.],
-                            egui::Button::new("Menu")
+                            egui::Button::new(self.data.locale.get("menu-label"))
                         ).clicked() {
                             tracing::debug!(target: DB_LOGIC, "Returning to menu");
                             self.context = EditorContext::None;
                             self.render.renderer.beatmap.seek(0.);
+                            self.history.clear();
                             if let Some(map) = self.map_editor.map.take()
                             && let Some(audio) = map.audio {
                                 audio.stop();
@@ -527,6 +535,7 @@ impl App {
                         'map_scope: { if let Some(map) = self.map_editor.map.as_mut() {
                             if ui.add_sized([ui.available_width() * 0.75, 20.], egui::Button::new("Close Map")).clicked() {
                                 self.render.renderer.beatmap.seek(0.);
+                                self.history.clear();
                                 if let Some(audio) = map.audio.take() {
                                     audio.stop();
                                     drop(audio);
@@ -543,12 +552,14 @@ impl App {
                             && ui.add_sized([ui.available_width() * 0.75, 20.], egui::Button::new("Close Difficulty")).clicked() {
                                 self.render.renderer.beatmap.seek(0.);
                                 map.controller = None;
+                                self.history.clear();
                                 if let Some(audio) = map.audio.take() {
                                     audio.stop();
                                     drop(audio);
                                     self.audio_system.remove_dead_audio();
                                     self.state.playback_speed = 1.;
                                 }
+                                self.history.clear();
                             }
                         }}
                     }
@@ -764,10 +775,10 @@ fn draw_map_info(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
                                 ui.label(&v2.song_name);
                                 ui.label(&v2.song_sub_name);
                                 ui.label(format!(
-                                        "Artist: {}  BPM: {:.2}  Mappers: {}",
-                                        v2.song_author_name,
-                                        v2.bpm,
-                                        v2.level_author_name
+                                    "Artist: {}  BPM: {:.2}  Mappers: {}",
+                                    v2.song_author_name,
+                                    v2.bpm,
+                                    v2.level_author_name
                                 ));
 
                             }
@@ -798,9 +809,9 @@ fn draw_map_info(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
                                 ui.label(&v4.song.title);
                                 ui.label(&v4.song.sub_title);
                                 ui.label(format!(
-                                        "Artist: {}  BPM: {:.2}",
-                                        v4.song.author,
-                                        v4.audio.bpm,
+                                    "Artist: {}  BPM: {:.2}",
+                                    v4.song.author,
+                                    v4.audio.bpm,
                                 ));
                             }
                         );
@@ -868,7 +879,7 @@ fn draw_map_diff(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
                         }
                         if let Some(path) = diff.beatmap_file.as_deref() {
                             ui.label(format!("PATH: {}", path.to_string_lossy()));
-                            if ui.button("Open").clicked() {
+                            if ui.button(app.data.locale.get("open")).clicked() {
                                 let path = map.folder.join(path);
                                 let data = std::fs::read(path).unwrap();
                                 match serde_json::from_slice::<BeatmapFile>(&data) {

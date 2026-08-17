@@ -14,7 +14,8 @@ use tracing::Level;
 
 use crate::audio::AudioSystem;
 use crate::beatmap::BeatmapEditor;
-use crate::beatmap::object::ObjectType;
+use crate::beatmap::data::{AudioDataFile, InfoFile};
+use crate::beatmap::object::{BombNote, ChainNote, ColorNote, ObjectType, Obstacle, RuntimeData};
 use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
 use crate::config::{AppData, KeyMaps};
 use crate::data::{
@@ -818,6 +819,14 @@ pub enum HistoryEntry {
     Mirror(Option<String>, Option<PathBuf>, Vec<Vec2>),
     Spectrogram(Option<SpectrogramData>),
     FogHeights(Option<[f32; 2]>),
+
+    BeatmapInfo(Box<Option<InfoFile>>),
+    BeatmapAudioData(Box<Option<AudioDataFile>>),
+    BeatmapNotes(Vec<ColorNote>),
+    BeatmapBombs(Vec<BombNote>),
+    BeatmapObstacles(Vec<Obstacle>),
+    BeatmapChains(Vec<ChainNote>),
+    BeatmapRuntimeData(RuntimeData),
 }
 
 pub struct History {
@@ -839,6 +848,11 @@ impl History {
         if self.history.len() > self.limit {
             let _ = self.history.pop_front();
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.history.clear();
+        self.future.clear();
     }
 
     fn process_history(
@@ -975,6 +989,67 @@ impl History {
             HistoryEntry::FogHeights(mut heights) => {
                 std::mem::swap(&mut heights, &mut editor.view.fog_heights);
                 HistoryEntry::FogHeights(heights)
+            },
+            HistoryEntry::BeatmapInfo(mut info_file) => {
+                if let Some(map) = editor.map_editor.map.as_mut() {
+                    std::mem::swap(&mut *info_file, &mut map.info);
+                    HistoryEntry::BeatmapInfo(info_file)
+                } else {
+                    panic!("History is meant to be cleared after closing/chainging active map");
+                }
+            },
+            HistoryEntry::BeatmapAudioData(mut audio_data_file) => {
+                if let Some(map) = editor.map_editor.map.as_mut() {
+                    std::mem::swap(&mut *audio_data_file, &mut map.audio_info);
+                    HistoryEntry::BeatmapAudioData(audio_data_file)
+                } else {
+                    panic!("History is meant to be cleared after closing/changing active map");
+                }
+            },
+            HistoryEntry::BeatmapNotes(mut color_notes) => {
+                if let Some(map) = editor.map_editor.map.as_mut()
+                && let Some(controller) = map.controller.as_mut() {
+                    std::mem::swap(&mut color_notes, &mut controller.color_notes);
+                    HistoryEntry::BeatmapNotes(color_notes)
+                } else {
+                    panic!("History is meant to be cleared after closing/changing active map");
+                }
+            },
+            HistoryEntry::BeatmapBombs(mut bomb_notes) => {
+                if let Some(map) = editor.map_editor.map.as_mut()
+                && let Some(controller) = map.controller.as_mut() {
+                    std::mem::swap(&mut bomb_notes, &mut controller.bomb_notes);
+                    HistoryEntry::BeatmapBombs(bomb_notes)
+                } else {
+                    panic!("History is meant to be cleared after closing/changing active map");
+                }
+            },
+            HistoryEntry::BeatmapObstacles(mut obstacles) => {
+                if let Some(map) = editor.map_editor.map.as_mut()
+                && let Some(controller) = map.controller.as_mut() {
+                    std::mem::swap(&mut obstacles, &mut controller.obstacles);
+                    HistoryEntry::BeatmapObstacles(obstacles)
+                } else {
+                    panic!("History is meant to be cleared after closing/changing active map");
+                }
+            },
+            HistoryEntry::BeatmapChains(mut chain_notes) => {
+                if let Some(map) = editor.map_editor.map.as_mut()
+                && let Some(controller) = map.controller.as_mut() {
+                    std::mem::swap(&mut chain_notes, &mut controller.chain_notes);
+                    HistoryEntry::BeatmapChains(chain_notes)
+                } else {
+                    panic!("History is meant to be cleared after closing/changing active map");
+                }
+            },
+            HistoryEntry::BeatmapRuntimeData(mut runtime_data) => {
+                if let Some(map) = editor.map_editor.map.as_mut()
+                && let Some(controller) = map.controller.as_mut() {
+                    std::mem::swap(&mut runtime_data, &mut controller.runtime_data);
+                    HistoryEntry::BeatmapRuntimeData(runtime_data)
+                } else {
+                    panic!("History is meant to be cleared after closing/changing active map");
+                }
             },
         }
     }

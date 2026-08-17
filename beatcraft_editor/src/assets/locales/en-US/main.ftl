@@ -176,4 +176,7 @@ playback-speed = Playback speed
 audio-volume = Audio volume
 open-beatmap-folder = Open map folder...
 remove-from-list = Remove
+grid-spacing = Grid spacing
+default-value = Default: {$value}
+
 

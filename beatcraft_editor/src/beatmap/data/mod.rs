@@ -911,7 +911,7 @@ impl VersionClass {
 }
 
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
 pub enum InfoFile {
@@ -919,7 +919,7 @@ pub enum InfoFile {
     V4(InfoV4),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
 pub enum BeatmapFile {
@@ -928,7 +928,7 @@ pub enum BeatmapFile {
     V4(BeatmapFileV4),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
 pub enum AudioDataFile {

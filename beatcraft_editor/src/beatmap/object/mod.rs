@@ -42,6 +42,7 @@ pub struct BeatmapController {
     pub chain_notes: Vec<ChainNote>,
 }
 
+#[derive(Debug, Clone)]
 pub struct RuntimeData {
     pub njs: f32,
     bpm: f32,

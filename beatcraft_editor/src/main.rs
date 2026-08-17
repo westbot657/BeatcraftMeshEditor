@@ -281,8 +281,7 @@ impl App {
         self.selection = Selection::None;
         self.mode = editor::EditorMode::View;
         self.context = editor::EditorContext::None;
-        self.history.history.clear();
-        self.history.future.clear();
+        self.history.clear();
         self.rebuild_meshes(&gl);
     }
 
