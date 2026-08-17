@@ -8,8 +8,8 @@ use std::str::FromStr;
 
 use chrono::DateTime;
 use egui::{Key, KeyboardShortcut, Modifiers};
-use fluent_templates::{LanguageIdentifier, Loader, static_loader};
 use fluent_templates::fluent_bundle::FluentValue;
+use fluent_templates::{LanguageIdentifier, Loader, static_loader};
 use serde::{Deserialize, Serialize};
 
 use crate::DB_DATA;
@@ -78,9 +78,7 @@ pub enum ProjectType {
     EnvironmentMesh,
     SaberMesh,
     NoteMesh,
-    Beatmap {
-        img: Option<String>,
-    },
+    Beatmap { img: Option<String> },
     Lightshow,
 }
 
@@ -118,88 +116,31 @@ pub struct KeyMaps {
 impl Default for KeyMaps {
     fn default() -> Self {
         Self {
-            toggle_vertices: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::V
-            ),
-            toggle_wireframe: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::L,
-            ),
-            toggle_grid: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::G,
-            ),
-            toggle_render_style: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::F,
-            ),
-            toggle_mesh_part_back: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::ArrowLeft,
-            ),
-            toggle_mesh_part_forward: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::ArrowRight,
-            ),
-            toggle_edit_component: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::E,
-            ),
-            toggle_assembly_view: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::I,
-            ),
-            create_or_remove_triangles: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::N,
-            ),
-            flip_triangles: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::R,
-            ),
-            create_vertex: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::C,
-            ),
-            toggle_map_playback: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::Space,
-            ),
-            rotate_map_grid_left: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::ArrowLeft,
-            ),
-            rotate_map_grid_right: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::ArrowRight,
-            ),
+            toggle_vertices: KeyboardShortcut::new(Modifiers::NONE, Key::V),
+            toggle_wireframe: KeyboardShortcut::new(Modifiers::NONE, Key::L),
+            toggle_grid: KeyboardShortcut::new(Modifiers::NONE, Key::G),
+            toggle_render_style: KeyboardShortcut::new(Modifiers::NONE, Key::F),
+            toggle_mesh_part_back: KeyboardShortcut::new(Modifiers::NONE, Key::ArrowLeft),
+            toggle_mesh_part_forward: KeyboardShortcut::new(Modifiers::NONE, Key::ArrowRight),
+            toggle_edit_component: KeyboardShortcut::new(Modifiers::NONE, Key::E),
+            toggle_assembly_view: KeyboardShortcut::new(Modifiers::NONE, Key::I),
+            create_or_remove_triangles: KeyboardShortcut::new(Modifiers::NONE, Key::N),
+            flip_triangles: KeyboardShortcut::new(Modifiers::NONE, Key::R),
+            create_vertex: KeyboardShortcut::new(Modifiers::NONE, Key::C),
+            toggle_map_playback: KeyboardShortcut::new(Modifiers::NONE, Key::Space),
+            rotate_map_grid_left: KeyboardShortcut::new(Modifiers::NONE, Key::ArrowLeft),
+            rotate_map_grid_right: KeyboardShortcut::new(Modifiers::NONE, Key::ArrowRight),
             map_fly_forward: Key::W,
             map_fly_backward: Key::S,
             map_fly_left: Key::A,
             map_fly_right: Key::D,
             map_fly_up: Key::E,
             map_fly_down: Key::Q,
-            deselect: KeyboardShortcut::new(
-                Modifiers::NONE,
-                Key::Escape,
-            ),
-            save: KeyboardShortcut::new(
-                Modifiers::CTRL,
-                Key::S,
-            ),
-            undo: KeyboardShortcut::new(
-                Modifiers::CTRL,
-                Key::Z,
-            ),
-            redo: KeyboardShortcut::new(
-                Modifiers::CTRL | Modifiers::SHIFT,
-                Key::Z,
-            ),
-            rebuild_meshes: KeyboardShortcut::new(
-                Modifiers::ALT,
-                Key::R,
-            ),
+            deselect: KeyboardShortcut::new(Modifiers::NONE, Key::Escape),
+            save: KeyboardShortcut::new(Modifiers::CTRL, Key::S),
+            undo: KeyboardShortcut::new(Modifiers::CTRL, Key::Z),
+            redo: KeyboardShortcut::new(Modifiers::CTRL | Modifiers::SHIFT, Key::Z),
+            rebuild_meshes: KeyboardShortcut::new(Modifiers::ALT, Key::R),
         }
     }
 }
@@ -211,7 +152,6 @@ pub struct LocaleCache {
 }
 
 impl LocaleCache {
-
     pub fn new(lang: &str) -> Self {
         Self {
             locale: LanguageIdentifier::from_str(lang).unwrap_or_default(),
@@ -220,10 +160,16 @@ impl LocaleCache {
     }
 
     pub fn get(&mut self, key: &'static str) -> &str {
-        self.cache.entry(key).or_insert_with(|| LOCALES.lookup(&self.locale, key))
+        self.cache
+            .entry(key)
+            .or_insert_with(|| LOCALES.lookup(&self.locale, key))
     }
 
-    pub fn get_with_args(&self, key: &'static str, args: &HashMap<Cow<'static, str>, FluentValue>) -> String {
+    pub fn get_with_args(
+        &self,
+        key: &'static str,
+        args: &HashMap<Cow<'static, str>, FluentValue>,
+    ) -> String {
         LOCALES.lookup_with_args(&self.locale, key, args)
     }
 
@@ -231,7 +177,6 @@ impl LocaleCache {
         self.locale = lang;
         self.cache.clear();
     }
-
 }
 
 impl ProjectType {
@@ -290,31 +235,31 @@ impl From<RawRecentProjects> for RecentProjects {
     }
 }
 
-
 impl From<RawRecentProject> for RecentProject {
     fn from(value: RawRecentProject) -> Self {
         let kind = match value.kind {
             ProjectKind::EnvironmentMesh => ProjectType::EnvironmentMesh,
             ProjectKind::SaberMesh => ProjectType::SaberMesh,
             ProjectKind::NoteMesh => ProjectType::NoteMesh,
-            ProjectKind::Beatmap => {
-                match fs::read_dir(&value.path) {
-                    Err(_) => ProjectType::Beatmap { img: None },
-                    Ok(iterator) => {
-                        let mut src = None;
-                        for file in iterator.flatten() {
-                            let f = file.file_name().to_string_lossy().to_lowercase();
-                            if f != "info.dat" { continue }
-                            if let Ok(data) = fs::read(file.path())
-                            && let Ok(info) = serde_json::from_slice::<InfoFile>(&data) {
-                                src = Some(match info {
-                                    InfoFile::V2(v2) => v2.cover_image_filename.clone(),
-                                    InfoFile::V4(v4) => v4.cover_image_filename.clone(),
-                                });
-                            }
+            ProjectKind::Beatmap => match fs::read_dir(&value.path) {
+                Err(_) => ProjectType::Beatmap { img: None },
+                Ok(iterator) => {
+                    let mut src = None;
+                    for file in iterator.flatten() {
+                        let f = file.file_name().to_string_lossy().to_lowercase();
+                        if f != "info.dat" {
+                            continue;
                         }
-                        ProjectType::Beatmap { img: src }
+                        if let Ok(data) = fs::read(file.path())
+                            && let Ok(info) = serde_json::from_slice::<InfoFile>(&data)
+                        {
+                            src = Some(match info {
+                                InfoFile::V2(v2) => v2.cover_image_filename.clone(),
+                                InfoFile::V4(v4) => v4.cover_image_filename.clone(),
+                            });
+                        }
                     }
+                    ProjectType::Beatmap { img: src }
                 }
             },
             ProjectKind::Lightshow => ProjectType::Lightshow,
@@ -386,12 +331,14 @@ impl AppData {
                     break 'find_existing;
                 }
             }
-            self.recents.push(RawRecentProject {
-                modified: chrono::Utc::now().timestamp(),
-                path: project.to_path_buf(),
-                kind,
-            }.into())
+            self.recents.push(
+                RawRecentProject {
+                    modified: chrono::Utc::now().timestamp(),
+                    path: project.to_path_buf(),
+                    kind,
+                }
+                .into(),
+            )
         }
     }
 }
-

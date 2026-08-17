@@ -16,12 +16,11 @@ pub enum GridStepSpacing {
 impl GridStepSpacing {
     pub fn value(&self) -> f32 {
         match self {
-            GridStepSpacing::Thirds => 1./3.,
+            GridStepSpacing::Thirds => 1. / 3.,
             GridStepSpacing::Quarters => 0.25,
         }
     }
 }
-
 
 pub struct BeatmapRenderer {
     grid_shader: glow::NativeProgram,
@@ -52,7 +51,6 @@ pub struct BeatmapRenderer {
     spectrogram_ui_zoom: f32,
     spectrogram_ui_offset: f32,
 }
-
 
 impl BeatmapRenderer {
     pub fn new(gl: &glow::Context) -> Result<Self, String> {
@@ -104,8 +102,16 @@ impl BeatmapRenderer {
                 let tex = gl.create_texture().unwrap();
                 gl.bind_texture(glow::TEXTURE_2D, Some(tex));
 
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_WRAP_S,
+                    glow::CLAMP_TO_EDGE as i32,
+                );
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_WRAP_T,
+                    glow::CLAMP_TO_EDGE as i32,
+                );
                 gl.tex_parameter_i32(
                     glow::TEXTURE_2D,
                     glow::TEXTURE_MIN_FILTER,
@@ -138,7 +144,6 @@ impl BeatmapRenderer {
                 world_plane_shader,
                 grid_vao,
 
-
                 spectrogram_ui_shader,
                 spectrogram_ui_vao,
 
@@ -169,8 +174,10 @@ impl BeatmapRenderer {
         unsafe {
             let vp = *proj * *view;
             gl.blend_func_separate(
-                glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA,
-                glow::ZERO, glow::ONE,
+                glow::SRC_ALPHA,
+                glow::ONE_MINUS_SRC_ALPHA,
+                glow::ZERO,
+                glow::ONE,
             );
             gl.bind_vertex_array(Some(self.grid_vao));
 
@@ -215,10 +222,11 @@ impl BeatmapRenderer {
 
             gl.bind_vertex_array(None);
             gl.blend_func_separate(
-                glow::ONE, glow::ONE_MINUS_SRC_ALPHA,
-                glow::ONE_MINUS_SRC_COLOR, glow::ONE,
+                glow::ONE,
+                glow::ONE_MINUS_SRC_ALPHA,
+                glow::ONE_MINUS_SRC_COLOR,
+                glow::ONE,
             );
-
         }
     }
 
@@ -241,8 +249,7 @@ impl BeatmapRenderer {
 
     pub fn spectrogram_center(&mut self, cursor: f32) {
         let zoom = self.spectrogram_ui_zoom;
-        self.spectrogram_ui_offset = (cursor - zoom * 0.5)
-            .clamp(0.0, (1.0 - zoom).max(0.0));
+        self.spectrogram_ui_offset = (cursor - zoom * 0.5).clamp(0.0, (1.0 - zoom).max(0.0));
     }
 
     pub fn spectrogram_zoom(&mut self, scroll: f32, cursor: f32) {
@@ -250,7 +257,8 @@ impl BeatmapRenderer {
             return;
         }
         let factor = if scroll > 0. { 0.88 } else { 1.12 };
-        self.spectrogram_ui_zoom = (self.spectrogram_ui_zoom * factor).clamp(SPECTROGRAM_MIN_ZOOM, 1.0);
+        self.spectrogram_ui_zoom =
+            (self.spectrogram_ui_zoom * factor).clamp(SPECTROGRAM_MIN_ZOOM, 1.0);
         self.spectrogram_center(cursor);
     }
 
@@ -263,7 +271,10 @@ impl BeatmapRenderer {
     }
 
     pub fn spectrogram_range(&self) -> (f32, f32) {
-        (self.spectrogram_ui_offset, self.spectrogram_ui_offset + self.spectrogram_ui_zoom)
+        (
+            self.spectrogram_ui_offset,
+            self.spectrogram_ui_offset + self.spectrogram_ui_zoom,
+        )
     }
 
     pub fn render_spectrogram_ui(
@@ -281,9 +292,12 @@ impl BeatmapRenderer {
             gl.use_program(Some(program));
             gl.bind_vertex_array(Some(self.spectrogram_ui_vao));
 
-            let Some(tex) = audio.get_spectrogram_tex(gl) else { return };
+            let Some(tex) = audio.get_spectrogram_tex(gl) else {
+                return;
+            };
             let start = self.spectrogram_ui_offset;
-            let end = start + (0f32.lerp(length_seconds, self.spectrogram_ui_zoom) / length_seconds);
+            let end =
+                start + (0f32.lerp(length_seconds, self.spectrogram_ui_zoom) / length_seconds);
             let coverage = audio.spectrogram_synced_coverage();
 
             renderer.set_float(gl, program, "u_start", start);
@@ -296,5 +310,3 @@ impl BeatmapRenderer {
         }
     }
 }
-
-

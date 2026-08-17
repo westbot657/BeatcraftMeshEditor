@@ -98,10 +98,12 @@ impl TryFrom<i8> for Easing {
     fn try_from(value: i8) -> Result<Self, Self::Error> {
         Ok(match value {
             -1..=30 | 100..=102 => unsafe { std::mem::transmute::<i8, Easing>(value) },
-            _ => return Err(beatmap::data::BeatmapDataError::ToEnum {
-                enum_name: "Easing",
-                val: value as i32
-            })
+            _ => {
+                return Err(beatmap::data::BeatmapDataError::ToEnum {
+                    enum_name: "Easing",
+                    val: value as i32,
+                });
+            }
         })
     }
 }

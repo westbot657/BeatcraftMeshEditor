@@ -16,17 +16,17 @@ use crate::audio::AudioSystem;
 use crate::beatmap::BeatmapEditor;
 use crate::beatmap::data::{AudioDataFile, InfoFile};
 use crate::beatmap::object::{BombNote, ChainNote, ColorNote, ObjectType, Obstacle, RuntimeData};
-use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
 use crate::config::{AppData, KeyMaps};
-use crate::data::{
-    EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData, MeshType, NormalId, SessionData, SpectrogramData, TypeData, UvId, VertexId
+use crate::data::mesh::{
+    EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData,
+    MeshType, NormalId, SessionData, SpectrogramData, TypeData, UvId, VertexId,
 };
 use crate::light_mesh::{
     LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot,
     LightMeshSnapshot, Part,
 };
 use crate::render::{GpuMesh, InstanceData, LIGHT_COLORS, Renderer};
-
+use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
 
 #[derive(Copy, Clone)]
 pub struct Camera {
@@ -209,28 +209,41 @@ pub enum ActionType {
 impl ActionType {
     pub fn get_type(&self) -> EventGroup {
         match self {
-            Self::Spinning { side: SpinSide::Left, .. } => EventGroup::LeftSpinning,
-            Self::Spinning { side: SpinSide::Right, .. } => EventGroup::RightSpinning,
-            Self::Ring { layer: RingType::Inner, .. } => EventGroup::InnerRing,
-            Self::Ring { layer: RingType::Outer, .. } => EventGroup::OuterRing,
+            Self::Spinning {
+                side: SpinSide::Left,
+                ..
+            } => EventGroup::LeftSpinning,
+            Self::Spinning {
+                side: SpinSide::Right,
+                ..
+            } => EventGroup::RightSpinning,
+            Self::Ring {
+                layer: RingType::Inner,
+                ..
+            } => EventGroup::InnerRing,
+            Self::Ring {
+                layer: RingType::Outer,
+                ..
+            } => EventGroup::OuterRing,
             _ => EventGroup::None,
         }
     }
     pub fn to_data(&self) -> TypeData {
         match self {
-            Self::Spinning {
-                side: _, axis
-            } => TypeData::Spinning {
-                axis: (*axis).unwrap_or(Vec3::ZERO)
+            Self::Spinning { side: _, axis } => TypeData::Spinning {
+                axis: (*axis).unwrap_or(Vec3::ZERO),
             },
             Self::Ring {
-                layer: _, angles, deltas, start
+                layer: _,
+                angles,
+                deltas,
+                start,
             } => TypeData::Rings {
                 angles: angles.clone(),
                 deltas: deltas.clone(),
-                starts: *start
+                starts: *start,
             },
-            Self::Static => TypeData::None
+            Self::Static => TypeData::None,
         }
     }
 }
@@ -334,9 +347,7 @@ impl ViewMesh {
     pub fn render_view_placements(&self, calls: &mut Vec<InstanceData>) -> Option<&GpuMesh> {
         if self.visible {
             if self.view_placements.is_empty() {
-                calls.push(InstanceData::new(
-                    Vec4::ZERO, Mat4::IDENTITY, LIGHT_COLORS
-                ));
+                calls.push(InstanceData::new(Vec4::ZERO, Mat4::IDENTITY, LIGHT_COLORS));
             } else {
                 for placement in self.view_placements.iter() {
                     let mut pos = placement.position;
@@ -345,7 +356,9 @@ impl ViewMesh {
                     for _ in 0..placement.count {
                         calls.push(InstanceData::new(
                             Vec4::ZERO,
-                            Mat4::from_translation(pos) * Mat4::from_quat(rot) * Mat4::from_quat(ori),
+                            Mat4::from_translation(pos)
+                                * Mat4::from_quat(rot)
+                                * Mat4::from_quat(ori),
                             LIGHT_COLORS,
                         ));
                         pos += placement.offset;
@@ -361,11 +374,7 @@ impl ViewMesh {
     }
 
     pub fn render_assembly(&self, calls: &mut Vec<InstanceData>) -> Option<&GpuMesh> {
-        calls.push(InstanceData::new(
-            Vec4::ZERO,
-            Mat4::IDENTITY,
-            LIGHT_COLORS
-        ));
+        calls.push(InstanceData::new(Vec4::ZERO, Mat4::IDENTITY, LIGHT_COLORS));
         self.gpu_bufs.1.as_ref()
     }
 
@@ -553,15 +562,21 @@ pub enum Clipboard {
 pub enum ViewStyle {
     #[default]
     Edit,
-    Beatcraft { blackout_sky: bool },
+    Beatcraft {
+        blackout_sky: bool,
+    },
 }
 
 impl ViewStyle {
     pub fn cycle(&mut self) {
         *self = match self {
-            ViewStyle::Edit => ViewStyle::Beatcraft { blackout_sky: false },
-            ViewStyle::Beatcraft { blackout_sky: false } => ViewStyle::Beatcraft { blackout_sky: true },
-            ViewStyle::Beatcraft { blackout_sky: true } => ViewStyle::Edit
+            ViewStyle::Edit => ViewStyle::Beatcraft {
+                blackout_sky: false,
+            },
+            ViewStyle::Beatcraft {
+                blackout_sky: false,
+            } => ViewStyle::Beatcraft { blackout_sky: true },
+            ViewStyle::Beatcraft { blackout_sky: true } => ViewStyle::Edit,
         };
     }
 }
@@ -869,11 +884,14 @@ impl History {
                 editor.render.renderer.rebuild_atlases(gl);
                 let texture_paths = editor.render.renderer.texture_paths.clone();
                 let atlas_map = editor.render.renderer.atlas_map.clone();
-                editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap().rebuild_with_maps(
-                    gl,
-                    &texture_paths,
-                    &atlas_map,
-                );
+                editor
+                    .view
+                    .meshes
+                    .get_mut(&id)
+                    .unwrap()
+                    .as_mut()
+                    .unwrap()
+                    .rebuild_with_maps(gl, &texture_paths, &atlas_map);
                 HistoryEntry::Mesh(LightMeshSnapshot { id, mesh })
             }
             HistoryEntry::MeshPart(LightMeshPartSnapshot { id, name, part }) => {
@@ -882,11 +900,14 @@ impl History {
                 editor.render.renderer.rebuild_atlases(gl);
                 let texture_paths = editor.render.renderer.texture_paths.clone();
                 let atlas_map = editor.render.renderer.atlas_map.clone();
-                editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap().rebuild_with_maps(
-                    gl,
-                    &texture_paths,
-                    &atlas_map,
-                );
+                editor
+                    .view
+                    .meshes
+                    .get_mut(&id)
+                    .unwrap()
+                    .as_mut()
+                    .unwrap()
+                    .rebuild_with_maps(gl, &texture_paths, &atlas_map);
                 editor.upload_selection_points(gl);
                 HistoryEntry::MeshPart(LightMeshPartSnapshot {
                     id,
@@ -910,11 +931,14 @@ impl History {
                 editor.render.renderer.rebuild_atlases(gl);
                 let texture_paths = editor.render.renderer.texture_paths.clone();
                 let atlas_map = editor.render.renderer.atlas_map.clone();
-                editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap().rebuild_with_maps(
-                    gl,
-                    &texture_paths,
-                    &atlas_map,
-                );
+                editor
+                    .view
+                    .meshes
+                    .get_mut(&id)
+                    .unwrap()
+                    .as_mut()
+                    .unwrap()
+                    .rebuild_with_maps(gl, &texture_paths, &atlas_map);
                 editor.upload_selection_points(gl);
                 HistoryEntry::MeshMeta(LightMeshMetaSnapshot {
                     id,
@@ -928,7 +952,13 @@ impl History {
                 view_id,
                 mut placements,
             }) => {
-                let m = editor.view.meshes.get_mut(&view_id).unwrap().as_mut().unwrap();
+                let m = editor
+                    .view
+                    .meshes
+                    .get_mut(&view_id)
+                    .unwrap()
+                    .as_mut()
+                    .unwrap();
                 mem::swap(&mut placements, &mut m.data.placements);
                 editor.render.renderer.rebuild_atlases(gl);
                 let texture_paths = editor.render.renderer.texture_paths.clone();
@@ -937,7 +967,9 @@ impl History {
                     .view
                     .meshes
                     .get_mut(&view_id)
-                    .unwrap().as_mut().unwrap()
+                    .unwrap()
+                    .as_mut()
+                    .unwrap()
                     .rebuild_with_maps(gl, &texture_paths, &atlas_map);
                 editor.upload_selection_points(gl);
                 HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
@@ -945,20 +977,20 @@ impl History {
                     placements,
                 })
             }
-            HistoryEntry::ViewPlacement(ViewPlacementsSnapshot {
-                id,
-                mut placements,
-            }) => {
+            HistoryEntry::ViewPlacement(ViewPlacementsSnapshot { id, mut placements }) => {
                 let m = editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap();
                 mem::swap(&mut placements, &mut m.view_placements);
                 editor.render.renderer.rebuild_atlases(gl);
                 let texture_paths = editor.render.renderer.texture_paths.clone();
                 let atlas_map = editor.render.renderer.atlas_map.clone();
-                editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap().rebuild_with_maps(
-                    gl,
-                    &texture_paths,
-                    &atlas_map,
-                );
+                editor
+                    .view
+                    .meshes
+                    .get_mut(&id)
+                    .unwrap()
+                    .as_mut()
+                    .unwrap()
+                    .rebuild_with_maps(gl, &texture_paths, &atlas_map);
                 editor.upload_selection_points(gl);
                 HistoryEntry::ViewPlacement(ViewPlacementsSnapshot { id, placements })
             }
@@ -981,15 +1013,15 @@ impl History {
                 std::mem::swap(&mut path, &mut editor.view.mirror_path);
                 std::mem::swap(&mut vec2s, &mut editor.view.mirror_geometry);
                 HistoryEntry::Mirror(id, path, vec2s)
-            },
+            }
             HistoryEntry::Spectrogram(mut spectrogram_data) => {
                 std::mem::swap(&mut spectrogram_data, &mut editor.view.spectrogram);
                 HistoryEntry::Spectrogram(spectrogram_data)
-            },
+            }
             HistoryEntry::FogHeights(mut heights) => {
                 std::mem::swap(&mut heights, &mut editor.view.fog_heights);
                 HistoryEntry::FogHeights(heights)
-            },
+            }
             HistoryEntry::BeatmapInfo(mut info_file) => {
                 if let Some(map) = editor.map_editor.map.as_mut() {
                     std::mem::swap(&mut *info_file, &mut map.info);
@@ -997,7 +1029,7 @@ impl History {
                 } else {
                     panic!("History is meant to be cleared after closing/chainging active map");
                 }
-            },
+            }
             HistoryEntry::BeatmapAudioData(mut audio_data_file) => {
                 if let Some(map) = editor.map_editor.map.as_mut() {
                     std::mem::swap(&mut *audio_data_file, &mut map.audio_info);
@@ -1005,52 +1037,57 @@ impl History {
                 } else {
                     panic!("History is meant to be cleared after closing/changing active map");
                 }
-            },
+            }
             HistoryEntry::BeatmapNotes(mut color_notes) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
-                && let Some(controller) = map.controller.as_mut() {
+                    && let Some(controller) = map.controller.as_mut()
+                {
                     std::mem::swap(&mut color_notes, &mut controller.color_notes);
                     HistoryEntry::BeatmapNotes(color_notes)
                 } else {
                     panic!("History is meant to be cleared after closing/changing active map");
                 }
-            },
+            }
             HistoryEntry::BeatmapBombs(mut bomb_notes) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
-                && let Some(controller) = map.controller.as_mut() {
+                    && let Some(controller) = map.controller.as_mut()
+                {
                     std::mem::swap(&mut bomb_notes, &mut controller.bomb_notes);
                     HistoryEntry::BeatmapBombs(bomb_notes)
                 } else {
                     panic!("History is meant to be cleared after closing/changing active map");
                 }
-            },
+            }
             HistoryEntry::BeatmapObstacles(mut obstacles) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
-                && let Some(controller) = map.controller.as_mut() {
+                    && let Some(controller) = map.controller.as_mut()
+                {
                     std::mem::swap(&mut obstacles, &mut controller.obstacles);
                     HistoryEntry::BeatmapObstacles(obstacles)
                 } else {
                     panic!("History is meant to be cleared after closing/changing active map");
                 }
-            },
+            }
             HistoryEntry::BeatmapChains(mut chain_notes) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
-                && let Some(controller) = map.controller.as_mut() {
+                    && let Some(controller) = map.controller.as_mut()
+                {
                     std::mem::swap(&mut chain_notes, &mut controller.chain_notes);
                     HistoryEntry::BeatmapChains(chain_notes)
                 } else {
                     panic!("History is meant to be cleared after closing/changing active map");
                 }
-            },
+            }
             HistoryEntry::BeatmapRuntimeData(mut runtime_data) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
-                && let Some(controller) = map.controller.as_mut() {
+                    && let Some(controller) = map.controller.as_mut()
+                {
                     std::mem::swap(&mut runtime_data, &mut controller.runtime_data);
                     HistoryEntry::BeatmapRuntimeData(runtime_data)
                 } else {
                     panic!("History is meant to be cleared after closing/changing active map");
                 }
-            },
+            }
         }
     }
 
@@ -1103,7 +1140,8 @@ pub struct TriMeta {
 }
 
 pub static SOURCE_CODE_PRO: &[u8] = include_bytes!("./assets/fonts/SourceCodePro-Regular.ttf");
-pub static MINECRAFT_NERD_FONT: &[u8] = include_bytes!("./assets/fonts/Monocraft-nerd-fonts-patched.ttc");
+pub static MINECRAFT_NERD_FONT: &[u8] =
+    include_bytes!("./assets/fonts/Monocraft-nerd-fonts-patched.ttc");
 
 pub static SOURCE_CODE_F: &str = "source-code-pro";
 pub static MINECRAFT_F: &str = "minecraft-font";
@@ -1132,7 +1170,6 @@ pub(crate) fn setup_fonts(order: &[impl ToString], ctx: &egui::Context) {
             .insert(idx, name.to_string());
     }
     ctx.set_fonts(fonts);
-
 }
 
 impl App {
@@ -1140,7 +1177,11 @@ impl App {
         let span = tracing::span!(Level::DEBUG, "init");
         let _guard = span.enter();
         tracing::info!(target: DB_MAIN, "Initializing...");
-        let minecraft_font: bool = cc.egui_ctx.memory_mut(|m| m.data.get_persisted("use_minecraft_font".into()).unwrap_or(true));
+        let minecraft_font: bool = cc.egui_ctx.memory_mut(|m| {
+            m.data
+                .get_persisted("use_minecraft_font".into())
+                .unwrap_or(true)
+        });
         tracing::debug!(target: DB_LOGIC, "Use Minecraft font: {minecraft_font}");
         if minecraft_font {
             setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], &cc.egui_ctx);
@@ -1154,7 +1195,6 @@ impl App {
         tracing::info!(target: DB_RENDER, "GL Renderer: {renderer}");
         let version = gl.version();
         tracing::info!(target: DB_RENDER, "GL version: {version:?}");
-
 
         let gl2 = Arc::clone(&gl);
 
@@ -1171,7 +1211,14 @@ impl App {
         let mut audio_system = AudioSystem::new(Arc::clone(&gl2)).unwrap();
         let data = load_app_data().unwrap_or_else(|_| Default::default());
 
-        let map_editor = BeatmapEditor::new(&mut audio_system, None, &gl2, &mut renderer, data.audio_volume).unwrap();
+        let map_editor = BeatmapEditor::new(
+            &mut audio_system,
+            None,
+            &gl2,
+            &mut renderer,
+            data.audio_volume,
+        )
+        .unwrap();
 
         let mut s = Self {
             title: "Beatcraft Mesh Editor",
@@ -1272,7 +1319,13 @@ impl App {
             let mut add = IndexMap::new();
             add.insert(name, p.clone());
             if s.load_meshes(add, &gl2).is_err() {
-                let _ = s.map_editor.load(&mut s.audio_system, p, &gl2, &mut s.render.renderer, s.data.audio_volume);
+                let _ = s.map_editor.load(
+                    &mut s.audio_system,
+                    p,
+                    &gl2,
+                    &mut s.render.renderer,
+                    s.data.audio_volume,
+                );
             }
         }
 
@@ -1300,23 +1353,28 @@ impl App {
         let _guard = span.enter();
         let mut out = IndexMap::new();
         for (k, path) in paths.into_iter() {
-            out.insert(k, Some(LightMesh::load(&path)?.into_view_mesh(path, gl, renderer)));
+            out.insert(
+                k,
+                Some(LightMesh::load(&path)?.into_view_mesh(path, gl, renderer)),
+            );
         }
         Ok(out)
     }
 
-    pub fn load_meshes(&mut self, paths: IndexMap<String, PathBuf>, gl: &Context) -> anyhow::Result<()> {
+    pub fn load_meshes(
+        &mut self,
+        paths: IndexMap<String, PathBuf>,
+        gl: &Context,
+    ) -> anyhow::Result<()> {
         let mut meshes = Self::load_meshes_to_vec(paths, gl, &self.render.renderer)?;
         // Clear out old meshes with same paths as new meshes
         self.view.meshes.retain(|id, view_mesh| {
-            !meshes
-                .iter()
-                .any(
-                    |(id2, new_mesh)| {
-                        (new_mesh.is_some() && view_mesh.is_some() && new_mesh.as_ref().unwrap().path == view_mesh.as_ref().unwrap().path)
-                        || id == id2
-                    }
-                )
+            !meshes.iter().any(|(id2, new_mesh)| {
+                (new_mesh.is_some()
+                    && view_mesh.is_some()
+                    && new_mesh.as_ref().unwrap().path == view_mesh.as_ref().unwrap().path)
+                    || id == id2
+            })
         });
         self.view.meshes.append(&mut meshes);
         Ok(())
@@ -1345,11 +1403,15 @@ impl App {
         let rd = RefDuper;
         let s2 = unsafe { rd.detach_ref(self) };
         if self.view.spectrogram.is_none()
-        && let Some(vm) = self.render.spectrogram.take() {
+            && let Some(vm) = self.render.spectrogram.take()
+        {
             vm.destroy(gl);
         }
         if let Some(data) = s2.view.spectrogram.as_ref() {
-            let vm = self.render.spectrogram.get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[]) );
+            let vm = self
+                .render
+                .spectrogram
+                .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[]));
             data.generate(gl, vm);
         }
         let geo = std::mem::take(&mut self.view.mirror_geometry);
@@ -1358,8 +1420,7 @@ impl App {
     }
 
     pub fn block_input(&self) -> bool {
-        !self.state.ui.routines.is_empty()
-        || !self.state.ui.custom_popup.is_empty()
+        !self.state.ui.routines.is_empty() || !self.state.ui.custom_popup.is_empty()
     }
 
     fn save_current_mesh(&mut self) -> anyhow::Result<()> {
@@ -1459,128 +1520,124 @@ impl App {
             self.rebuild_meshes(gl);
         }
 
-
         match self.context {
-            EditorContext::Model(_) => {
-
-                match self.mode {
-                    EditorMode::View => {
-                        if input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace) {
-                            let mut to_remove = std::mem::take(&mut self.state.ui.mirror_editor.selected);
-                            if !to_remove.is_empty() {
-                                tracing::debug!(target: DB_RENDER, ?to_remove, "Deleting mirror vertices");
-                            }
-                            to_remove.sort();
-                            to_remove.reverse();
-                            for r in to_remove {
-                                self.view.mirror_geometry.remove(r.0 * 3 + r.1);
-                            }
+            EditorContext::Model(_) => match self.mode {
+                EditorMode::View => {
+                    if input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace) {
+                        let mut to_remove =
+                            std::mem::take(&mut self.state.ui.mirror_editor.selected);
+                        if !to_remove.is_empty() {
+                            tracing::debug!(target: DB_RENDER, ?to_remove, "Deleting mirror vertices");
                         }
-
-                    }
-                    EditorMode::Assembly => {
-                        if ctx.input_mut(|i| self.data.keymaps.toggle_edit_component.pressed(i)) {
-                            self.last_mode = self.mode;
-                            self.selection = Selection::None;
-                            self.upload_selection_points(gl);
-                            self.mode = EditorMode::Edit;
-                            if self.editor.part.is_none()
-                                && let Some(sel) = self.editor.mesh.as_deref()
-                                    && let Some(Some(mesh)) = self.view.meshes.get(sel)
-                                    && !mesh.data.parts.is_empty()
-                            {
-                                self.editor.part = Some(0);
-                            }
+                        to_remove.sort();
+                        to_remove.reverse();
+                        for r in to_remove {
+                            self.view.mirror_geometry.remove(r.0 * 3 + r.1);
                         }
                     }
-                    EditorMode::Edit => {
-                        if ctx.input_mut(|i| self.data.keymaps.toggle_edit_component.pressed(i)) {
-                            self.last_mode = self.mode;
-                            self.selection = Selection::None;
-                            self.upload_selection_points(gl);
-                            self.mode = EditorMode::Assembly;
-                        }
-                        if ctx.input_mut(|i| self.data.keymaps.toggle_mesh_part_back.pressed(i))
+                }
+                EditorMode::Assembly => {
+                    if ctx.input_mut(|i| self.data.keymaps.toggle_edit_component.pressed(i)) {
+                        self.last_mode = self.mode;
+                        self.selection = Selection::None;
+                        self.upload_selection_points(gl);
+                        self.mode = EditorMode::Edit;
+                        if self.editor.part.is_none()
                             && let Some(sel) = self.editor.mesh.as_deref()
-                                && let Some(Some(mesh)) = self.view.meshes.get(sel)
+                            && let Some(Some(mesh)) = self.view.meshes.get(sel)
+                            && !mesh.data.parts.is_empty()
                         {
-                            if mesh.data.part_names.is_empty() {
-                                self.editor.part = None;
-                            } else {
-                                let l = mesh.data.part_names.len();
-                                self.editor.part =
-                                    Some(self.editor.part.map(|x| (x + l - 1) % l).unwrap_or(0));
-                            }
-                            self.selection = Selection::None;
-                            self.upload_selection_points(gl);
+                            self.editor.part = Some(0);
                         }
-                        if ctx.input_mut(|i| self.data.keymaps.toggle_mesh_part_forward.pressed(i))
-                            && let Some(sel) = self.editor.mesh.as_deref()
-                                && let Some(Some(mesh)) = self.view.meshes.get(sel)
-                        {
-                            if mesh.data.part_names.is_empty() {
-                                self.editor.part = None;
-                            } else {
-                                self.editor.part = Some(
-                                    self.editor
+                    }
+                }
+                EditorMode::Edit => {
+                    if ctx.input_mut(|i| self.data.keymaps.toggle_edit_component.pressed(i)) {
+                        self.last_mode = self.mode;
+                        self.selection = Selection::None;
+                        self.upload_selection_points(gl);
+                        self.mode = EditorMode::Assembly;
+                    }
+                    if ctx.input_mut(|i| self.data.keymaps.toggle_mesh_part_back.pressed(i))
+                        && let Some(sel) = self.editor.mesh.as_deref()
+                        && let Some(Some(mesh)) = self.view.meshes.get(sel)
+                    {
+                        if mesh.data.part_names.is_empty() {
+                            self.editor.part = None;
+                        } else {
+                            let l = mesh.data.part_names.len();
+                            self.editor.part =
+                                Some(self.editor.part.map(|x| (x + l - 1) % l).unwrap_or(0));
+                        }
+                        self.selection = Selection::None;
+                        self.upload_selection_points(gl);
+                    }
+                    if ctx.input_mut(|i| self.data.keymaps.toggle_mesh_part_forward.pressed(i))
+                        && let Some(sel) = self.editor.mesh.as_deref()
+                        && let Some(Some(mesh)) = self.view.meshes.get(sel)
+                    {
+                        if mesh.data.part_names.is_empty() {
+                            self.editor.part = None;
+                        } else {
+                            self.editor.part = Some(
+                                self.editor
                                     .part
                                     .map(|x| (x + 1) % mesh.data.part_names.len())
                                     .unwrap_or(0),
-                                );
-                            }
-                            self.selection = Selection::None;
-                            self.upload_selection_points(gl);
+                            );
                         }
-                        if (input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace))
-                            && let Selection::Vertices(_) = self.selection
-                        {
-                            let Selection::Vertices(verts) = self.selection.take() else {
-                                unreachable!()
-                            };
-                            let rd = RefDuper;
-                            let self2 = unsafe { rd.detach_mut_ref(self) };
-                            if let Some(part) = self.get_current_part_mut() {
-                                self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
-                                    id: self2.get_current_mesh_id().unwrap().to_string(),
-                                    name: self2.get_current_part_name().unwrap().to_string(),
-                                    part: Box::new(part.clone()),
-                                }));
-                                part.delete_vertices(verts);
-                                self.rebuild_meshes(gl);
-                            }
+                        self.selection = Selection::None;
+                        self.upload_selection_points(gl);
+                    }
+                    if (input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace))
+                        && let Selection::Vertices(_) = self.selection
+                    {
+                        let Selection::Vertices(verts) = self.selection.take() else {
+                            unreachable!()
+                        };
+                        let rd = RefDuper;
+                        let self2 = unsafe { rd.detach_mut_ref(self) };
+                        if let Some(part) = self.get_current_part_mut() {
+                            self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
+                                id: self2.get_current_mesh_id().unwrap().to_string(),
+                                name: self2.get_current_part_name().unwrap().to_string(),
+                                part: Box::new(part.clone()),
+                            }));
+                            part.delete_vertices(verts);
+                            self.rebuild_meshes(gl);
                         }
-                        if ctx.input_mut(|i| self.data.keymaps.create_or_remove_triangles.pressed(i))
-                            && let Selection::Vertices(ref verts) = self.selection
-                        {
-                            let rd = RefDuper;
-                            let verts = unsafe { rd.detach_ref(verts) };
-                            let self2 = unsafe { rd.detach_mut_ref(self) };
-                            let eye = self.cam().eye();
-                            if let Some(part) = self.get_current_part_mut() {
-                                self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
-                                    id: self2.get_current_mesh_id().unwrap().to_string(),
-                                    name: self2.get_current_part_name().unwrap().to_string(),
-                                    part: Box::new(part.clone()),
-                                }));
-                                part.toggle_triangles(verts, eye);
-                                self.rebuild_meshes(gl);
-                            }
+                    }
+                    if ctx.input_mut(|i| self.data.keymaps.create_or_remove_triangles.pressed(i))
+                        && let Selection::Vertices(ref verts) = self.selection
+                    {
+                        let rd = RefDuper;
+                        let verts = unsafe { rd.detach_ref(verts) };
+                        let self2 = unsafe { rd.detach_mut_ref(self) };
+                        let eye = self.cam().eye();
+                        if let Some(part) = self.get_current_part_mut() {
+                            self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
+                                id: self2.get_current_mesh_id().unwrap().to_string(),
+                                name: self2.get_current_part_name().unwrap().to_string(),
+                                part: Box::new(part.clone()),
+                            }));
+                            part.toggle_triangles(verts, eye);
+                            self.rebuild_meshes(gl);
                         }
-                        if ctx.input_mut(|i| self.data.keymaps.flip_triangles.pressed(i))
-                            && let Selection::Vertices(ref verts) = self.selection
-                        {
-                            let rd = RefDuper;
-                            let verts = unsafe { rd.detach_ref(verts) };
-                            let self2 = unsafe { rd.detach_mut_ref(self) };
-                            if let Some(part) = self.get_current_part_mut() {
-                                self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
-                                    id: self2.get_current_mesh_id().unwrap().to_string(),
-                                    name: self2.get_current_part_name().unwrap().to_string(),
-                                    part: Box::new(part.clone()),
-                                }));
-                                part.flip_triangles(verts);
-                                self.rebuild_meshes(gl);
-                            }
+                    }
+                    if ctx.input_mut(|i| self.data.keymaps.flip_triangles.pressed(i))
+                        && let Selection::Vertices(ref verts) = self.selection
+                    {
+                        let rd = RefDuper;
+                        let verts = unsafe { rd.detach_ref(verts) };
+                        let self2 = unsafe { rd.detach_mut_ref(self) };
+                        if let Some(part) = self.get_current_part_mut() {
+                            self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
+                                id: self2.get_current_mesh_id().unwrap().to_string(),
+                                name: self2.get_current_part_name().unwrap().to_string(),
+                                part: Box::new(part.clone()),
+                            }));
+                            part.flip_triangles(verts);
+                            self.rebuild_meshes(gl);
                         }
                     }
                 }
@@ -1589,8 +1646,9 @@ impl App {
             EditorContext::Map(MapEditorContext::Beatmap) => {
                 if ctx.input_mut(|i| self.data.keymaps.toggle_map_playback.pressed(i)) {
                     if let Some(map) = self.map_editor.map.as_ref()
-                    && let Some(controller) = map.controller.as_ref()
-                    && let Some(audio) = map.audio.as_ref() {
+                        && let Some(controller) = map.controller.as_ref()
+                        && let Some(audio) = map.audio.as_ref()
+                    {
                         if audio.is_playing() {
                             audio.pause();
                         } else {
@@ -1609,7 +1667,7 @@ impl App {
                 if ctx.input_mut(|i| self.data.keymaps.rotate_map_grid_right.pressed(i)) {
                     self.render.renderer.beatmap.placement_r -= 15f32.to_radians();
                 }
-            },
+            }
             _ => {}
         }
         (shift, ctrl, alt)
@@ -1624,7 +1682,14 @@ impl App {
         let w = rect.width();
         let h = rect.height();
 
-        let (pointer, shift, ctrl, alt) = ctx.input(|i| (i.pointer.clone(), i.modifiers.shift, i.modifiers.ctrl, i.modifiers.alt));
+        let (pointer, shift, ctrl, alt) = ctx.input(|i| {
+            (
+                i.pointer.clone(),
+                i.modifiers.shift,
+                i.modifiers.ctrl,
+                i.modifiers.alt,
+            )
+        });
         let primary_pressed = resp.drag_started_by(egui::PointerButton::Primary);
         let primary_clicked = resp.clicked_by(egui::PointerButton::Primary);
         let secondary_pressed = resp.drag_started_by(egui::PointerButton::Secondary);
@@ -1645,7 +1710,8 @@ impl App {
         };
 
         if resp.hovered() {
-            let is_timeline_scroll = matches!(self.context, EditorContext::Map(MapEditorContext::Beatmap)) && !alt;
+            let is_timeline_scroll =
+                matches!(self.context, EditorContext::Map(MapEditorContext::Beatmap)) && !alt;
             let scroll = ctx.input(|i| {
                 if shift {
                     i.raw_scroll_delta.x
@@ -1655,7 +1721,10 @@ impl App {
             });
             if scroll != 0. {
                 if is_timeline_scroll {
-                    self.render.renderer.beatmap.scroll(scroll.signum() * self.map_editor.scroll_step);
+                    self.render
+                        .renderer
+                        .beatmap
+                        .scroll(scroll.signum() * self.map_editor.scroll_step);
                 } else {
                     let factor = if scroll > 0. {
                         if shift { 0.44 } else { 0.88 }
@@ -1675,10 +1744,10 @@ impl App {
                     let self2 = unsafe { rd.detach_mut_ref(self) };
                     if self.mode == EditorMode::Edit
                         && let Some(i) = &input
-                            && ctx.input_mut(|i| self.data.keymaps.create_vertex.pressed(i))
-                            && !i.modifiers.ctrl
-                            && let vp = self.cam().vp(w, h)
-                            && let Some(part) = self.get_current_part_mut()
+                        && ctx.input_mut(|i| self.data.keymaps.create_vertex.pressed(i))
+                        && !i.modifiers.ctrl
+                        && let vp = self.cam().vp(w, h)
+                        && let Some(part) = self.get_current_part_mut()
                     {
                         self2.add_history(HistoryEntry::MeshPart(LightMeshPartSnapshot {
                             id: self2.get_current_mesh_id().unwrap().to_string(),
@@ -1689,8 +1758,7 @@ impl App {
                         part.vertices.indexed.push(orig + dir * 2.);
                         self.rebuild_meshes(gl);
                     }
-
-                },
+                }
                 EditorContext::Map(MapEditorContext::Beatmap) => {
                     let beatmap = &self.render.renderer.beatmap;
                     let placement_r = beatmap.placement_r;
@@ -1701,7 +1769,8 @@ impl App {
                     const ROWS: u32 = 3;
                     self.render.renderer.beatmap.hovered_placement_cell = u32::MAX;
                     let vp = self.cam().vp(w, h);
-                    let (ray_pos, ray_dir) = Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &vp);
+                    let (ray_pos, ray_dir) =
+                        Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &vp);
 
                     let inv_rot = Quat::from_rotation_y(-placement_r);
                     let local_ray_pos = inv_rot * ray_pos;
@@ -1715,17 +1784,25 @@ impl App {
                             if hit.x.abs() <= half_width && hit.y >= 0.0 && hit.y <= grid_height {
                                 let u = (half_width - hit.x) / (2.0 * half_width);
                                 let v = hit.y / grid_height;
-                                let col = (u * COLS as f32).floor().clamp(0.0, (COLS - 1) as f32) as u32;
-                                let row = (v * ROWS as f32).floor().clamp(0.0, (ROWS - 1) as f32) as u32;
-                                self.render.renderer.beatmap.hovered_placement_cell = row * COLS + col;
+                                let col =
+                                    (u * COLS as f32).floor().clamp(0.0, (COLS - 1) as f32) as u32;
+                                let row =
+                                    (v * ROWS as f32).floor().clamp(0.0, (ROWS - 1) as f32) as u32;
+                                self.render.renderer.beatmap.hovered_placement_cell =
+                                    row * COLS + col;
                             }
                         }
                     }
 
                     let move_speed = if shift {
                         if alt { 0.0125 } else { 0.125 }
-                    } else if alt { 0.75 } else { 0.25 };
-                    let forward = Vec2::from_angle(-self.cam().yaw - 90f32.to_radians()) * move_speed;
+                    } else if alt {
+                        0.75
+                    } else {
+                        0.25
+                    };
+                    let forward =
+                        Vec2::from_angle(-self.cam().yaw - 90f32.to_radians()) * move_speed;
                     let right = Vec2::from_angle(-self.cam().yaw) * move_speed;
                     let forward = Vec3::new(forward.x, 0., forward.y);
                     let right = Vec3::new(right.x, 0., right.y);
@@ -1747,9 +1824,8 @@ impl App {
                     if ctx.input(|i| i.key_down(self.data.keymaps.map_fly_down)) {
                         self.cam().target.y -= move_speed;
                     }
-
                 }
-                _ => {},
+                _ => {}
             }
         }
 
@@ -1996,7 +2072,10 @@ impl App {
     }
 
     pub fn get_current_view_mesh_mut(&mut self) -> Option<&mut ViewMesh> {
-        self.view.meshes.get_mut(self.editor.mesh.as_deref()?)?.as_mut()
+        self.view
+            .meshes
+            .get_mut(self.editor.mesh.as_deref()?)?
+            .as_mut()
     }
 
     pub fn get_current_mesh_id(&self) -> Option<&str> {
@@ -2016,7 +2095,11 @@ impl App {
         let id = self.get_current_mesh_id()?;
         let name = self.get_current_part_name()?;
 
-        Some((id, name, self.view.meshes.get(id)?.as_ref()?.data.parts.get(name)?))
+        Some((
+            id,
+            name,
+            self.view.meshes.get(id)?.as_ref()?.data.parts.get(name)?,
+        ))
     }
 
     pub fn get_current_part_mut(&mut self) -> Option<&mut Part> {
@@ -2029,7 +2112,13 @@ impl App {
         let id2 = unsafe { &*(id as *const _) };
         let name = unsafe { &*(name as *const _) };
 
-        self.view.meshes.get_mut(id2)?.as_mut()?.data.parts.get_mut(name)
+        self.view
+            .meshes
+            .get_mut(id2)?
+            .as_mut()?
+            .data
+            .parts
+            .get_mut(name)
     }
 
     pub fn add_history(&mut self, entry: HistoryEntry) {
@@ -2425,14 +2514,7 @@ impl App {
                         };
                         return;
                     }
-                    self.render.sel_points = Some(GpuMesh::new(
-                        gl,
-                        &[],
-                        &[],
-                        &[],
-                        &selected,
-                        &[],
-                    ));
+                    self.render.sel_points = Some(GpuMesh::new(gl, &[], &[], &[], &selected, &[]));
                 }
             }
             Selection::Instances(insts) => {
@@ -2457,17 +2539,10 @@ impl App {
                         }
                         return;
                     }
-                    self.render.inst_points = Some(GpuMesh::new(
-                        gl,
-                        &[],
-                        &[],
-                        &[],
-                        &selected,
-                        &[],
-                    ));
+                    self.render.inst_points = Some(GpuMesh::new(gl, &[], &[], &[], &selected, &[]));
                 }
             }
-            Selection::BeatmapObject(_) => {},
+            Selection::BeatmapObject(_) => {}
             Selection::None => {
                 if let Some(buf) = self.render.sel_points.take() {
                     buf.destroy(gl);
@@ -2497,12 +2572,10 @@ impl App {
 
         let mut i = 0;
         while i < routines.len() {
-
-
             let callback = &routines[i];
 
             match callback(self, gl) {
-                RoutineAction::None => {},
+                RoutineAction::None => {}
                 RoutineAction::Remove => {
                     let _ = routines.swap_remove(i);
                     continue;
@@ -2513,22 +2586,25 @@ impl App {
         }
 
         self.state.ui.routines.append(&mut routines);
-
     }
 
     fn load_mirror_geo(&mut self, gl: &Context, mut geo: Vec<Vec2>) {
         self.view.mirror_geometry = geo.clone();
         geo.truncate((geo.len() / 3) * 3);
 
-        let geo: Vec<_> = geo.into_iter().map(|v| Vec3::new(v.x, 0., v.y).extend(0.)).collect();
+        let geo: Vec<_> = geo
+            .into_iter()
+            .map(|v| Vec3::new(v.x, 0., v.y).extend(0.))
+            .collect();
         let normv = vec![Vec4::ZERO; geo.len()];
         let mats = vec![IVec3::ZERO; geo.len()];
 
-        let mesh = self.render.mirror
+        let mesh = self
+            .render
+            .mirror
             .get_or_insert_with(|| GpuMesh::new(gl, &[], &[], &[], &[], &[]));
 
         mesh.rebuild(gl, &geo, &normv, &mats, &[], &[]);
-
     }
 
     pub fn load_mirror(&mut self, path: &Path, gl: &Context) -> anyhow::Result<()> {
@@ -2541,7 +2617,12 @@ impl App {
     pub fn save_session(&mut self) -> anyhow::Result<()> {
         let mut meshes = IndexMap::new();
 
-        for (id, view) in self.view.meshes.iter().filter_map(|(i, x)| x.as_ref().map(|v| (i, v))) {
+        for (id, view) in self
+            .view
+            .meshes
+            .iter()
+            .filter_map(|(i, x)| x.as_ref().map(|v| (i, v)))
+        {
             let mut placements = Vec::<EnvPlacementData>::new();
 
             for place in view.view_placements.iter() {
@@ -2571,9 +2652,12 @@ impl App {
             camera: self.view.camera.into(),
             texture_paths: self.render.renderer.texture_paths.clone(),
             env_path: self.view.env_path.clone(),
-            mesh_paths: self.view.meshes.iter().filter_map(
-                |(key, val)| val.as_ref().map(|v| (key.clone(), v.path.clone()))
-            ).collect(),
+            mesh_paths: self
+                .view
+                .meshes
+                .iter()
+                .filter_map(|(key, val)| val.as_ref().map(|v| (key.clone(), v.path.clone())))
+                .collect(),
             env: None,
             mirror_path: self.view.mirror_path.clone(),
         };
@@ -2582,7 +2666,8 @@ impl App {
 
         if let Some(path) = self.view.session.as_deref() {
             fs::write(path, &json)?;
-            self.data.mark_project_modified(path, crate::config::ProjectKind::EnvironmentMesh);
+            self.data
+                .mark_project_modified(path, crate::config::ProjectKind::EnvironmentMesh);
         } else {
             let (sx, rx) = mpsc::channel();
             std::thread::spawn(move || {
@@ -2595,20 +2680,18 @@ impl App {
                     let _ = sx.send(dest);
                 }
             });
-            self.add_routine(Box::new(move |s, _| {
-                match rx.try_recv() {
-                    Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
-                    Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
-                    Ok(dest) => {
-                        s.view.session = Some(dest);
-                        if let Err(e) = s.save_session() {
-                            s.set_status(None, "Failed to save session", 2.);
-                            eprintln!("Failed to save session:\n{e}");
-                        } else {
-                            s.set_status(Some("[Saved]".to_string()), "[Saved]", 2.);
-                        }
-                        RoutineAction::Remove
+            self.add_routine(Box::new(move |s, _| match rx.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+                Ok(dest) => {
+                    s.view.session = Some(dest);
+                    if let Err(e) = s.save_session() {
+                        s.set_status(None, "Failed to save session", 2.);
+                        eprintln!("Failed to save session:\n{e}");
+                    } else {
+                        s.set_status(Some("[Saved]".to_string()), "[Saved]", 2.);
                     }
+                    RoutineAction::Remove
                 }
             }));
         }
@@ -2631,21 +2714,30 @@ impl App {
             self.view.env_path = Some(env_path.to_path_buf());
 
             for (id, data) in env.layout.iter() {
-                let mesh = if let Some(mesh) = session.mesh_paths.get(id).map(|path| -> anyhow::Result<(&Path, LightMesh)> {
-                    let mesh = LightMesh::load(path)?;
+                let mesh = if let Some(mesh) =
+                    session
+                        .mesh_paths
+                        .get(id)
+                        .map(|path| -> anyhow::Result<(&Path, LightMesh)> {
+                            let mesh = LightMesh::load(path)?;
 
-                    Ok((path, mesh))
-                }) {
+                            Ok((path, mesh))
+                        }) {
                     let (path, mesh) = mesh?;
 
                     if mesh.mesh_type != MeshType::Environment {
-                        eprintln!("WARNING: Mesh loaded in environment is not marked as environment; Skipping mesh. ({})", path.to_string_lossy());
+                        eprintln!(
+                            "WARNING: Mesh loaded in environment is not marked as environment; Skipping mesh. ({})",
+                            path.to_string_lossy()
+                        );
                         None
                     } else {
-                        let mut m = mesh.into_view_mesh(path.to_path_buf(), gl, &self.render.renderer);
+                        let mut m =
+                            mesh.into_view_mesh(path.to_path_buf(), gl, &self.render.renderer);
 
                         let mut add_placement = |data: &EnvPlacementData| {
-                            m.view_placements.push(data.to_view(Some(id.clone()), Some(path.to_path_buf())));
+                            m.view_placements
+                                .push(data.to_view(Some(id.clone()), Some(path.to_path_buf())));
                         };
 
                         match data {
@@ -2653,9 +2745,11 @@ impl App {
                                 for place in placements {
                                     add_placement(place);
                                 }
-                            },
-                            EnvMeshData::SinglePlacement(env_placement_data) => add_placement(env_placement_data),
-                            EnvMeshData::None => {},
+                            }
+                            EnvMeshData::SinglePlacement(env_placement_data) => {
+                                add_placement(env_placement_data)
+                            }
+                            EnvMeshData::None => {}
                         }
 
                         Some(m)

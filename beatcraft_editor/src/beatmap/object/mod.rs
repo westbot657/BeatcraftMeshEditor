@@ -5,22 +5,22 @@ use std::marker::PhantomData;
 use std::ops::{Add, Div, Mul, Sub};
 
 use glam::{Mat4, Quat, Vec2, Vec3, Vec3Swizzles, Vec4};
-use rand::{rngs::ThreadRng, RngExt};
+use rand::{RngExt, rngs::ThreadRng};
 
 use crate::easing::Easing;
 use crate::render::GameObjectInstanceData;
 
 use self::spline::BezierCurve;
 
-use super::{BeatmapProjectDiff, HitBox};
 use super::data::{BeatmapDataError, BeatmapFile, BpmRegion, Color, CutDirection, InfoFile, v2};
 use super::render::BeatmapRenderer;
+use super::{BeatmapProjectDiff, HitBox};
 
 pub mod spline;
 
 pub trait Lerp<T>
 where
-    T: Copy + Mul<Output=T> + Sub<Output=T> + Add<Output=T> + Div<Output=T>
+    T: Copy + Mul<Output = T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>,
 {
     fn lerp(a: T, b: T, t: T) -> T {
         a + (b - a) * t
@@ -61,8 +61,14 @@ pub enum TimeUnit {
 }
 
 impl RuntimeData {
-
-    pub fn new(njs: f32, bpm: f32, spawn_offset: f32, bpm_regions: Vec<BpmRegion>, sample_count: usize, sample_rate: u32) -> Self {
+    pub fn new(
+        njs: f32,
+        bpm: f32,
+        spawn_offset: f32,
+        bpm_regions: Vec<BpmRegion>,
+        sample_count: usize,
+        sample_rate: u32,
+    ) -> Self {
         Self {
             njs,
             bpm,
@@ -85,7 +91,13 @@ impl RuntimeData {
 
     pub fn seconds_to_beat(&self, seconds: f32) -> f32 {
         let sample = (seconds * self.sample_rate as f32) as usize;
-        for BpmRegion { start_sample, end_sample, start_beat, end_beat } in self.bpm_regions.iter() {
+        for BpmRegion {
+            start_sample,
+            end_sample,
+            start_beat,
+            end_beat,
+        } in self.bpm_regions.iter()
+        {
             if (*start_sample..=*end_sample).contains(&sample) {
                 let x = f32::inv_lerp(*start_sample as f32, *end_sample as f32, sample as f32);
                 return f32::lerp(*start_beat, *end_beat, x);
@@ -100,7 +112,13 @@ impl RuntimeData {
     }
 
     fn beat_to_sample(&self, beat: f32) -> usize {
-        for BpmRegion { start_sample, end_sample, start_beat, end_beat } in self.bpm_regions.iter() {
+        for BpmRegion {
+            start_sample,
+            end_sample,
+            start_beat,
+            end_beat,
+        } in self.bpm_regions.iter()
+        {
             if (*start_beat..=*end_beat).contains(&beat) {
                 let x = f32::inv_lerp(*start_beat, *end_beat, beat);
                 return f32::lerp(*start_sample as f32, *end_sample as f32, x) as usize;
@@ -117,7 +135,13 @@ impl RuntimeData {
             TimeUnit::Beat(b) => self.beat_to_sample(b),
         };
 
-        for BpmRegion { start_sample, end_sample, start_beat, end_beat } in self.bpm_regions.iter() {
+        for BpmRegion {
+            start_sample,
+            end_sample,
+            start_beat,
+            end_beat,
+        } in self.bpm_regions.iter()
+        {
             if (*start_sample..=*end_sample).contains(&time_samples) {
                 let seconds = (*end_sample - *start_sample) as f32 / self.sample_rate as f32;
                 let beats = *end_beat - *start_beat;
@@ -154,7 +178,6 @@ impl RuntimeData {
         let delta_s = delta_b / bps;
         delta_s * self.njs
     }
-
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -168,47 +191,73 @@ pub enum ArrowType {
 pub const HEAD_POS: Vec3 = Vec3::new(0., 1.62, 0.);
 
 pub fn get_random_spawn_quat(rng: &mut ThreadRng) -> Quat {
-    let get_c = |rng: &mut ThreadRng| -> f32 {
-        rng.random::<f32>() * 0.6f32 * 2. - 0.6
-    };
+    let get_c = |rng: &mut ThreadRng| -> f32 { rng.random::<f32>() * 0.6f32 * 2. - 0.6 };
     Quat::from_euler(glam::EulerRot::ZYX, get_c(rng), get_c(rng), get_c(rng))
 }
 
-pub const NOTE_HITBOX: HitBox = HitBox::new(
-    Vec3::splat(-0.25),
-    Vec3::splat(0.25)
-);
-pub const CHAIN_HEAD_HITBOX: HitBox = HitBox::new(
-    Vec3::new(-0.25, 0., -0.25),
-    Vec3::splat(0.25)
-);
+pub const NOTE_HITBOX: HitBox = HitBox::new(Vec3::splat(-0.25), Vec3::splat(0.25));
+pub const CHAIN_HEAD_HITBOX: HitBox = HitBox::new(Vec3::new(-0.25, 0., -0.25), Vec3::splat(0.25));
 pub const CHAIN_LINK_HITBOX: HitBox = HitBox::new(
-    Vec3::new(-0.25, -0.25 * 2./16., -0.25),
-    Vec3::new(0.25, 0.25 * 2./16., 0.25)
+    Vec3::new(-0.25, -0.25 * 2. / 16., -0.25),
+    Vec3::new(0.25, 0.25 * 2. / 16., 0.25),
 );
 
 pub trait GameObject: Debug {
-
     fn beat(&self) -> f32;
     fn grid_pos(&self) -> Vec2;
     fn get_orientation(&self) -> Quat;
-    fn spawn_orientation(&self) -> Quat { Quat::IDENTITY }
-    fn do_gravity(&self) -> bool { false }
-    fn do_look(&self) -> bool { false }
-    fn do_spawn_rotation(&self) -> bool { false }
-    fn duration(&self) -> f32 { 0. }
-    fn arrow_type(&self) -> ArrowType { ArrowType::None }
-    fn lane_rotation_degrees(&self) -> f32 { 0. }
-    fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData;
-    fn get_editor_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme, _beat_distance: f32) -> GameObjectInstanceData {
+    fn spawn_orientation(&self) -> Quat {
+        Quat::IDENTITY
+    }
+    fn do_gravity(&self) -> bool {
+        false
+    }
+    fn do_look(&self) -> bool {
+        false
+    }
+    fn do_spawn_rotation(&self) -> bool {
+        false
+    }
+    fn duration(&self) -> f32 {
+        0.
+    }
+    fn arrow_type(&self) -> ArrowType {
+        ArrowType::None
+    }
+    fn lane_rotation_degrees(&self) -> f32 {
+        0.
+    }
+    fn get_instance(
+        &self,
+        clipping_plane: Vec4,
+        model: Mat4,
+        cs: &ColorScheme,
+    ) -> GameObjectInstanceData;
+    fn get_editor_instance(
+        &self,
+        clipping_plane: Vec4,
+        model: Mat4,
+        cs: &ColorScheme,
+        _beat_distance: f32,
+    ) -> GameObjectInstanceData {
         self.get_instance(clipping_plane, model, cs)
     }
 
-    fn upcast_chain_head(&self) -> Option<&ChainNote> { None }
+    fn upcast_chain_head(&self) -> Option<&ChainNote> {
+        None
+    }
 
-    fn editor_hitbox(&self) -> HitBox { NOTE_HITBOX }
+    fn editor_hitbox(&self) -> HitBox {
+        NOTE_HITBOX
+    }
 
-    fn animate_simple(&self, mut m: Mat4, beat: f32, _data: &RuntimeData, renderer: &BeatmapRenderer) -> Option<Mat4> {
+    fn animate_simple(
+        &self,
+        mut m: Mat4,
+        beat: f32,
+        _data: &RuntimeData,
+        renderer: &BeatmapRenderer,
+    ) -> Option<Mat4> {
         let b = self.beat();
         let pre = renderer.beats_before as f32;
         let post = renderer.visible_beat_count as f32 - pre;
@@ -228,11 +277,15 @@ pub trait GameObject: Debug {
         } else {
             None
         }
-
     }
 
     fn animate_complex(&self, mut m: Mat4, beat: f32, data: &RuntimeData) -> Option<Mat4> {
-        fn spawn_parabola(target_height: f32, base_height: f32, half_jump_distance: f32, t: f32) -> f32 {
+        fn spawn_parabola(
+            target_height: f32,
+            base_height: f32,
+            half_jump_distance: f32,
+            t: f32,
+        ) -> f32 {
             let d_sq = (half_jump_distance * half_jump_distance).max(1e-6);
             let movement_range = target_height - base_height;
             (-(movement_range / d_sq) * t * t + target_height).clamp(-9999., 9999.)
@@ -335,7 +388,11 @@ pub trait GameObject: Debug {
         let final_rot = if self.do_look() {
             let look_z = z.max(LOOK_FREEZE_DISTANCE);
             let look_y = if self.do_gravity() {
-                if in_pre_roll { start_y } else { spawn_parabola(gp.y, start_y, half_jump_distance, look_z.max(0.0)) }
+                if in_pre_roll {
+                    start_y
+                } else {
+                    spawn_parabola(gp.y, start_y, half_jump_distance, look_z.max(0.0))
+                }
             } else {
                 gp.y
             };
@@ -355,9 +412,7 @@ pub trait GameObject: Debug {
 
         Some(m)
     }
-
 }
-
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LightColors {
@@ -432,7 +487,10 @@ impl From<Color> for NoteColor {
     }
 }
 
-pub trait ColorableObject where Self: Sized {
+pub trait ColorableObject
+where
+    Self: Sized,
+{
     fn color(col: &ObjectColor<Self>, cs: &ColorScheme) -> Vec4;
 }
 
@@ -541,16 +599,30 @@ pub struct ChainNote {
 }
 
 impl GameObject for ColorNote {
-    fn beat(&self) -> f32 { self.beat }
-    fn grid_pos(&self) -> Vec2 { self.grid_pos }
+    fn beat(&self) -> f32 {
+        self.beat
+    }
+    fn grid_pos(&self) -> Vec2 {
+        self.grid_pos
+    }
     fn get_orientation(&self) -> Quat {
         self.cut_direction.to_quat() * Quat::from_rotation_z(self.angle_offset.to_radians())
     }
-    fn do_gravity(&self) -> bool { true }
-    fn do_look(&self) -> bool { true }
-    fn do_spawn_rotation(&self) -> bool { true }
-    fn spawn_orientation(&self) -> Quat { self.spawn_orientation }
-    fn lane_rotation_degrees(&self) -> f32 { self.lane_rotation_deg }
+    fn do_gravity(&self) -> bool {
+        true
+    }
+    fn do_look(&self) -> bool {
+        true
+    }
+    fn do_spawn_rotation(&self) -> bool {
+        true
+    }
+    fn spawn_orientation(&self) -> Quat {
+        self.spawn_orientation
+    }
+    fn lane_rotation_degrees(&self) -> f32 {
+        self.lane_rotation_deg
+    }
     fn arrow_type(&self) -> ArrowType {
         if self.cut_direction == CutDirection::Dot {
             ArrowType::Dot
@@ -558,7 +630,12 @@ impl GameObject for ColorNote {
             ArrowType::Arrow
         }
     }
-    fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData {
+    fn get_instance(
+        &self,
+        clipping_plane: Vec4,
+        model: Mat4,
+        cs: &ColorScheme,
+    ) -> GameObjectInstanceData {
         GameObjectInstanceData::color_note(
             clipping_plane,
             model,
@@ -571,33 +648,63 @@ impl GameObject for ColorNote {
 }
 
 impl GameObject for BombNote {
-    fn beat(&self) -> f32 { self.beat }
-    fn grid_pos(&self) -> Vec2 { self.grid_pos }
-    fn get_orientation(&self) -> Quat { Quat::IDENTITY }
-    fn do_gravity(&self) -> bool { true }
-    fn do_spawn_rotation(&self) -> bool { true }
-    fn lane_rotation_degrees(&self) -> f32 { self.lane_rotation_deg }
-    fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData {
+    fn beat(&self) -> f32 {
+        self.beat
+    }
+    fn grid_pos(&self) -> Vec2 {
+        self.grid_pos
+    }
+    fn get_orientation(&self) -> Quat {
+        Quat::IDENTITY
+    }
+    fn do_gravity(&self) -> bool {
+        true
+    }
+    fn do_spawn_rotation(&self) -> bool {
+        true
+    }
+    fn lane_rotation_degrees(&self) -> f32 {
+        self.lane_rotation_deg
+    }
+    fn get_instance(
+        &self,
+        clipping_plane: Vec4,
+        model: Mat4,
+        cs: &ColorScheme,
+    ) -> GameObjectInstanceData {
         GameObjectInstanceData::bomb_note(
             clipping_plane,
             model,
             self.color.color(cs),
             self.dissolve,
             self.index,
-            Vec4::ZERO
+            Vec4::ZERO,
         )
     }
 }
 
 impl GameObject for Obstacle {
-    fn beat(&self) -> f32 { self.beat }
+    fn beat(&self) -> f32 {
+        self.beat
+    }
     fn grid_pos(&self) -> Vec2 {
         self.grid_pos + Vec2::new((self.size.x / 2.) - 0.5, -0.8)
     }
-    fn get_orientation(&self) -> Quat { Quat::IDENTITY }
-    fn duration(&self) -> f32 { self.duration }
-    fn lane_rotation_degrees(&self) -> f32 { self.lane_rotation_deg }
-    fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData {
+    fn get_orientation(&self) -> Quat {
+        Quat::IDENTITY
+    }
+    fn duration(&self) -> f32 {
+        self.duration
+    }
+    fn lane_rotation_degrees(&self) -> f32 {
+        self.lane_rotation_deg
+    }
+    fn get_instance(
+        &self,
+        clipping_plane: Vec4,
+        model: Mat4,
+        cs: &ColorScheme,
+    ) -> GameObjectInstanceData {
         GameObjectInstanceData::obstacle(
             clipping_plane,
             model * Mat4::from_translation(Vec3::new(0., 0., -0.25)),
@@ -607,7 +714,13 @@ impl GameObject for Obstacle {
             self.size,
         )
     }
-    fn get_editor_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme, beat_distance: f32) -> GameObjectInstanceData {
+    fn get_editor_instance(
+        &self,
+        clipping_plane: Vec4,
+        model: Mat4,
+        cs: &ColorScheme,
+        beat_distance: f32,
+    ) -> GameObjectInstanceData {
         GameObjectInstanceData::obstacle(
             clipping_plane,
             model,
@@ -637,16 +750,39 @@ pub struct ChainNoteLink {
     dissolve: f32,
 }
 impl GameObject for ChainNote {
-    fn beat(&self) -> f32 { self.head_beat }
-    fn grid_pos(&self) -> Vec2 { self.head_grid_pos }
-    fn get_orientation(&self) -> Quat { self.cut_direction.to_quat() }
-    fn do_gravity(&self) -> bool { true }
-    fn do_look(&self) -> bool { true }
-    fn do_spawn_rotation(&self) -> bool { true }
-    fn spawn_orientation(&self) -> Quat { self.spawn_orientation }
-    fn upcast_chain_head(&self) -> Option<&ChainNote> { Some(self) }
-    fn lane_rotation_degrees(&self) -> f32 { self.lane_rotation_deg }
-    fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData {
+    fn beat(&self) -> f32 {
+        self.head_beat
+    }
+    fn grid_pos(&self) -> Vec2 {
+        self.head_grid_pos
+    }
+    fn get_orientation(&self) -> Quat {
+        self.cut_direction.to_quat()
+    }
+    fn do_gravity(&self) -> bool {
+        true
+    }
+    fn do_look(&self) -> bool {
+        true
+    }
+    fn do_spawn_rotation(&self) -> bool {
+        true
+    }
+    fn spawn_orientation(&self) -> Quat {
+        self.spawn_orientation
+    }
+    fn upcast_chain_head(&self) -> Option<&ChainNote> {
+        Some(self)
+    }
+    fn lane_rotation_degrees(&self) -> f32 {
+        self.lane_rotation_deg
+    }
+    fn get_instance(
+        &self,
+        clipping_plane: Vec4,
+        model: Mat4,
+        cs: &ColorScheme,
+    ) -> GameObjectInstanceData {
         GameObjectInstanceData::color_note(
             clipping_plane,
             model,
@@ -680,7 +816,7 @@ impl ChainNote {
 
         let mut links = Vec::with_capacity(self.links.len());
         for (i, data) in self.links.iter().enumerate() {
-            let i = i+1;
+            let i = i + 1;
 
             let grid_pos = (spline.position(gap * i as f32) + head_pos).xy();
             let angle = spline.derivative(gap * i as f32).xy().to_angle() - 90f32.to_radians();
@@ -702,15 +838,36 @@ impl ChainNote {
     }
 }
 impl GameObject for ChainNoteLink {
-    fn beat(&self) -> f32 { self.beat }
-    fn grid_pos(&self) -> Vec2 { self.grid_pos }
-    fn get_orientation(&self) -> Quat { self.orientation }
-    fn do_gravity(&self) -> bool { true }
-    fn do_look(&self) -> bool { true }
-    fn do_spawn_rotation(&self) -> bool { true }
-    fn spawn_orientation(&self) -> Quat { self.spawn_orientation }
-    fn lane_rotation_degrees(&self) -> f32 { self.lane_rotation_deg }
-    fn get_instance(&self, clipping_plane: Vec4, model: Mat4, cs: &ColorScheme) -> GameObjectInstanceData {
+    fn beat(&self) -> f32 {
+        self.beat
+    }
+    fn grid_pos(&self) -> Vec2 {
+        self.grid_pos
+    }
+    fn get_orientation(&self) -> Quat {
+        self.orientation
+    }
+    fn do_gravity(&self) -> bool {
+        true
+    }
+    fn do_look(&self) -> bool {
+        true
+    }
+    fn do_spawn_rotation(&self) -> bool {
+        true
+    }
+    fn spawn_orientation(&self) -> Quat {
+        self.spawn_orientation
+    }
+    fn lane_rotation_degrees(&self) -> f32 {
+        self.lane_rotation_deg
+    }
+    fn get_instance(
+        &self,
+        clipping_plane: Vec4,
+        model: Mat4,
+        cs: &ColorScheme,
+    ) -> GameObjectInstanceData {
         GameObjectInstanceData::color_note(
             clipping_plane,
             model,
@@ -725,18 +882,36 @@ impl GameObject for ChainNoteLink {
     }
 }
 
-
 impl BeatmapController {
-    pub fn new(info: &InfoFile, diff_data: &BeatmapProjectDiff, diff: &BeatmapFile, bpm_regions: Vec<BpmRegion>, sample_count: usize, sample_rate: u32) -> Result<Self, BeatmapDataError> {
-
+    pub fn new(
+        info: &InfoFile,
+        diff_data: &BeatmapProjectDiff,
+        diff: &BeatmapFile,
+        bpm_regions: Vec<BpmRegion>,
+        sample_count: usize,
+        sample_rate: u32,
+    ) -> Result<Self, BeatmapDataError> {
         diff.to_controller(info, diff_data, bpm_regions, sample_count, sample_rate)
     }
 }
 
 impl BeatmapFile {
-    fn to_controller(&self, info: &InfoFile, diff_data: &BeatmapProjectDiff, bpm_regions: Vec<BpmRegion>, sample_count: usize, sample_rate: u32) -> Result<BeatmapController, BeatmapDataError> {
-
-        let runtime_data = RuntimeData::new(diff_data.njs, info.bpm(), diff_data.njs_offset, bpm_regions, sample_count, sample_rate);
+    fn to_controller(
+        &self,
+        info: &InfoFile,
+        diff_data: &BeatmapProjectDiff,
+        bpm_regions: Vec<BpmRegion>,
+        sample_count: usize,
+        sample_rate: u32,
+    ) -> Result<BeatmapController, BeatmapDataError> {
+        let runtime_data = RuntimeData::new(
+            diff_data.njs,
+            info.bpm(),
+            diff_data.njs_offset,
+            bpm_regions,
+            sample_count,
+            sample_rate,
+        );
 
         let mut rng = rand::rng();
         let mut color_notes = Vec::new();
@@ -761,9 +936,13 @@ impl BeatmapFile {
                             let beat = color_note.time;
                             let mut lane_rotation_deg = 0i32;
                             'rot: for rot in rotations.iter() {
-                                if (rot.beat < beat) || (rot.beat == beat && rot.execution_time.is_early()) {
+                                if (rot.beat < beat)
+                                    || (rot.beat == beat && rot.execution_time.is_early())
+                                {
                                     lane_rotation_deg += rot.rotation_angle.get_degrees();
-                                } else { break 'rot }
+                                } else {
+                                    break 'rot;
+                                }
                             }
 
                             color_notes.push(ColorNote {
@@ -775,17 +954,21 @@ impl BeatmapFile {
                                 grid_pos: Vec2::new(color_note.line_index, color_note.line_layer),
                                 lane_rotation_deg: lane_rotation_deg as f32,
                                 dissolve: 0.,
-                                index
+                                index,
                             })
-                        },
+                        }
                         v2::V2Note::Bomb(bomb_note) => {
                             let index = bomb_notes.len() as u32;
                             let beat = bomb_note.beat;
                             let mut lane_rotation_deg = 0;
                             'rot: for rot in rotations.iter() {
-                                if (rot.beat < beat) || (rot.beat == beat && rot.execution_time.is_early()) {
+                                if (rot.beat < beat)
+                                    || (rot.beat == beat && rot.execution_time.is_early())
+                                {
                                     lane_rotation_deg += rot.rotation_angle.get_degrees();
-                                } else { break 'rot }
+                                } else {
+                                    break 'rot;
+                                }
                             }
                             bomb_notes.push(BombNote {
                                 beat,
@@ -795,7 +978,7 @@ impl BeatmapFile {
                                 dissolve: 0.,
                                 index,
                             })
-                        },
+                        }
                     }
                 }
                 for obst in v2.obstacles.iter() {
@@ -809,19 +992,26 @@ impl BeatmapFile {
                         ),
                         super::data::ObstacleV2Type::Crouch => (
                             Vec2::new(obst.line_index, obst.line_layer + 2.),
-                            Vec3::new(obst.width, 3., obst.duration * dist_beats_to_meters)
+                            Vec3::new(obst.width, 3., obst.duration * dist_beats_to_meters),
                         ),
                         super::data::ObstacleV2Type::Free => (
                             Vec2::new(obst.line_index, obst.line_layer),
-                            Vec3::new(obst.width, obst.height, obst.duration * dist_beats_to_meters)
+                            Vec3::new(
+                                obst.width,
+                                obst.height,
+                                obst.duration * dist_beats_to_meters,
+                            ),
                         ),
                     };
                     let beat = obst.beat;
                     let mut lane_rotation_deg = 0;
                     'rot: for rot in rotations.iter() {
-                        if (rot.beat < beat) || (rot.beat == beat && rot.execution_time.is_early()) {
+                        if (rot.beat < beat) || (rot.beat == beat && rot.execution_time.is_early())
+                        {
                             lane_rotation_deg += rot.rotation_angle.get_degrees();
-                        } else { break 'rot }
+                        } else {
+                            break 'rot;
+                        }
                     }
                     obstacles.push(Obstacle {
                         beat,
@@ -834,7 +1024,7 @@ impl BeatmapFile {
                         index,
                     })
                 }
-            },
+            }
             Self::V3(v3) => {
                 let mut rotations = Vec::new();
                 for event in v3.rotation_events.iter() {
@@ -848,8 +1038,11 @@ impl BeatmapFile {
                     let beat = chain.head_beat;
                     let mut lane_rotation_deg = 0.;
                     for rot in rotations.iter() {
-                        if rot.beat > beat { break }
-                        if (rot.beat < beat) || (rot.beat == beat && rot.execution_time.is_early()) {
+                        if rot.beat > beat {
+                            break;
+                        }
+                        if (rot.beat < beat) || (rot.beat == beat && rot.execution_time.is_early())
+                        {
                             lane_rotation_deg += rot.rotation;
                         }
                     }
@@ -880,15 +1073,20 @@ impl BeatmapFile {
                     let color: NoteColor = note.color.into();
                     let grid_pos = Vec2::new(note.line_index, note.line_layer);
 
-                    if chain_notes.iter().any(|c| c.color == color && c.head_grid_pos == grid_pos && c.head_beat == note.beat) {
+                    if chain_notes.iter().any(|c| {
+                        c.color == color && c.head_grid_pos == grid_pos && c.head_beat == note.beat
+                    }) {
                         continue;
                     }
 
                     let beat = note.beat;
                     let mut lane_rotation_deg = 0.;
                     for rot in rotations.iter() {
-                        if rot.beat > beat { break }
-                        if (rot.beat < beat) || (rot.beat == beat && rot.execution_time.is_early()) {
+                        if rot.beat > beat {
+                            break;
+                        }
+                        if (rot.beat < beat) || (rot.beat == beat && rot.execution_time.is_early())
+                        {
                             lane_rotation_deg += rot.rotation;
                         }
                     }
@@ -910,8 +1108,11 @@ impl BeatmapFile {
                     let mut lane_rotation_deg = 0.;
                     let beat = bomb.beat;
                     for rot in rotations.iter() {
-                        if rot.beat > beat { break }
-                        if (rot.beat < beat) || (rot.beat == beat && rot.execution_time.is_early()) {
+                        if rot.beat > beat {
+                            break;
+                        }
+                        if (rot.beat < beat) || (rot.beat == beat && rot.execution_time.is_early())
+                        {
                             lane_rotation_deg += rot.rotation;
                         }
                     }
@@ -929,8 +1130,11 @@ impl BeatmapFile {
                     let mut lane_rotation_deg = 0.;
                     let beat = obst.beat;
                     for rot in rotations.iter() {
-                        if rot.beat > beat { break }
-                        if (rot.beat < beat) || (rot.beat == beat && rot.execution_time.is_early()) {
+                        if rot.beat > beat {
+                            break;
+                        }
+                        if (rot.beat < beat) || (rot.beat == beat && rot.execution_time.is_early())
+                        {
                             lane_rotation_deg += rot.rotation;
                         }
                     }
@@ -940,19 +1144,30 @@ impl BeatmapFile {
                         beat,
                         color: ObjectColor::default(),
                         grid_pos: Vec2::new(obst.line_index, obst.line_layer),
-                        size: Vec3::new(obst.width, obst.height, obst.duration * dist_beats_to_meters),
+                        size: Vec3::new(
+                            obst.width,
+                            obst.height,
+                            obst.duration * dist_beats_to_meters,
+                        ),
                         duration: obst.duration,
                         lane_rotation_deg,
                         dissolve: 0.,
                         index,
                     });
                 }
-            },
+            }
             Self::V4(v4) => {
                 for chain in v4.chains.iter() {
                     let index = chain_notes.len() as u32;
-                    let Some(head_data) = v4.color_notes_data.get(chain.head_note_metadata_index as usize) else { continue };
-                    let Some(data) = v4.chains_data.get(chain.metadata_index as usize) else { continue };
+                    let Some(head_data) = v4
+                        .color_notes_data
+                        .get(chain.head_note_metadata_index as usize)
+                    else {
+                        continue;
+                    };
+                    let Some(data) = v4.chains_data.get(chain.metadata_index as usize) else {
+                        continue;
+                    };
                     let mut links = Vec::new();
                     for i in 0..data.slice_count {
                         links.push(ChainNoteLinkData {
@@ -978,11 +1193,15 @@ impl BeatmapFile {
                 }
                 for note in v4.color_notes.iter() {
                     let index = color_notes.len() as u32;
-                    let Some(data) = v4.color_notes_data.get(note.metadata_index as usize) else { continue };
+                    let Some(data) = v4.color_notes_data.get(note.metadata_index as usize) else {
+                        continue;
+                    };
                     let grid_pos = Vec2::new(data.line_index, data.line_layer);
                     let color: NoteColor = data.color.into();
 
-                    if chain_notes.iter().any(|c| c.color == color && c.head_grid_pos == grid_pos && c.head_beat == note.beat) {
+                    if chain_notes.iter().any(|c| {
+                        c.color == color && c.head_grid_pos == grid_pos && c.head_beat == note.beat
+                    }) {
                         continue;
                     }
                     color_notes.push(ColorNote {
@@ -999,26 +1218,34 @@ impl BeatmapFile {
                 }
                 for bomb in v4.bomb_notes.iter() {
                     let index = bomb_notes.len() as u32;
-                    let Some(data) = v4.bomb_notes_data.get(bomb.metadata_index as usize) else { continue };
+                    let Some(data) = v4.bomb_notes_data.get(bomb.metadata_index as usize) else {
+                        continue;
+                    };
                     bomb_notes.push(BombNote {
                         beat: bomb.beat,
                         color: ObjectColor::default(),
                         grid_pos: Vec2::new(data.line_index, data.line_layer),
                         lane_rotation_deg: bomb.rotation_lane as f32,
                         dissolve: 0.,
-                        index
+                        index,
                     });
                 }
                 for obst in v4.obstacles.iter() {
                     let index = obstacles.len() as u32;
-                    let Some(data) = v4.obstacles_data.get(obst.metadata_index as usize) else { continue };
+                    let Some(data) = v4.obstacles_data.get(obst.metadata_index as usize) else {
+                        continue;
+                    };
                     let local_bpm = runtime_data.bpm(TimeUnit::Beat(obst.beat));
                     let dist_beats_to_meters = runtime_data.njs * (60. / local_bpm);
                     obstacles.push(Obstacle {
                         beat: obst.beat,
                         color: ObjectColor::default(),
                         grid_pos: Vec2::new(data.line_index, data.line_layer),
-                        size: Vec3::new(data.width, data.height, data.duration * dist_beats_to_meters),
+                        size: Vec3::new(
+                            data.width,
+                            data.height,
+                            data.duration * dist_beats_to_meters,
+                        ),
                         duration: data.duration,
                         lane_rotation_deg: obst.rotation_lane as f32,
                         dissolve: 0.,
@@ -1053,7 +1280,9 @@ impl BeatmapFile {
             }
 
             for (_, mut notes) in time_groups.into_iter() {
-                if notes.len() != 2 { continue }
+                if notes.len() != 2 {
+                    continue;
+                }
                 let b = notes.pop().unwrap();
                 let a = notes.pop().unwrap();
 
@@ -1064,7 +1293,6 @@ impl BeatmapFile {
     }
 
     fn check_window_snap(a: &mut ColorNote, b: &mut ColorNote) {
-
         fn normalize_angle(a: f32) -> f32 {
             (a + 360.) % 360.
         }
@@ -1077,7 +1305,9 @@ impl BeatmapFile {
         let this_is_dot = a.cut_direction == CutDirection::Dot;
         let other_is_dot = b.cut_direction == CutDirection::Dot;
 
-        if !same_cuts && !this_is_dot && !other_is_dot { return }
+        if !same_cuts && !this_is_dot && !other_is_dot {
+            return;
+        }
 
         let ap = a.grid_pos;
         let bp = b.grid_pos;
@@ -1090,15 +1320,16 @@ impl BeatmapFile {
             return;
         }
 
-        let degrees = if this_is_dot { b.cut_direction.angle_degrees() } else { a.cut_direction.angle_degrees() };
+        let degrees = if this_is_dot {
+            b.cut_direction.angle_degrees()
+        } else {
+            a.cut_direction.angle_degrees()
+        };
         let between = degrees_between(degrees, angle);
 
         if between <= 40. {
             a.angle_offset = angle - a.cut_direction.angle_degrees();
             b.angle_offset = angle - b.cut_direction.angle_degrees();
         }
-
     }
-
 }
-

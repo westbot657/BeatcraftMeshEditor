@@ -1,5 +1,3 @@
-
-
 use std::collections::HashMap;
 use std::hash::Hash;
 
@@ -7,14 +5,13 @@ use eframe::glow;
 use egui::Ui;
 use glam::{Quat, Vec2, Vec3};
 
-use crate::data::VertexId;
+use crate::data::mesh::VertexId;
 use crate::easing::Easing;
 use crate::editor::{self, App, RotationDisplayMode};
 use crate::light_mesh::{self, ComputeVertex, Part};
 use crate::widgets::{MathDragValue, MathDragValueOpt, MultiMathValue};
 
 use crate::RefDuper;
-
 
 pub fn trigger_history<T: 'static + Clone + Send + Sync>(
     ui: &mut egui::Ui,
@@ -71,7 +68,8 @@ pub fn vec3_row<T: 'static + Clone + Send + Sync>(
 
                     let (rect, _) = ui.allocate_exact_size([w3, 20.].into(), egui::Sense::empty());
 
-                    let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(*ui.layout()));
+                    let mut child_ui =
+                        ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(*ui.layout()));
                     child_ui.set_max_width(w3);
 
                     let resp = child_ui.add(
@@ -131,10 +129,10 @@ pub fn vec2_row<T: 'static + Clone + Send + Sync>(
                 |ui| {
                     let id = ui.next_auto_id();
 
-
                     let (rect, _) = ui.allocate_exact_size([w2, 20.].into(), egui::Sense::empty());
 
-                    let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(*ui.layout()));
+                    let mut child_ui =
+                        ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(*ui.layout()));
                     child_ui.set_max_width(w2);
 
                     let resp = child_ui.add(
@@ -332,7 +330,9 @@ pub fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
                     let id = ui.next_auto_id();
                     let resp = ui.add_sized(
                         [w3, 20.],
-                        MathDragValueOpt::<f32, _>::new(val, vars).speed(0.01).max_decimals(3),
+                        MathDragValueOpt::<f32, _>::new(val, vars)
+                            .speed(0.01)
+                            .max_decimals(3),
                     );
 
                     changed |= resp.changed();
@@ -556,7 +556,11 @@ pub fn quat_row<T: 'static + Clone + Send + Sync>(
             let normalize_angle = |d: f32| -> f32 {
                 let d = if d == -0.0 { 0.0 } else { d };
                 let d = ((d + 180.0).rem_euclid(360.0)) - 180.0;
-                if (d.abs() - 180.0).abs() < 0.001 { 180.0 } else { d }
+                if (d.abs() - 180.0).abs() < 0.001 {
+                    180.0
+                } else {
+                    d
+                }
             };
 
             let candidate_a = [
@@ -575,10 +579,13 @@ pub fn quat_row<T: 'static + Clone + Send + Sync>(
                 .unwrap_or(candidate_a);
 
             let dist = |c: &[f32; 3]| -> f32 {
-                c.iter().zip(anchor.iter()).map(|(a, b)| {
-                    let d = (a - b + 180.0).rem_euclid(360.0) - 180.0;
-                    d * d
-                }).sum()
+                c.iter()
+                    .zip(anchor.iter())
+                    .map(|(a, b)| {
+                        let d = (a - b + 180.0).rem_euclid(360.0) - 180.0;
+                        d * d
+                    })
+                    .sum()
             };
 
             let mut degrees = if dist(&candidate_b) < dist(&candidate_a) {

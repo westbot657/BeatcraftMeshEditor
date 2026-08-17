@@ -3,10 +3,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::easing::Easing;
 
-use super::v2::{ColorBoostValueV2, GagaSideV2, HydraulicsTypeV2, LightEventTypeV2, LightEventValueV2, RingLightEventTypeV2, SpinningLaserSideV2};
-use super::{ArcV3, BeatmapDataError, BombNoteV3, ChainV3, ColorNoteV3, LegacyBPMEventV3, LegacySpawnRotationEventV3, MapVersion, ObstacleV3, Sentinel, SpawnRotationExecutionTime, convert_u8};
+use super::v2::{
+    ColorBoostValueV2, GagaSideV2, HydraulicsTypeV2, LightEventTypeV2, LightEventValueV2,
+    RingLightEventTypeV2, SpinningLaserSideV2,
+};
+use super::{
+    ArcV3, BeatmapDataError, BombNoteV3, ChainV3, ColorNoteV3, LegacyBPMEventV3,
+    LegacySpawnRotationEventV3, MapVersion, ObstacleV3, Sentinel, SpawnRotationExecutionTime,
+    convert_u8,
+};
 use super::{bool_u8_serde, easing_as_i8};
-use super::{default_u, is_value_u, is_value_f};
+use super::{default_u, is_value_f, is_value_u};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -27,7 +34,6 @@ pub struct RotationEventV3 {
     #[serde(rename = "r")]
     pub rotation: f32,
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -141,7 +147,6 @@ pub struct ColorBoostV3 {
     pub boost: bool, // rare non-numeric bool appearence
 }
 
-
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
 #[repr(u8)]
@@ -231,7 +236,7 @@ pub struct IndexFilterV3 {
 #[serde(deny_unknown_fields)]
 pub struct EventBoxGroupV3<E>
 where
-    E: Clone + std::fmt::Debug
+    E: Clone + std::fmt::Debug,
 {
     #[serde(rename = "b")]
     pub beat: f32,
@@ -241,7 +246,6 @@ where
     pub events: Vec<E>,
 }
 
-
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
 #[repr(u8)]
@@ -249,7 +253,6 @@ pub enum DistributionType {
     Wave = 1,
     Step = 2,
 }
-
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
@@ -265,15 +268,15 @@ pub enum EventAxis {
 #[repr(u8)]
 pub enum TransitionType {
     Transition = 0,
-    Extend     = 1,
+    Extend = 1,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
 #[repr(u8)]
 pub enum RotationDirection {
-    Automatic        = 0,
-    Clockwise        = 1,
+    Automatic = 0,
+    Clockwise = 1,
     CounterClockwise = 2,
 }
 
@@ -324,12 +327,11 @@ pub struct LightColorEventV3 {
 #[serde(try_from = "u8", into = "u8")]
 #[repr(u8)]
 pub enum LightEventColor {
-    Primary   = 0,
+    Primary = 0,
     Secondary = 1,
-    White     = 2,
+    White = 2,
 }
 convert_u8! { LightEventColor : 0..=2 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -470,7 +472,6 @@ pub struct VfxEventV3 {
     pub value: f32,
 }
 
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BeatmapFileV3 {
@@ -521,4 +522,3 @@ convert_u8! { DistributionType : 1 | 2 }
 convert_u8! { EventAxis : 0..=2 }
 convert_u8! { TransitionType : 0 | 1 }
 convert_u8! { RotationDirection : 0..=2 }
-

@@ -32,19 +32,31 @@ use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{fmt, EnvFilter, prelude::*};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use self::config::{AppData, LocaleCache, RawAppData, RecentProject};
-use self::data::{BillboardData, LightGroup, LightMeshData, MaterialType, NormalId, ShaderSettingsData, ShaderStyle, SpectrogramData, UvId, VertexId};
+use self::data::mesh::{
+    BillboardData, LightGroup, LightMeshData, MaterialType, NormalId, ShaderSettingsData,
+    ShaderStyle, SpectrogramData, UvId, VertexId,
+};
 use self::easing::Easing;
-use self::editor::{ActionType, App, CreateEnv, MINECRAFT_F, RingType, RoutineAction, SOURCE_CODE_F, Selection, SettingsPage, SettingsScreen, SpinSide, UiState, ViewPlacement, ViewStyle, WorkingRenameKey, setup_fonts};
+use self::editor::{
+    ActionType, App, CreateEnv, MINECRAFT_F, RingType, RoutineAction, SOURCE_CODE_F, Selection,
+    SettingsPage, SettingsScreen, SpinSide, UiState, ViewPlacement, ViewStyle, WorkingRenameKey,
+    setup_fonts,
+};
 use self::light_mesh::{BloomfogStyle, ComputeNormal, ComputeVertex, Part, Triangle};
 use self::renaming::light_mesh::rehash;
-use self::render::{GridType, HandleDrawCall, InstanceData, LIGHT_COLORS, MeshDrawCall, PointDrawCall};
-use self::widgets::{MathDragValue, TextInput};
+use self::render::{
+    GridType, HandleDrawCall, InstanceData, LIGHT_COLORS, MeshDrawCall, PointDrawCall,
+};
 use self::ui_elements::*;
+use self::widgets::{MathDragValue, TextInput};
 use fluent_templates::fluent_bundle::FluentValue;
 
+pub mod audio;
+pub mod beatmap;
+pub mod config;
 pub mod data;
 pub mod easing;
 pub mod editor;
@@ -52,11 +64,8 @@ pub mod light_mesh;
 pub mod math_interp;
 pub mod renaming;
 pub mod render;
-pub mod widgets;
-pub mod beatmap;
 pub mod ui_elements;
-pub mod config;
-pub mod audio;
+pub mod widgets;
 
 // Logging targets
 pub static DB_LOGIC: &str = "logic";
@@ -72,12 +81,17 @@ pub static R_ARROW: &str = "▶";
 pub static D_ARROW: &str = "▼";
 pub static SMALL_R_ARROW: &str = "→";
 
-pub static ENVIRONMENT_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/environment_editor.png");
-pub static SABER_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/saber_editor.png");
-pub static NOTE_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/note_editor.png");
-pub static BEATMAP_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/beatmap_editor.png");
+pub static ENVIRONMENT_EDITOR_ICON: egui::ImageSource =
+    egui::include_image!("assets/textures/environment_editor.png");
+pub static SABER_EDITOR_ICON: egui::ImageSource =
+    egui::include_image!("assets/textures/saber_editor.png");
+pub static NOTE_EDITOR_ICON: egui::ImageSource =
+    egui::include_image!("assets/textures/note_editor.png");
+pub static BEATMAP_EDITOR_ICON: egui::ImageSource =
+    egui::include_image!("assets/textures/beatmap_editor.png");
 
-pub static MISSING_EDITOR_ICON: egui::ImageSource = egui::include_image!("assets/textures/svg/missing_editor.svg");
+pub static MISSING_EDITOR_ICON: egui::ImageSource =
+    egui::include_image!("assets/textures/svg/missing_editor.svg");
 
 pub static PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub static VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -89,19 +103,16 @@ const MODIFIER_NAMES: egui::ModifierNames<'_> = egui::ModifierNames {
     shift: "Shift",
     mac_cmd: "Cmd",
     mac_alt: "Alt",
-    concat: "+"
+    concat: "+",
 };
 
 pub fn get_data_folder() -> Option<PathBuf> {
-    dirs::data_local_dir()
-        .map(|dir| dir.join("beatcraftmesheditor"))
+    dirs::data_local_dir().map(|dir| dir.join("beatcraftmesheditor"))
 }
 
 pub fn get_data_file() -> Option<PathBuf> {
-    get_data_folder()
-        .map(|dir| dir.join("data.json"))
+    get_data_folder().map(|dir| dir.join("data.json"))
 }
-
 
 #[derive(thiserror::Error, Debug)]
 pub enum AppDataError {
@@ -182,10 +193,8 @@ impl RefDuper {
     }
 }
 
-
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-
         let gl = frame.gl().unwrap();
 
         if self.state.dirty {
@@ -218,18 +227,18 @@ impl eframe::App for App {
         let rd = RefDuper;
         let self2 = unsafe { rd.detach_mut_ref(self) };
         if let Some((label, popup)) = self.state.ui.custom_popup.last()
-        && let Some(resp) = egui::Window::new(label)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, [0., 0.])
-            .show(ctx, |ui| {
-                popup(self2, ui)
-            })
-        && let Some(inner) = resp.inner
+            && let Some(resp) = egui::Window::new(label)
+                .collapsible(false)
+                .resizable(false)
+                .anchor(Align2::CENTER_CENTER, [0., 0.])
+                .show(ctx, |ui| popup(self2, ui))
+            && let Some(inner) = resp.inner
         {
             match inner {
-                editor::PopupResponse::KeepOpen => {},
-                editor::PopupResponse::Close => {self.state.ui.custom_popup.pop(); },
+                editor::PopupResponse::KeepOpen => {}
+                editor::PopupResponse::Close => {
+                    self.state.ui.custom_popup.pop();
+                }
                 editor::PopupResponse::OpenNew(x) => self.state.ui.custom_popup.push(x),
             }
         }
@@ -239,12 +248,16 @@ impl eframe::App for App {
         } else {
             match self.context {
                 editor::EditorContext::Model(model_editor_context) => match model_editor_context {
-                    editor::ModelEditorContext::Environment => self.draw_environment_editor(ctx, frame, shift, ctrl),
+                    editor::ModelEditorContext::Environment => {
+                        self.draw_environment_editor(ctx, frame, shift, ctrl)
+                    }
                     editor::ModelEditorContext::Saber => todo!(),
                     editor::ModelEditorContext::Notes => todo!(),
                 },
                 editor::EditorContext::Map(map_editor_context) => match map_editor_context {
-                    editor::MapEditorContext::Beatmap => self.draw_beatmap_editor(ctx, frame, shift, ctrl, alt),
+                    editor::MapEditorContext::Beatmap => {
+                        self.draw_beatmap_editor(ctx, frame, shift, ctrl, alt)
+                    }
                     editor::MapEditorContext::Lightshow => todo!(),
                     editor::MapEditorContext::Audio => todo!(),
                 },
@@ -257,7 +270,6 @@ impl eframe::App for App {
 }
 
 impl App {
-
     pub fn reset_context(&mut self) {
         let gl = Arc::clone(&self.state.gl);
 
@@ -285,8 +297,11 @@ impl App {
         self.rebuild_meshes(&gl);
     }
 
-    fn draw_settings_page(lang: &mut LocaleCache, ctx: &egui::Context, settings: &mut SettingsScreen) {
-
+    fn draw_settings_page(
+        lang: &mut LocaleCache,
+        ctx: &egui::Context,
+        settings: &mut SettingsScreen,
+    ) {
         egui::SidePanel::new(egui::panel::Side::Left, "setting selector")
             .exact_width(300.)
             .show(ctx, |ui| {
@@ -306,35 +321,41 @@ impl App {
                 }
             });
 
-        egui::CentralPanel::default()
-            .show(ctx, |ui| {
-                match settings.page {
-                    SettingsPage::Keymaps => {},
-                    SettingsPage::Language => {},
-                }
-            });
+        egui::CentralPanel::default().show(ctx, |ui| match settings.page {
+            SettingsPage::Keymaps => {}
+            SettingsPage::Language => {}
+        });
     }
 
     fn draw_welcome_page(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("WelcomeTopBar")
-            .show(ctx, |ui| {
-                ui.add_space(2.);
-                egui::MenuBar::new().ui(ui, |ui| {
-                    ui.menu_button(self.data.locale.get("settings-label").to_string(), |ui| {
-                        let mut minecraft_font: bool = ui.memory_mut(|m| m.data.get_persisted("use_minecraft_font".into()).unwrap_or(true));
-                        let old = minecraft_font;
-                        ui.checkbox(&mut minecraft_font, self.data.locale.get("minecraft-font-label"));
-                        if old != minecraft_font {
-                            if minecraft_font {
-                                setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], ctx);
-                            } else {
-                                setup_fonts(&[SOURCE_CODE_F, MINECRAFT_F], ctx);
-                            }
-                            ui.memory_mut(|m| m.data.insert_persisted("use_minecraft_font".into(), minecraft_font));
-                        }
+        egui::TopBottomPanel::top("WelcomeTopBar").show(ctx, |ui| {
+            ui.add_space(2.);
+            egui::MenuBar::new().ui(ui, |ui| {
+                ui.menu_button(self.data.locale.get("settings-label").to_string(), |ui| {
+                    let mut minecraft_font: bool = ui.memory_mut(|m| {
+                        m.data
+                            .get_persisted("use_minecraft_font".into())
+                            .unwrap_or(true)
                     });
+                    let old = minecraft_font;
+                    ui.checkbox(
+                        &mut minecraft_font,
+                        self.data.locale.get("minecraft-font-label"),
+                    );
+                    if old != minecraft_font {
+                        if minecraft_font {
+                            setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], ctx);
+                        } else {
+                            setup_fonts(&[SOURCE_CODE_F, MINECRAFT_F], ctx);
+                        }
+                        ui.memory_mut(|m| {
+                            m.data
+                                .insert_persisted("use_minecraft_font".into(), minecraft_font)
+                        });
+                    }
                 });
             });
+        });
 
         // egui::TopBottomPanel::bottom("WelcomeBottomPanel")
         //     .frame(Frame::NONE)
@@ -465,34 +486,58 @@ impl App {
                         [610., 200.].into(),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
-                            let ee: Vec<String> = self.data.locale.get("environment-editor").split("\n").map(ToString::to_string).collect();
+                            let ee: Vec<String> = self
+                                .data
+                                .locale
+                                .get("environment-editor")
+                                .split("\n")
+                                .map(ToString::to_string)
+                                .collect();
                             self.draw_context_selector(
-                                ctx, ui,
+                                ctx,
+                                ui,
                                 "env_edit_scale".into(),
                                 ENVIRONMENT_EDITOR_ICON.clone(),
                                 &ee,
-                                |s| s.context = editor::EditorContext::Model(editor::ModelEditorContext::Environment),
+                                |s| {
+                                    s.context = editor::EditorContext::Model(
+                                        editor::ModelEditorContext::Environment,
+                                    )
+                                },
                             );
 
-                            let se: Vec<String> = self.data.locale.get("saber-editor").split("\n").map(ToString::to_string).collect();
+                            let se: Vec<String> = self
+                                .data
+                                .locale
+                                .get("saber-editor")
+                                .split("\n")
+                                .map(ToString::to_string)
+                                .collect();
                             self.draw_context_selector(
-                                ctx, ui,
+                                ctx,
+                                ui,
                                 "saber_edit_scale".into(),
                                 SABER_EDITOR_ICON.clone(),
                                 &se,
-                                |_s| ()//s.context = editor::EditorContext::Model(editor::ModelEditorContext::Saber),
+                                |_s| (), //s.context = editor::EditorContext::Model(editor::ModelEditorContext::Saber),
                             );
 
-                            let ne: Vec<String> = self.data.locale.get("note-editor").split("\n").map(ToString::to_string).collect();
+                            let ne: Vec<String> = self
+                                .data
+                                .locale
+                                .get("note-editor")
+                                .split("\n")
+                                .map(ToString::to_string)
+                                .collect();
                             self.draw_context_selector(
-                                ctx, ui,
+                                ctx,
+                                ui,
                                 "note_edit_scale".into(),
                                 NOTE_EDITOR_ICON.clone(),
                                 &ne,
-                                |_s| ()//s.context = editor::EditorContext::Model(editor::ModelEditorContext::Notes),
+                                |_s| (), //s.context = editor::EditorContext::Model(editor::ModelEditorContext::Notes),
                             );
-
-                        }
+                        },
                     );
 
                     #[cfg(all(feature = "mapper", feature = "mesh-editor"))]
@@ -503,30 +548,47 @@ impl App {
                         [405., 200.].into(),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
+                            let ee: Vec<String> = self
+                                .data
+                                .locale
+                                .get("beatmap-editor")
+                                .split("\n")
+                                .map(ToString::to_string)
+                                .collect();
+                            self.draw_context_selector(
+                                ctx,
+                                ui,
+                                "beatmap_edit_scale".into(),
+                                BEATMAP_EDITOR_ICON.clone(),
+                                &ee,
+                                |s| {
+                                    s.context = editor::EditorContext::Map(
+                                        editor::MapEditorContext::Beatmap,
+                                    )
+                                },
+                            );
 
-                        let ee: Vec<String> = self.data.locale.get("beatmap-editor").split("\n").map(ToString::to_string).collect();
-                        self.draw_context_selector(
-                            ctx, ui,
-                            "beatmap_edit_scale".into(),
-                            BEATMAP_EDITOR_ICON.clone(),
-                            &ee,
-                            |s| s.context = editor::EditorContext::Map(editor::MapEditorContext::Beatmap),
-                        );
-
-                        let ee: Vec<String> = self.data.locale.get("lightshow-editor").split("\n").map(ToString::to_string).collect();
-                        self.draw_context_selector(
-                            ctx, ui,
-                            "lightshow_edit_scale".into(),
-                            MISSING_EDITOR_ICON.clone(),
-                            &ee,
-                            |_s| ()//s.context = editor::EditorContext::Map(editor::MapEditorContext::Lightshow),
-                        );
-                    });
+                            let ee: Vec<String> = self
+                                .data
+                                .locale
+                                .get("lightshow-editor")
+                                .split("\n")
+                                .map(ToString::to_string)
+                                .collect();
+                            self.draw_context_selector(
+                                ctx,
+                                ui,
+                                "lightshow_edit_scale".into(),
+                                MISSING_EDITOR_ICON.clone(),
+                                &ee,
+                                |_s| (), //s.context = editor::EditorContext::Map(editor::MapEditorContext::Lightshow),
+                            );
+                        },
+                    );
 
                     ui.ctx().request_repaint();
                 },
             );
-
         });
     }
 
@@ -538,7 +600,7 @@ impl App {
         img_source: ImageSource,
         overlay_text: &[String],
         on_click: impl Fn(&mut Self),
-        ) {
+    ) {
         let scale = ui
             .memory(|m| m.data.get_temp::<f32>(scale_id))
             .unwrap_or(1.);
@@ -559,37 +621,40 @@ impl App {
         let visuals = *ui.style().interact(&response);
         let is_hovered = response.hovered();
 
-        ui.with_visual_transform(
-            egui::emath::TSTransform::new(translation, scale),
-            |ui| {
-                let painter = ui.painter();
+        ui.with_visual_transform(egui::emath::TSTransform::new(translation, scale), |ui| {
+            let painter = ui.painter();
 
-                painter.rect(
-                    rect.expand(visuals.expansion * 2.),
-                    6.0,
-                    Color32::TRANSPARENT,
-                    egui::Stroke::new(1., if is_hovered { Color32::from_white_alpha(127) } else { visuals.bg_fill }),
-                    egui::StrokeKind::Outside,
+            painter.rect(
+                rect.expand(visuals.expansion * 2.),
+                6.0,
+                Color32::TRANSPARENT,
+                egui::Stroke::new(
+                    1.,
+                    if is_hovered {
+                        Color32::from_white_alpha(127)
+                    } else {
+                        visuals.bg_fill
+                    },
+                ),
+                egui::StrokeKind::Outside,
+            );
+
+            egui::Image::new(img_source)
+                .corner_radius(6)
+                .paint_at(ui, rect);
+
+            let mut y = 8.;
+            for line in overlay_text.iter().rev() {
+                painter.text(
+                    rect.center_bottom() - egui::vec2(0.0, y),
+                    egui::Align2::CENTER_BOTTOM,
+                    line,
+                    egui::FontId::proportional(16.0),
+                    Color32::WHITE,
                 );
-
-                egui::Image::new(img_source)
-                    .corner_radius(6)
-                    .paint_at(ui, rect);
-
-
-                let mut y = 8.;
-                for line in overlay_text.iter().rev() {
-                    painter.text(
-                        rect.center_bottom() - egui::vec2(0.0, y),
-                        egui::Align2::CENTER_BOTTOM,
-                        line,
-                        egui::FontId::proportional(16.0),
-                        Color32::WHITE,
-                    );
-                    y += 20.;
-                }
-            },
-        );
+                y += 20.;
+            }
+        });
 
         let dt = ctx.input(|i| i.stable_dt);
         ui.memory_mut(|m| {
@@ -604,7 +669,6 @@ impl App {
                 m.data.insert_temp(scale_id, 1f32);
             }
         });
-
     }
 
     fn pad_menu_text(text: &mut [(String, Option<String>)]) {
@@ -620,7 +684,13 @@ impl App {
         }
     }
 
-    fn draw_environment_editor(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame, shift: bool, ctrl: bool) {
+    fn draw_environment_editor(
+        &mut self,
+        ctx: &egui::Context,
+        frame: &mut eframe::Frame,
+        shift: bool,
+        ctrl: bool,
+    ) {
         let gl = frame.gl().unwrap();
 
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
@@ -924,8 +994,10 @@ impl App {
                                         if ui
                                             .add_sized(
                                                 ui.available_size(),
-                                                egui::Button::new(self.data.locale.get("show-uv-editor"))
-                                                    .selected(self.state.ui.show_uv_window),
+                                                egui::Button::new(
+                                                    self.data.locale.get("show-uv-editor"),
+                                                )
+                                                .selected(self.state.ui.show_uv_window),
                                             )
                                             .clicked()
                                         {
@@ -993,13 +1065,18 @@ impl App {
                                 gl.enable(glow::DEPTH_TEST);
                                 gl.depth_mask(true);
 
-
                                 match s.mode {
                                     editor::EditorMode::View => {
                                         draw_view_gl(&s, gl, &view, &proj, (w as i32, h as i32));
                                     }
                                     editor::EditorMode::Assembly => {
-                                        draw_assembly_gl(&s, gl, &view, &proj, (w as i32, h as i32));
+                                        draw_assembly_gl(
+                                            &s,
+                                            gl,
+                                            &view,
+                                            &proj,
+                                            (w as i32, h as i32),
+                                        );
                                     }
                                     editor::EditorMode::Edit => {
                                         draw_edit_gl(&s, gl, &view, &proj, (w as i32, h as i32));
@@ -1050,7 +1127,11 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let s4 = unsafe { rd.detach_mut_ref(s) };
 
     ui.horizontal(|ui| {
-        let icon = if s2.state.ui.meshes_collapse { R_ARROW } else { D_ARROW };
+        let icon = if s2.state.ui.meshes_collapse {
+            R_ARROW
+        } else {
+            D_ARROW
+        };
         if ui.small_button(icon).clicked() {
             s2.state.ui.meshes_collapse = !s2.state.ui.meshes_collapse;
         }
@@ -1058,8 +1139,12 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     });
 
     if !s2.state.ui.meshes_collapse {
-        for (id, mesh) in s.view.meshes.iter_mut().filter_map(|(i, v)| v.as_mut().map(|v| (i, v))) {
-
+        for (id, mesh) in s
+            .view
+            .meshes
+            .iter_mut()
+            .filter_map(|(i, v)| v.as_mut().map(|v| (i, v)))
+        {
             ui.add_space(2.0);
             let selected = s.state.ui.view_mesh == Some(id.clone());
             let available = ui.available_size_before_wrap();
@@ -1118,7 +1203,10 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
 
         if ui
-            .add_sized([w, 20.], egui::Button::new(s.data.locale.get("button-create-mesh")))
+            .add_sized(
+                [w, 20.],
+                egui::Button::new(s.data.locale.get("button-create-mesh")),
+            )
             .clicked()
         {
             let (sx, rx) = mpsc::channel();
@@ -1133,21 +1221,26 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     let _ = sx.send(file);
                 }
             });
-            s.add_routine(Box::new(move |s, gl| {
-                match rx.try_recv() {
-                    Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
-                    Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
-                    Ok(dest) => {
-                        if let Err(e) = fs::write(
-                            &dest,
-                            serde_json::to_string(&LightMeshData::default()).unwrap(),
-                        ) {
-                            eprintln!("Failed to write mesh file\n{e}");
-                        } else if let Err(e) = s.load_meshes({ let mut m = IndexMap::new(); m.insert(s.get_unique_mesh_id(), dest); m }, gl) {
-                            eprintln!("Failed to load mesh\n{e}");
-                        }
-                        RoutineAction::Remove
+            s.add_routine(Box::new(move |s, gl| match rx.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+                Ok(dest) => {
+                    if let Err(e) = fs::write(
+                        &dest,
+                        serde_json::to_string(&LightMeshData::default()).unwrap(),
+                    ) {
+                        eprintln!("Failed to write mesh file\n{e}");
+                    } else if let Err(e) = s.load_meshes(
+                        {
+                            let mut m = IndexMap::new();
+                            m.insert(s.get_unique_mesh_id(), dest);
+                            m
+                        },
+                        gl,
+                    ) {
+                        eprintln!("Failed to load mesh\n{e}");
                     }
+                    RoutineAction::Remove
                 }
             }));
         }
@@ -1172,35 +1265,50 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             [w - 25., 20.].into(),
                             Layout::left_to_right(egui::Align::Min),
                             |ui| {
-                                let icon = if s2.state.ui.spectrogram_collapse { R_ARROW } else { D_ARROW };
+                                let icon = if s2.state.ui.spectrogram_collapse {
+                                    R_ARROW
+                                } else {
+                                    D_ARROW
+                                };
                                 if ui.small_button(icon).clicked() {
-                                    s2.state.ui.spectrogram_collapse = !s2.state.ui.spectrogram_collapse;
+                                    s2.state.ui.spectrogram_collapse =
+                                        !s2.state.ui.spectrogram_collapse;
                                 }
                                 ui.label(s.data.locale.get("spectrogram"));
-                        }
+                            },
                         );
-                    }
+                    },
                 );
             });
 
             if !s2.state.ui.spectrogram_collapse {
                 ui.label(s.data.locale.get("position"));
-                vec3_row(ui, &mut spect.position, w3,
+                vec3_row(
+                    ui,
+                    &mut spect.position,
+                    w3,
                     || Some(spect2.clone()),
                     |s| s3.add_history(editor::HistoryEntry::Spectrogram(s)),
-                    || s2.rebuild_meshes(gl)
+                    || s2.rebuild_meshes(gl),
                 );
                 ui.label(s.data.locale.get("offset"));
-                vec3_row(ui, &mut spect.offset, w3,
+                vec3_row(
+                    ui,
+                    &mut spect.offset,
+                    w3,
                     || Some(spect2.clone()),
                     |s| s3.add_history(editor::HistoryEntry::Spectrogram(s)),
                     || s2.rebuild_meshes(gl),
                 );
                 ui.label(s.data.locale.get("rotation"));
-                quat_row(ui, &mut spect.rotation, &mut s2.state.ui.spectrogram_mode, (w2, w3),
+                quat_row(
+                    ui,
+                    &mut spect.rotation,
+                    &mut s2.state.ui.spectrogram_mode,
+                    (w2, w3),
                     || Some(spect2.clone()),
                     |s| s3.add_history(editor::HistoryEntry::Spectrogram(s)),
-                    || s4.rebuild_meshes(gl)
+                    || s4.rebuild_meshes(gl),
                 );
                 ui.horizontal(|ui| {
                     ui.allocate_ui_with_layout(
@@ -1212,14 +1320,16 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 [w2, 20.],
                                 egui::DragValue::new(&mut spect.count)
                                     .speed(0.25)
-                                    .range(1..=500)
+                                    .range(1..=500),
                             );
-                            trigger_history(ui, &[resp],
+                            trigger_history(
+                                ui,
+                                &[resp],
                                 || spect2.clone(),
                                 |x| s2.add_history(editor::HistoryEntry::Spectrogram(Some(x))),
-                                || s3.rebuild_meshes(gl)
+                                || s3.rebuild_meshes(gl),
                             );
-                        }
+                        },
                     );
                     ui.allocate_ui_with_layout(
                         [w2, 45.].into(),
@@ -1230,12 +1340,18 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             ui.allocate_ui_with_layout(
                                 [w2, 20.].into(),
                                 Layout::left_to_right(egui::Align::Max),
-                                |ui| egui::ComboBox::from_id_salt("spect-style")
-                                    .selected_text(spect.style.name())
-                                    .width(w2)
-                                    .show_ui(ui, |ui| {
-                                        ui.selectable_value(&mut spect.style, data::TowerStyle::Cuboid, "cuboid");
-                                    })
+                                |ui| {
+                                    egui::ComboBox::from_id_salt("spect-style")
+                                        .selected_text(spect.style.name())
+                                        .width(w2)
+                                        .show_ui(ui, |ui| {
+                                            ui.selectable_value(
+                                                &mut spect.style,
+                                                data::mesh::TowerStyle::Cuboid,
+                                                "cuboid",
+                                            );
+                                        })
+                                },
                             );
                             if old != spect.style {
                                 let mut old_s = spect.clone();
@@ -1243,25 +1359,29 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 s2.add_history(editor::HistoryEntry::Spectrogram(Some(old_s)));
                                 s2.rebuild_meshes(gl);
                             }
-                        }
+                        },
                     );
                 });
                 ui.horizontal(|ui| {
-                    if ui.allocate_ui_with_layout(
-                        [w2, 45.].into(),
-                        Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            ui.label(s.data.locale.get("tower-half-split"));
-                            ui.add_sized(
-                                [w2, 20.],
-                                egui::Button::new(if spect.half_split {
-                                    s.data.locale.get("enabled")
-                                } else {
-                                    s.data.locale.get("disabled")
-                                })
-                            )
-                        }
-                    ).inner.clicked() {
+                    if ui
+                        .allocate_ui_with_layout(
+                            [w2, 45.].into(),
+                            Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                ui.label(s.data.locale.get("tower-half-split"));
+                                ui.add_sized(
+                                    [w2, 20.],
+                                    egui::Button::new(if spect.half_split {
+                                        s.data.locale.get("enabled")
+                                    } else {
+                                        s.data.locale.get("disabled")
+                                    }),
+                                )
+                            },
+                        )
+                        .inner
+                        .clicked()
+                    {
                         s2.add_history(editor::HistoryEntry::Spectrogram(Some(spect.clone())));
                         spect.half_split = !spect.half_split;
                         s2.rebuild_meshes(gl);
@@ -1275,14 +1395,16 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 [w2, 20.],
                                 egui::DragValue::new(&mut spect.level_modifier)
                                     .speed(0.01)
-                                    .range(0..=5)
+                                    .range(0..=5),
                             );
-                            trigger_history(ui, &[resp],
+                            trigger_history(
+                                ui,
+                                &[resp],
                                 || spect2.clone(),
                                 |x| s2.add_history(editor::HistoryEntry::Spectrogram(Some(x))),
-                                || s3.rebuild_meshes(gl)
+                                || s3.rebuild_meshes(gl),
                             );
-                        }
+                        },
                     );
                 });
                 ui.horizontal(|ui| {
@@ -1295,14 +1417,16 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 [w3 + 5., 20.],
                                 egui::DragValue::new(&mut spect.base_height)
                                     .speed(1.)
-                                    .range(0..=800)
+                                    .range(0..=800),
                             );
-                            trigger_history(ui, &[resp],
+                            trigger_history(
+                                ui,
+                                &[resp],
                                 || spect2.clone(),
                                 |x| s2.add_history(editor::HistoryEntry::Spectrogram(Some(x))),
-                                || s3.rebuild_meshes(gl)
+                                || s3.rebuild_meshes(gl),
                             );
-                        }
+                        },
                     );
                     ui.allocate_ui_with_layout(
                         [w2, 45.].into(),
@@ -1313,15 +1437,21 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             ui.allocate_ui_with_layout(
                                 [w - w3 - 12.5, 22.].into(),
                                 Layout::left_to_right(egui::Align::Max),
-                                |ui| egui::ComboBox::from_id_salt("spectrogram-easing")
-                                    .selected_text(spect.easing.display_name())
-                                    .width(w - w3 - 12.5)
-                                    .wrap_mode(egui::TextWrapMode::Truncate)
-                                    .show_ui(ui, |ui| {
-                                        for (name, easing) in Easing::iter_all() {
-                                            ui.selectable_value(&mut spect.easing, easing, name);
-                                        }
-                                    })
+                                |ui| {
+                                    egui::ComboBox::from_id_salt("spectrogram-easing")
+                                        .selected_text(spect.easing.display_name())
+                                        .width(w - w3 - 12.5)
+                                        .wrap_mode(egui::TextWrapMode::Truncate)
+                                        .show_ui(ui, |ui| {
+                                            for (name, easing) in Easing::iter_all() {
+                                                ui.selectable_value(
+                                                    &mut spect.easing,
+                                                    easing,
+                                                    name,
+                                                );
+                                            }
+                                        })
+                                },
                             );
                             if old != spect.easing {
                                 let mut old_s = spect.clone();
@@ -1329,101 +1459,121 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 s2.add_history(editor::HistoryEntry::Spectrogram(Some(old_s)));
                                 s2.rebuild_meshes(gl);
                             }
-                        }
+                        },
                     );
                 });
-
 
                 let mut add_plane = false;
                 let mut remove_plane = false;
                 match spect.mirror.as_mut() {
                     Some(v4) => {
-                        remove_plane = ui.with_layout(Layout::right_to_left(egui::Align::Min), |ui| {
-                            let clicked = ui.small_button(SMALL_X).clicked();
-                            ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
-                                ui.label(s.data.locale.get("mirror-geometry-plane"));
-                            });
-                            clicked
-                        }).inner;
-                         let (a, b) = ui.horizontal(|ui| {
-                            let a = ui.allocate_ui_with_layout(
-                                [w2, 45.].into(),
-                                Layout::top_down(egui::Align::Min),
-                                |ui| {
-                                    ui.label("X");
-                                    ui.add_sized(
-                                        [w2, 20.],
-                                        egui::DragValue::new(&mut v4.x)
-                                            .speed(0.001)
-                                            .range(-1..=1)
+                        remove_plane = ui
+                            .with_layout(Layout::right_to_left(egui::Align::Min), |ui| {
+                                let clicked = ui.small_button(SMALL_X).clicked();
+                                ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
+                                    ui.label(s.data.locale.get("mirror-geometry-plane"));
+                                });
+                                clicked
+                            })
+                            .inner;
+                        let (a, b) = ui
+                            .horizontal(|ui| {
+                                let a = ui
+                                    .allocate_ui_with_layout(
+                                        [w2, 45.].into(),
+                                        Layout::top_down(egui::Align::Min),
+                                        |ui| {
+                                            ui.label("X");
+                                            ui.add_sized(
+                                                [w2, 20.],
+                                                egui::DragValue::new(&mut v4.x)
+                                                    .speed(0.001)
+                                                    .range(-1..=1),
+                                            )
+                                        },
                                     )
-                                }
-                            ).inner;
-                            let b = ui.allocate_ui_with_layout(
-                                [w2, 45.].into(),
-                                Layout::top_down(egui::Align::Min),
-                                |ui| {
-                                    ui.label("Y");
-                                    ui.add_sized(
-                                        [w2, 20.],
-                                        egui::DragValue::new(&mut v4.y)
-                                            .speed(0.001)
-                                            .range(-1..=1)
+                                    .inner;
+                                let b = ui
+                                    .allocate_ui_with_layout(
+                                        [w2, 45.].into(),
+                                        Layout::top_down(egui::Align::Min),
+                                        |ui| {
+                                            ui.label("Y");
+                                            ui.add_sized(
+                                                [w2, 20.],
+                                                egui::DragValue::new(&mut v4.y)
+                                                    .speed(0.001)
+                                                    .range(-1..=1),
+                                            )
+                                        },
                                     )
-                                }
-                            ).inner;
-                            (a, b)
-                        }).inner;
-                        let (c, d) = ui.horizontal(|ui| {
-                            let c = ui.allocate_ui_with_layout(
-                                [w2, 45.].into(),
-                                Layout::top_down(egui::Align::Min),
-                                |ui| {
-                                    ui.label("Z");
-                                    ui.add_sized(
-                                        [w2, 20.],
-                                        egui::DragValue::new(&mut v4.z)
-                                            .speed(0.001)
-                                            .range(-1..=1)
+                                    .inner;
+                                (a, b)
+                            })
+                            .inner;
+                        let (c, d) = ui
+                            .horizontal(|ui| {
+                                let c = ui
+                                    .allocate_ui_with_layout(
+                                        [w2, 45.].into(),
+                                        Layout::top_down(egui::Align::Min),
+                                        |ui| {
+                                            ui.label("Z");
+                                            ui.add_sized(
+                                                [w2, 20.],
+                                                egui::DragValue::new(&mut v4.z)
+                                                    .speed(0.001)
+                                                    .range(-1..=1),
+                                            )
+                                        },
                                     )
-                                }
-                            ).inner;
-                            let d = ui.allocate_ui_with_layout(
-                                [w2, 45.].into(),
-                                Layout::top_down(egui::Align::Min),
-                                |ui| {
-                                    ui.label(s.data.locale.get("offset"));
-                                    ui.add_sized(
-                                        [w2, 20.],
-                                        egui::DragValue::new(&mut v4.w)
-                                            .speed(0.001)
-                                            .range(-1..=1)
+                                    .inner;
+                                let d = ui
+                                    .allocate_ui_with_layout(
+                                        [w2, 45.].into(),
+                                        Layout::top_down(egui::Align::Min),
+                                        |ui| {
+                                            ui.label(s.data.locale.get("offset"));
+                                            ui.add_sized(
+                                                [w2, 20.],
+                                                egui::DragValue::new(&mut v4.w)
+                                                    .speed(0.001)
+                                                    .range(-1..=1),
+                                            )
+                                        },
                                     )
-                                }
-                            ).inner;
-                            (c, d)
-                        }).inner;
+                                    .inner;
+                                (c, d)
+                            })
+                            .inner;
 
-                        trigger_history(ui, &[a, b, c, d],
+                        trigger_history(
+                            ui,
+                            &[a, b, c, d],
                             || spect2.clone(),
                             |x| s2.add_history(editor::HistoryEntry::Spectrogram(Some(x))),
-                            || s3.rebuild_meshes(gl)
+                            || s3.rebuild_meshes(gl),
                         );
 
-                        if ui.add_sized(
-                            [w, 20.],
-                            egui::Button::new(s.data.locale.get("normalize-vector-button"))
-                        ).clicked() {
+                        if ui
+                            .add_sized(
+                                [w, 20.],
+                                egui::Button::new(s.data.locale.get("normalize-vector-button")),
+                            )
+                            .clicked()
+                        {
                             s2.add_history(editor::HistoryEntry::Spectrogram(Some(spect2.clone())));
                             *v4 = v4.xyz().normalize().extend(v4.w);
                             s2.rebuild_meshes(gl);
                         }
                     }
                     None => {
-                        add_plane = ui.add_sized(
-                            [w, 20.],
-                            egui::Button::new(s.data.locale.get("add-mirror-plane"))
-                        ).clicked();
+                        add_plane = ui
+                            .add_sized(
+                                [w, 20.],
+                                egui::Button::new(s.data.locale.get("add-mirror-plane")),
+                            )
+                            .clicked();
                     }
                 }
                 if remove_plane {
@@ -1436,11 +1586,16 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     spect.mirror = Some(Vec4::new(1., 0., 0., 0.));
                     s2.rebuild_meshes(gl);
                 }
-
             }
         }
         None => {
-            if ui.add_sized([w, 20.], egui::Button::new(s.data.locale.get("add-spectrogram"))).clicked() {
+            if ui
+                .add_sized(
+                    [w, 20.],
+                    egui::Button::new(s.data.locale.get("add-spectrogram")),
+                )
+                .clicked()
+            {
                 s.add_history(editor::HistoryEntry::Spectrogram(None));
                 s.view.spectrogram = Some(SpectrogramData::default())
             }
@@ -1461,10 +1616,14 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     [w, 20.].into(),
                     Layout::right_to_left(egui::Align::Min),
                     |ui| {
-                        if ui.add_sized(
-                            [w2, 20.],
-                            egui::Button::new(s.data.locale.get("button-edit")).selected(s2.state.ui.show_mirror_window)
-                        ).clicked() {
+                        if ui
+                            .add_sized(
+                                [w2, 20.],
+                                egui::Button::new(s.data.locale.get("button-edit"))
+                                    .selected(s2.state.ui.show_mirror_window),
+                            )
+                            .clicked()
+                        {
                             s2.state.ui.show_mirror_window = !s2.state.ui.show_mirror_window;
                         }
                         ui.allocate_ui_with_layout(
@@ -1472,15 +1631,19 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             Layout::left_to_right(egui::Align::Min),
                             |ui| {
                                 ui.label(s.data.locale.get("mirror"));
-                            }
+                            },
                         );
-                    }
+                    },
                 );
             });
             ui.horizontal(|ui| {
                 ui.add_sized([w - 50., 20.], egui::TextEdit::singleline(id));
                 if ui
-                    .small_button(if s2.view.mirror_path.is_some() {"R"} else {"?"})
+                    .small_button(if s2.view.mirror_path.is_some() {
+                        "R"
+                    } else {
+                        "?"
+                    })
                     .clicked()
                 {
                     let (sx, rx) = mpsc::channel();
@@ -1494,21 +1657,19 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             let _ = sx.send(path);
                         }
                     });
-                    s2.add_routine(Box::new(move |s, gl| {
-                        match rx.try_recv() {
-                            Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
-                            Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
-                            Ok(src) => {
-                                if let Err(e) = s.load_mirror(src.as_path(), gl) {
-                                    let st = s.data.locale.get("failed-to-load-mirror").to_string();
-                                    s.set_status(None, st, 2.);
-                                    eprintln!("Failed to load mirror geometry: {e}");
-                                } else {
-                                    s.view.mirror_path = Some(src);
-                                    s.rebuild_meshes(gl);
-                                }
-                                RoutineAction::Remove
+                    s2.add_routine(Box::new(move |s, gl| match rx.try_recv() {
+                        Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                        Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+                        Ok(src) => {
+                            if let Err(e) = s.load_mirror(src.as_path(), gl) {
+                                let st = s.data.locale.get("failed-to-load-mirror").to_string();
+                                s.set_status(None, st, 2.);
+                                eprintln!("Failed to load mirror geometry: {e}");
+                            } else {
+                                s.view.mirror_path = Some(src);
+                                s.rebuild_meshes(gl);
                             }
+                            RoutineAction::Remove
                         }
                     }));
                 }
@@ -1516,8 +1677,15 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             });
         }
         None => {
-            if ui.add_sized([w, 20.], egui::Button::new(s.data.locale.get("add-mirror"))).clicked() {
-                s.add_history(editor::HistoryEntry::Mirror(s.view.mirror_id.clone(), s.view.mirror_path.clone(), s.view.mirror_geometry.clone()));
+            if ui
+                .add_sized([w, 20.], egui::Button::new(s.data.locale.get("add-mirror")))
+                .clicked()
+            {
+                s.add_history(editor::HistoryEntry::Mirror(
+                    s.view.mirror_id.clone(),
+                    s.view.mirror_path.clone(),
+                    s.view.mirror_geometry.clone(),
+                ));
                 s.view.mirror_id = Some("env:mirror".to_string());
             }
         }
@@ -1525,7 +1693,11 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     if remove_mirror {
         let id = s.view.mirror_id.take();
         let path = s.view.mirror_path.take();
-        s.add_history(editor::HistoryEntry::Mirror(id, path, s.view.mirror_geometry.clone()));
+        s.add_history(editor::HistoryEntry::Mirror(
+            id,
+            path,
+            s.view.mirror_geometry.clone(),
+        ));
         if let Some(mesh) = s.render.mirror.take() {
             mesh.destroy(gl);
         }
@@ -1544,25 +1716,32 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     [w2 - 12.5, 20.],
                     egui::DragValue::new(&mut heights[0])
                         .range(-500f32..=high)
-                        .speed(1.)
+                        .speed(1.),
                 );
                 let r1 = ui.add_sized(
                     [w2 - 12.5, 20.],
                     egui::DragValue::new(&mut heights[1])
                         .range(low..=500f32)
-                        .speed(1.)
+                        .speed(1.),
                 );
-                trigger_history(ui, &[r0, r1],
+                trigger_history(
+                    ui,
+                    &[r0, r1],
                     || s2.view.fog_heights,
                     |x| s3.add_history(editor::HistoryEntry::FogHeights(x)),
-                    || () // Intentional no-op
+                    || (), // Intentional no-op
                 );
                 remove_heights = ui.small_button(SMALL_X).clicked();
-
             });
         }
         None => {
-            if ui.add_sized([w, 20.], egui::Button::new(s.data.locale.get("add-fog-heights"))).clicked() {
+            if ui
+                .add_sized(
+                    [w, 20.],
+                    egui::Button::new(s.data.locale.get("add-fog-heights")),
+                )
+                .clicked()
+            {
                 let h = s.view.fog_heights.replace([-50., -30.]);
                 s.add_history(editor::HistoryEntry::FogHeights(h));
             }
@@ -1577,7 +1756,10 @@ fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
     if s.view.session.is_some()
         && ui
-            .add_sized([w, 20.], egui::Button::new(s.data.locale.get("close-environment")))
+            .add_sized(
+                [w, 20.],
+                egui::Button::new(s.data.locale.get("close-environment")),
+            )
             .clicked()
     {
         close_environment(s, gl);
@@ -1612,7 +1794,6 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     if let Some(sel) = s.state.ui.view_mesh.as_deref()
         && let Some(Some(mesh)) = s.view.meshes.get_mut(sel)
     {
-
         let w = ui.available_width();
 
         ui.add_space(5.);
@@ -1620,7 +1801,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         let mut renamed = None;
         let rename = s.data.locale.get_with_args(
             "rename-asset",
-            &[(Cow::Borrowed("name"), FluentValue::String(sel.into()))].into()
+            &[(Cow::Borrowed("name"), FluentValue::String(sel.into()))].into(),
         );
         ui.add_sized([w, 20.], TextInput::new(&rename, &mut renamed));
         if let Some(new_name) = renamed {
@@ -1655,7 +1836,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 }
                 let placement = s.data.locale.get_with_args(
                     "placement-counter",
-                    &[(Cow::Borrowed("index"), (p_i + 1).into())].into()
+                    &[(Cow::Borrowed("index"), (p_i + 1).into())].into(),
                 );
                 ui.label(placement);
             });
@@ -1664,7 +1845,12 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 let w2 = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
                 let w3 = (ui.available_width() - ui.spacing().item_spacing.x * 2.0) / 3.0;
 
-                let modes = s.state.ui.view_rotation_modes.entry(sel.to_string()).or_default();
+                let modes = s
+                    .state
+                    .ui
+                    .view_rotation_modes
+                    .entry(sel.to_string())
+                    .or_default();
                 if modes.len() <= p_i {
                     modes.push(Default::default());
                 }
@@ -1691,11 +1877,12 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 ui.horizontal(|ui| {
                     ui.label(s.data.locale.get("orientation"));
 
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new("?").small().color(ui.visuals().weak_text_color())
-                        )
-                    ).on_hover_text(s.data.locale.get("orientation-desc"));
+                    ui.add(egui::Label::new(
+                        egui::RichText::new("?")
+                            .small()
+                            .color(ui.visuals().weak_text_color()),
+                    ))
+                    .on_hover_text(s.data.locale.get("orientation-desc"));
                 });
                 quat_row(
                     ui,
@@ -1711,17 +1898,18 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             },
                         ))
                     },
-                    || s3.rebuild_meshes(gl)
+                    || s3.rebuild_meshes(gl),
                 );
 
                 ui.horizontal(|ui| {
                     ui.label(s.data.locale.get("rotation"));
 
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new("?").small().color(ui.visuals().weak_text_color())
-                        )
-                    ).on_hover_text(s.data.locale.get("rotation-desc"));
+                    ui.add(egui::Label::new(
+                        egui::RichText::new("?")
+                            .small()
+                            .color(ui.visuals().weak_text_color()),
+                    ))
+                    .on_hover_text(s.data.locale.get("rotation-desc"));
                 });
                 quat_row(
                     ui,
@@ -1811,15 +1999,30 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 ui.label(s.data.locale.get("id-label"));
                 ui.horizontal(|ui| {
                     let layout = Layout::left_to_right(egui::Align::Min);
-                    ui.allocate_ui_with_layout([w2, 20.].into(), layout, |ui| { ui.set_width(w2); ui.label("ID group") });
-                    ui.allocate_ui_with_layout([w2 / 2. - 15., 20.].into(), layout, |ui| { ui.set_width(w2 / 2. - 15.); ui.label("ID") });
-                    ui.allocate_ui_with_layout([w2 / 2. - 15., 20.].into(), layout, |ui| { ui.set_width(w2 / 2. - 15.); ui.label("Step") });
+                    ui.allocate_ui_with_layout([w2, 20.].into(), layout, |ui| {
+                        ui.set_width(w2);
+                        ui.label("ID group")
+                    });
+                    ui.allocate_ui_with_layout([w2 / 2. - 15., 20.].into(), layout, |ui| {
+                        ui.set_width(w2 / 2. - 15.);
+                        ui.label("ID")
+                    });
+                    ui.allocate_ui_with_layout([w2 / 2. - 15., 20.].into(), layout, |ui| {
+                        ui.set_width(w2 / 2. - 15.);
+                        ui.label("Step")
+                    });
                 });
                 let mut first_none = true;
                 let mut add_entry = false;
                 let mut pop_entry = false;
                 let ids_len = placement.ids.len();
-                for (idx, (entry, step)) in placement.ids.list_mut().iter_mut().zip(placement.id_step.list_mut()).enumerate() {
+                for (idx, (entry, step)) in placement
+                    .ids
+                    .list_mut()
+                    .iter_mut()
+                    .zip(placement.id_step.list_mut())
+                    .enumerate()
+                {
                     match (first_none, entry) {
                         (_, Some((group, id))) => {
                             ui.horizontal(|ui| {
@@ -1836,17 +2039,15 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                     s2.add_history(editor::HistoryEntry::ViewPlacement(
                                         editor::ViewPlacementsSnapshot {
                                             id: sel.to_string(),
-                                            placements: mesh2.view_placements.clone()
-                                        }
+                                            placements: mesh2.view_placements.clone(),
+                                        },
                                     ));
                                     *group = g2;
                                 }
                                 let mut id2 = *id;
                                 let resp = ui.add_sized(
-                                    [(w2/2.) - 15., 20.],
-                                    egui::DragValue::new(&mut id2)
-                                        .speed(0.25)
-                                        .range(1..=500)
+                                    [(w2 / 2.) - 15., 20.],
+                                    egui::DragValue::new(&mut id2).speed(0.25).range(1..=500),
                                 );
 
                                 match step.as_mut() {
@@ -1856,30 +2057,41 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                             [w2 / 2. - 15., 20.],
                                             egui::DragValue::new(&mut step2)
                                                 .speed(0.25)
-                                                .range(-500..=500)
+                                                .range(-500..=500),
                                         );
-                                        trigger_history(ui, &[resp],
+                                        trigger_history(
+                                            ui,
+                                            &[resp],
                                             || mesh2.view_placements.clone(),
-                                            |x| s2.add_history(editor::HistoryEntry::ViewPlacement(
-                                                editor::ViewPlacementsSnapshot { id: sel.to_string(), placements: x }
-                                            )),
-                                            || s3.rebuild_meshes(gl)
+                                            |x| {
+                                                s2.add_history(editor::HistoryEntry::ViewPlacement(
+                                                    editor::ViewPlacementsSnapshot {
+                                                        id: sel.to_string(),
+                                                        placements: x,
+                                                    },
+                                                ))
+                                            },
+                                            || s3.rebuild_meshes(gl),
                                         );
                                         *step = step2;
                                     }
                                     _ => {
-                                        ui.add_sized(
-                                            [w2/2. - 15., 20.],
-                                            egui::Label::new("--")
-                                        );
+                                        ui.add_sized([w2 / 2. - 15., 20.], egui::Label::new("--"));
                                     }
                                 }
-                                trigger_history(ui, &[resp],
+                                trigger_history(
+                                    ui,
+                                    &[resp],
                                     || mesh2.view_placements.clone(),
-                                    |x| s2.add_history(editor::HistoryEntry::ViewPlacement(
-                                        editor::ViewPlacementsSnapshot { id: sel.to_string(), placements: x }
-                                    )),
-                                    || s3.rebuild_meshes(gl)
+                                    |x| {
+                                        s2.add_history(editor::HistoryEntry::ViewPlacement(
+                                            editor::ViewPlacementsSnapshot {
+                                                id: sel.to_string(),
+                                                placements: x,
+                                            },
+                                        ))
+                                    },
+                                    || s3.rebuild_meshes(gl),
                                 );
                                 *id = id2;
                                 if ids_len - 1 == idx {
@@ -1888,10 +2100,9 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             });
                         }
                         (true, None) => {
-                            add_entry = ui.add_sized(
-                                [w, 20.],
-                                egui::Button::new(s.data.locale.get("add-id"))
-                            ).clicked();
+                            add_entry = ui
+                                .add_sized([w, 20.], egui::Button::new(s.data.locale.get("add-id")))
+                                .clicked();
                             first_none = false;
                         }
                         (false, None) => {
@@ -1900,14 +2111,15 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     }
                 }
                 if add_entry {
-                    placement.ids.push((data::LightGroup::CenterLasers, 0));
+                    placement
+                        .ids
+                        .push((data::mesh::LightGroup::CenterLasers, 0));
                     placement.id_step.push(0);
                 }
                 if pop_entry {
                     let _ = placement.ids.pop();
                     let _ = placement.id_step.pop();
                 }
-
 
                 ui.label(s.data.locale.get("action-group-settings"));
                 let mut repl = None;
@@ -1918,15 +2130,23 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             .width(w)
                             .selected_text(current_side.name())
                             .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut current_side, SpinSide::Left, SpinSide::Left.name());
-                                ui.selectable_value(&mut current_side, SpinSide::Right, SpinSide::Right.name());
+                                ui.selectable_value(
+                                    &mut current_side,
+                                    SpinSide::Left,
+                                    SpinSide::Left.name(),
+                                );
+                                ui.selectable_value(
+                                    &mut current_side,
+                                    SpinSide::Right,
+                                    SpinSide::Right.name(),
+                                );
                             });
                         if current_side != *side {
                             s2.add_history(editor::HistoryEntry::ViewPlacement(
                                 editor::ViewPlacementsSnapshot {
                                     id: sel.to_string(),
                                     placements: mesh2.view_placements.clone(),
-                                }
+                                },
                             ));
                             *side = current_side;
                         }
@@ -1941,29 +2161,36 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 ui.allocate_ui_with_layout(
                                     [w - if axis.is_some() { 25. } else { 0. }, 20.].into(),
                                     Layout::left_to_right(egui::Align::Min),
-                                    |ui| ui.label(s.data.locale.get("spin-Axis"))
+                                    |ui| ui.label(s.data.locale.get("spin-Axis")),
                                 );
-                            }
+                            },
                         );
 
                         let mut set_axis = false;
                         match axis.as_mut() {
                             None => {
-                                set_axis = ui.add_sized(
-                                    [w, 20.],
-                                    egui::Button::new(s.data.locale.get("set-spin-axis"))
-                                ).clicked();
+                                set_axis = ui
+                                    .add_sized(
+                                        [w, 20.],
+                                        egui::Button::new(s.data.locale.get("set-spin-axis")),
+                                    )
+                                    .clicked();
                             }
                             Some(axs) => {
-                                vec3_row(ui, axs, w3,
+                                vec3_row(
+                                    ui,
+                                    axs,
+                                    w3,
                                     || mesh2.view_placements.clone(),
-                                    |x| s2.add_history(editor::HistoryEntry::ViewPlacement(
-                                        editor::ViewPlacementsSnapshot {
-                                            id: sel.to_string(),
-                                            placements: x,
-                                        }
-                                    )),
-                                    || s3.rebuild_meshes(gl)
+                                    |x| {
+                                        s2.add_history(editor::HistoryEntry::ViewPlacement(
+                                            editor::ViewPlacementsSnapshot {
+                                                id: sel.to_string(),
+                                                placements: x,
+                                            },
+                                        ))
+                                    },
+                                    || s3.rebuild_meshes(gl),
                                 );
                             }
                         }
@@ -1973,18 +2200,37 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                         ui.add_space(5.);
 
-                        if ui.add_sized([w, 20.], egui::Button::new(s.data.locale.get("remove-action"))).clicked() {
+                        if ui
+                            .add_sized(
+                                [w, 20.],
+                                egui::Button::new(s.data.locale.get("remove-action")),
+                            )
+                            .clicked()
+                        {
                             repl = Some(ActionType::Static);
                         }
-                    },
-                    editor::ActionType::Ring { layer, angles, deltas, start } => {
+                    }
+                    editor::ActionType::Ring {
+                        layer,
+                        angles,
+                        deltas,
+                        start,
+                    } => {
                         let mut current_layer = *layer;
                         egui::ComboBox::from_id_salt(format!("{p_i}-{sel}-ring-action"))
                             .width(w)
                             .selected_text(current_layer.name())
                             .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut current_layer, RingType::Inner, RingType::Inner.name());
-                                ui.selectable_value(&mut current_layer, RingType::Outer, RingType::Outer.name());
+                                ui.selectable_value(
+                                    &mut current_layer,
+                                    RingType::Inner,
+                                    RingType::Inner.name(),
+                                );
+                                ui.selectable_value(
+                                    &mut current_layer,
+                                    RingType::Outer,
+                                    RingType::Outer.name(),
+                                );
                             });
 
                         if current_layer != *layer {
@@ -1992,7 +2238,7 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 editor::ViewPlacementsSnapshot {
                                     id: sel.to_string(),
                                     placements: mesh2.view_placements.clone(),
-                                }
+                                },
                             ));
                             *layer = current_layer;
                         }
@@ -2001,75 +2247,84 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             [w, 20.].into(),
                             Layout::right_to_left(egui::Align::Min),
                             |ui| {
-                                if start.is_some()
-                                && ui.small_button(SMALL_X).clicked() {
+                                if start.is_some() && ui.small_button(SMALL_X).clicked() {
                                     *start = None;
                                 }
                                 ui.allocate_ui_with_layout(
                                     [w - if start.is_some() { 25. } else { 0. }, 20.].into(),
                                     Layout::left_to_right(egui::Align::Min),
-                                    |ui| ui.label(s.data.locale.get("default-positions"))
+                                    |ui| ui.label(s.data.locale.get("default-positions")),
                                 );
-                            }
+                            },
                         );
 
                         let mut add_start = false;
                         match start.as_mut() {
                             Some([in_angle, in_offset, out_angle, out_offset]) => {
-                                let (resp, vals) = ui.horizontal(|ui| {
-                                    let (a, b, ia, io) = ui.vertical(|ui| {
-                                        ui.label(s.data.locale.get("inner-ring-angle"));
-                                        let mut ia = *in_angle;
-                                        let a = ui.add_sized(
-                                            [w2, 20.],
-                                            egui::DragValue::new(&mut ia)
-                                                .speed(1.)
-                                                .range(-360..=360)
-                                        );
+                                let (resp, vals) = ui
+                                    .horizontal(|ui| {
+                                        let (a, b, ia, io) = ui
+                                            .vertical(|ui| {
+                                                ui.label(s.data.locale.get("inner-ring-angle"));
+                                                let mut ia = *in_angle;
+                                                let a = ui.add_sized(
+                                                    [w2, 20.],
+                                                    egui::DragValue::new(&mut ia)
+                                                        .speed(1.)
+                                                        .range(-360..=360),
+                                                );
 
-                                        ui.label(s.data.locale.get("inner-ring-offset"));
-                                        let mut io = *in_offset;
-                                        let b = ui.add_sized(
-                                            [w2, 20.],
-                                            egui::DragValue::new(&mut io)
-                                                .speed(1.)
-                                                .range(-360..=360)
-                                        );
+                                                ui.label(s.data.locale.get("inner-ring-offset"));
+                                                let mut io = *in_offset;
+                                                let b = ui.add_sized(
+                                                    [w2, 20.],
+                                                    egui::DragValue::new(&mut io)
+                                                        .speed(1.)
+                                                        .range(-360..=360),
+                                                );
 
-                                        (a, b, ia, io)
-                                    }).inner;
-                                    let (c, d, oa, oo) = ui.vertical(|ui| {
-                                        ui.label(s.data.locale.get("outer-ring-angle"));
-                                        let mut ia = *out_angle;
-                                        let a = ui.add_sized(
-                                            [w2, 20.],
-                                            egui::DragValue::new(&mut ia)
-                                                .speed(1.)
-                                                .range(-360..=360)
-                                        );
+                                                (a, b, ia, io)
+                                            })
+                                            .inner;
+                                        let (c, d, oa, oo) = ui
+                                            .vertical(|ui| {
+                                                ui.label(s.data.locale.get("outer-ring-angle"));
+                                                let mut ia = *out_angle;
+                                                let a = ui.add_sized(
+                                                    [w2, 20.],
+                                                    egui::DragValue::new(&mut ia)
+                                                        .speed(1.)
+                                                        .range(-360..=360),
+                                                );
 
-                                        ui.label(s.data.locale.get("outer-ring-offset"));
-                                        let mut io = *out_offset;
-                                        let b = ui.add_sized(
-                                            [w2, 20.],
-                                            egui::DragValue::new(&mut io)
-                                                .speed(1.)
-                                                .range(-360..=360)
-                                        );
+                                                ui.label(s.data.locale.get("outer-ring-offset"));
+                                                let mut io = *out_offset;
+                                                let b = ui.add_sized(
+                                                    [w2, 20.],
+                                                    egui::DragValue::new(&mut io)
+                                                        .speed(1.)
+                                                        .range(-360..=360),
+                                                );
 
-                                        (a, b, ia, io)
-                                    }).inner;
-                                    ([a, b, c, d], (ia, io, oa, oo))
-                                }).inner;
-                                trigger_history(ui, &resp,
+                                                (a, b, ia, io)
+                                            })
+                                            .inner;
+                                        ([a, b, c, d], (ia, io, oa, oo))
+                                    })
+                                    .inner;
+                                trigger_history(
+                                    ui,
+                                    &resp,
                                     || mesh2.view_placements.clone(),
-                                    |x| s2.add_history(editor::HistoryEntry::ViewPlacement(
-                                        editor::ViewPlacementsSnapshot {
-                                            id: sel.to_string(),
-                                            placements: x,
-                                        }
-                                    )),
-                                    || s3.rebuild_meshes(gl)
+                                    |x| {
+                                        s2.add_history(editor::HistoryEntry::ViewPlacement(
+                                            editor::ViewPlacementsSnapshot {
+                                                id: sel.to_string(),
+                                                placements: x,
+                                            },
+                                        ))
+                                    },
+                                    || s3.rebuild_meshes(gl),
                                 );
                                 *in_angle = vals.0;
                                 *in_offset = vals.1;
@@ -2077,10 +2332,14 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 *out_offset = vals.3;
                             }
                             None => {
-                                add_start = ui.add_sized(
-                                    [w, 20.],
-                                    egui::Button::new(s.data.locale.get("add-default-positions"))
-                                ).clicked()
+                                add_start = ui
+                                    .add_sized(
+                                        [w, 20.],
+                                        egui::Button::new(
+                                            s.data.locale.get("add-default-positions"),
+                                        ),
+                                    )
+                                    .clicked()
                             }
                         }
                         if add_start {
@@ -2107,17 +2366,23 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                                     [w2 - 25., 20.],
                                                     egui::DragValue::new(&mut current_angle)
                                                         .speed(1.)
-                                                        .range(-360..=360)
+                                                        .range(-360..=360),
                                                 );
-                                                trigger_history(ui, &[resp],
+                                                trigger_history(
+                                                    ui,
+                                                    &[resp],
                                                     || mesh2.view_placements.clone(),
-                                                    |x| s2.add_history(editor::HistoryEntry::ViewPlacement(
-                                                        editor::ViewPlacementsSnapshot {
-                                                            id: sel.to_string(),
-                                                            placements: x,
-                                                        }
-                                                    )),
-                                                    || s3.rebuild_meshes(gl)
+                                                    |x| {
+                                                        s2.add_history(
+                                                            editor::HistoryEntry::ViewPlacement(
+                                                                editor::ViewPlacementsSnapshot {
+                                                                    id: sel.to_string(),
+                                                                    placements: x,
+                                                                },
+                                                            ),
+                                                        )
+                                                    },
+                                                    || s3.rebuild_meshes(gl),
                                                 );
                                                 if current_angle != *angle {
                                                     *angle = current_angle;
@@ -2130,13 +2395,16 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                         if let Some(i) = to_remove {
                                             angles.remove(i);
                                         }
-                                        if ui.add_sized(
-                                            [w2, 20.],
-                                            egui::Button::new(s.data.locale.get("add"))
-                                        ).clicked() {
+                                        if ui
+                                            .add_sized(
+                                                [w2, 20.],
+                                                egui::Button::new(s.data.locale.get("add")),
+                                            )
+                                            .clicked()
+                                        {
                                             angles.push(0.);
                                         }
-                                    }
+                                    },
                                 );
                                 ui.allocate_ui_with_layout(
                                     [w2, 0.].into(),
@@ -2154,17 +2422,23 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                                     [w2 - 25., 20.],
                                                     egui::DragValue::new(&mut current_angle)
                                                         .speed(1.)
-                                                        .range(-360..=360)
+                                                        .range(-360..=360),
                                                 );
-                                                trigger_history(ui, &[resp],
+                                                trigger_history(
+                                                    ui,
+                                                    &[resp],
                                                     || mesh2.view_placements.clone(),
-                                                    |x| s2.add_history(editor::HistoryEntry::ViewPlacement(
-                                                        editor::ViewPlacementsSnapshot {
-                                                            id: sel.to_string(),
-                                                            placements: x,
-                                                        }
-                                                    )),
-                                                    || s3.rebuild_meshes(gl)
+                                                    |x| {
+                                                        s2.add_history(
+                                                            editor::HistoryEntry::ViewPlacement(
+                                                                editor::ViewPlacementsSnapshot {
+                                                                    id: sel.to_string(),
+                                                                    placements: x,
+                                                                },
+                                                            ),
+                                                        )
+                                                    },
+                                                    || s3.rebuild_meshes(gl),
                                                 );
                                                 if current_angle != *angle {
                                                     *angle = current_angle;
@@ -2177,48 +2451,69 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                         if let Some(i) = to_remove {
                                             deltas.remove(i);
                                         }
-                                        if ui.add_sized(
-                                            [w2, 20.],
-                                            egui::Button::new(s.data.locale.get("add"))
-                                        ).clicked() {
+                                        if ui
+                                            .add_sized(
+                                                [w2, 20.],
+                                                egui::Button::new(s.data.locale.get("add")),
+                                            )
+                                            .clicked()
+                                        {
                                             deltas.push(0.);
                                         }
-                                    }
+                                    },
                                 );
-                            }
+                            },
                         );
 
                         ui.add_space(5.);
 
-                        if ui.add_sized([w, 20.], egui::Button::new(s.data.locale.get("remove-action"))).clicked() {
+                        if ui
+                            .add_sized(
+                                [w, 20.],
+                                egui::Button::new(s.data.locale.get("remove-action")),
+                            )
+                            .clicked()
+                        {
                             repl = Some(ActionType::Static);
                         }
-                    },
+                    }
                     editor::ActionType::Static => {
                         ui.horizontal(|ui| {
-                            if ui.add_sized([w2, 20.], egui::Button::new(s.data.locale.get("add-spinning"))).clicked() {
+                            if ui
+                                .add_sized(
+                                    [w2, 20.],
+                                    egui::Button::new(s.data.locale.get("add-spinning")),
+                                )
+                                .clicked()
+                            {
                                 repl = Some(ActionType::Spinning {
                                     side: editor::SpinSide::Left,
-                                    axis: None
+                                    axis: None,
                                 })
                             }
-                            if ui.add_sized([w2, 20.], egui::Button::new(s.data.locale.get("add-rings"))).clicked() {
+                            if ui
+                                .add_sized(
+                                    [w2, 20.],
+                                    egui::Button::new(s.data.locale.get("add-rings")),
+                                )
+                                .clicked()
+                            {
                                 repl = Some(ActionType::Ring {
                                     layer: editor::RingType::Inner,
                                     angles: Vec::new(),
                                     deltas: Vec::new(),
-                                    start: None
+                                    start: None,
                                 })
                             }
                         });
-                    },
+                    }
                 }
                 if let Some(repl) = repl {
                     s2.add_history(editor::HistoryEntry::ViewPlacement(
                         editor::ViewPlacementsSnapshot {
                             id: sel.to_string(),
-                            placements: mesh2.view_placements.clone()
-                        }
+                            placements: mesh2.view_placements.clone(),
+                        },
                     ));
                     placement.action_type = repl;
                 }
@@ -2226,7 +2521,10 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 ui.add_space(5.);
 
                 if ui
-                    .add_sized([ui.available_width(), 20.0], egui::Button::new(s.data.locale.get("delete")))
+                    .add_sized(
+                        [ui.available_width(), 20.0],
+                        egui::Button::new(s.data.locale.get("delete")),
+                    )
                     .clicked()
                 {
                     to_remove = Some(p_i);
@@ -2246,9 +2544,20 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
         }
 
-        if ui.add_sized([w, 20.], egui::Button::new(s.data.locale.get("add-Placement"))).clicked() {
+        if ui
+            .add_sized(
+                [w, 20.],
+                egui::Button::new(s.data.locale.get("add-Placement")),
+            )
+            .clicked()
+        {
             mesh.view_placements.push(ViewPlacement::default());
-            s.state.ui.collapsed.entry(sel.to_string()).or_default().push(false);
+            s.state
+                .ui
+                .collapsed
+                .entry(sel.to_string())
+                .or_default()
+                .push(false);
             s.state
                 .ui
                 .view_rotation_modes
@@ -2261,8 +2570,10 @@ fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 }
 
 fn draw_view_gl(
-    s: &UnsafeMutRef<App>, gl: &glow::Context,
-    view: &Mat4, proj: &Mat4,
+    s: &UnsafeMutRef<App>,
+    gl: &glow::Context,
+    view: &Mat4,
+    proj: &Mat4,
     window: (i32, i32),
 ) {
     let mut calls = Vec::new();
@@ -2275,7 +2586,10 @@ fn draw_view_gl(
                     instances: draws,
                     wireframe: s.state.wireframe,
                     cull: vm.data.cull,
-                    bloomfog: matches!(vm.data.bloomfog_style, BloomfogStyle::BloomOnly | BloomfogStyle::Everything),
+                    bloomfog: matches!(
+                        vm.data.bloomfog_style,
+                        BloomfogStyle::BloomOnly | BloomfogStyle::Everything
+                    ),
                     bloom: vm.data.do_bloom,
                     solid: vm.data.do_solid,
                     mirror: vm.data.do_mirroring,
@@ -2302,19 +2616,37 @@ fn draw_view_gl(
     match s.state.view_style {
         editor::ViewStyle::Edit => {
             s.ref_mut().render.renderer.draw_meshes(
-                gl, view, proj, &calls,
-                s.render.mirror.as_ref(), s.state.wireframe,
-                true, window,
+                gl,
+                view,
+                proj,
+                &calls,
+                s.render.mirror.as_ref(),
+                s.state.wireframe,
+                true,
+                window,
             );
         }
         editor::ViewStyle::Beatcraft { blackout_sky } => {
             s.ref_mut().render.renderer.draw_meshes_fancy(
-                gl, view, proj, &calls,
-                window, if s.state.show_grid { GridType::WorldGrid } else { GridType::None },
-                s.render.mirror.as_ref(), s.state.wireframe,
+                gl,
+                view,
+                proj,
+                &calls,
+                window,
+                if s.state.show_grid {
+                    GridType::WorldGrid
+                } else {
+                    GridType::None
+                },
+                s.render.mirror.as_ref(),
+                s.state.wireframe,
                 s.view.fog_heights.unwrap_or([-50., -30.]),
                 true,
-                if blackout_sky { (0., 0., 0., 1.) } else { (0.07, 0.08, 0.11, 1.) }
+                if blackout_sky {
+                    (0., 0., 0., 1.)
+                } else {
+                    (0.07, 0.08, 0.11, 1.)
+                },
             );
         }
     }
@@ -2471,12 +2803,18 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 delete_bb = ui.small_button(SMALL_X).clicked();
                             });
                             ui.label(self2.data.locale.get("billboard-origin"));
-                            vec3_row(ui, &mut bb.origin, w3,
+                            vec3_row(
+                                ui,
+                                &mut bb.origin,
+                                w3,
                                 || mesh2.data.placements.clone(),
                                 |t| {
                                     self3.add_history(editor::HistoryEntry::MeshPlacement(
                                         light_mesh::LightMeshPlacementSnapshot {
-                                            view_id: self3.get_current_mesh_id().unwrap().to_string(),
+                                            view_id: self3
+                                                .get_current_mesh_id()
+                                                .unwrap()
+                                                .to_string(),
                                             placements: t,
                                         },
                                     ))
@@ -2484,12 +2822,18 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 || self4.rebuild_meshes(gl),
                             );
                             ui.label(self2.data.locale.get("billboard-axis"));
-                            vec3_row(ui, &mut bb.axis, w3,
+                            vec3_row(
+                                ui,
+                                &mut bb.axis,
+                                w3,
                                 || mesh2.data.placements.clone(),
                                 |t| {
                                     self3.add_history(editor::HistoryEntry::MeshPlacement(
                                         light_mesh::LightMeshPlacementSnapshot {
-                                            view_id: self3.get_current_mesh_id().unwrap().to_string(),
+                                            view_id: self3
+                                                .get_current_mesh_id()
+                                                .unwrap()
+                                                .to_string(),
                                             placements: t,
                                         },
                                     ))
@@ -2497,19 +2841,32 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 || self4.rebuild_meshes(gl),
                             );
                             ui.label(self2.data.locale.get("billboard-normal"));
-                            vec3_row(ui, &mut bb.normal, w3,
+                            vec3_row(
+                                ui,
+                                &mut bb.normal,
+                                w3,
                                 || mesh2.data.placements.clone(),
                                 |t| {
                                     self3.add_history(editor::HistoryEntry::MeshPlacement(
                                         light_mesh::LightMeshPlacementSnapshot {
-                                            view_id: self3.get_current_mesh_id().unwrap().to_string(),
+                                            view_id: self3
+                                                .get_current_mesh_id()
+                                                .unwrap()
+                                                .to_string(),
                                             placements: t,
                                         },
                                     ))
                                 },
                                 || self4.rebuild_meshes(gl),
                             );
-                            if ui.add_sized([w, 20.], egui::Button::new(self2.data.locale.get("camera-lock")).selected(bb.camera_lock)).clicked() {
+                            if ui
+                                .add_sized(
+                                    [w, 20.],
+                                    egui::Button::new(self2.data.locale.get("camera-lock"))
+                                        .selected(bb.camera_lock),
+                                )
+                                .clicked()
+                            {
                                 self3.add_history(editor::HistoryEntry::MeshPlacement(
                                     light_mesh::LightMeshPlacementSnapshot {
                                         view_id: self3.get_current_mesh_id().unwrap().to_string(),
@@ -2521,7 +2878,13 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             }
                         }
                         None => {
-                            if ui.add_sized([w, 20.], egui::Button::new(self2.data.locale.get("set-billboard"))).clicked() {
+                            if ui
+                                .add_sized(
+                                    [w, 20.],
+                                    egui::Button::new(self2.data.locale.get("set-billboard")),
+                                )
+                                .clicked()
+                            {
                                 placement.billboard = Some(BillboardData::default());
                             }
                         }
@@ -2543,13 +2906,20 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             });
 
                             let mut current = sets.style;
-                            egui::ComboBox::new(format!("shader-style-{}", pi), self2.data.locale.get("visual-style"))
-                                .selected_text(sets.style.translation_text(&mut self2.data.locale))
-                                .show_ui(ui, |ui| {
-                                    for style in ShaderStyle::iter_all() {
-                                        ui.selectable_value(&mut current, style, style.translation_text(&mut self2.data.locale));
-                                    }
-                                });
+                            egui::ComboBox::new(
+                                format!("shader-style-{}", pi),
+                                self2.data.locale.get("visual-style"),
+                            )
+                            .selected_text(sets.style.translation_text(&mut self2.data.locale))
+                            .show_ui(ui, |ui| {
+                                for style in ShaderStyle::iter_all() {
+                                    ui.selectable_value(
+                                        &mut current,
+                                        style,
+                                        style.translation_text(&mut self2.data.locale),
+                                    );
+                                }
+                            });
 
                             if current != sets.style {
                                 self3.add_history(editor::HistoryEntry::MeshPlacement(
@@ -2561,15 +2931,19 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 sets.style = current;
                                 self4.rebuild_meshes(gl);
                             }
-
                         }
                         None => {
-                            if ui.add_sized([w, 20.], egui::Button::new(self2.data.locale.get("set-shader-settings"))).clicked() {
+                            if ui
+                                .add_sized(
+                                    [w, 20.],
+                                    egui::Button::new(self2.data.locale.get("set-shader-settings")),
+                                )
+                                .clicked()
+                            {
                                 placement.shader_settings = Some(ShaderSettingsData::default());
                             }
                         }
                     }
-
 
                     ui.horizontal(|ui| {
                         let icon = if pt_collapsed.0[1] { R_ARROW } else { D_ARROW };
@@ -2597,7 +2971,13 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         if let Some(ri) = remap_to_remove {
                             placement.remap_data.shift_remove_index(ri);
                         }
-                        if ui.add_sized([w, 20.], egui::Button::new(self2.data.locale.get("add-data"))).clicked() {
+                        if ui
+                            .add_sized(
+                                [w, 20.],
+                                egui::Button::new(self2.data.locale.get("add-data")),
+                            )
+                            .clicked()
+                        {
                             placement.remap_data.insert(String::new(), String::new());
                         }
                     }
@@ -2612,7 +2992,10 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 self3.rebuild_meshes(gl);
             }
             if ui
-                .add_sized([w, 20.], egui::Button::new(self2.data.locale.get("add-placement")))
+                .add_sized(
+                    [w, 20.],
+                    egui::Button::new(self2.data.locale.get("add-placement")),
+                )
                 .clicked()
                 && let Some(first) = part_names.first()
             {
@@ -2691,7 +3074,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     break;
                 };
 
-                    if !*di_collapsed {
+                if !*di_collapsed {
                     let mat_label = entry.material.name();
                     let mut current = entry.material;
                     egui::ComboBox::from_id_salt(egui::Id::new("material_id").with(di))
@@ -2703,7 +3086,9 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         });
                     if current != entry.material {
                         self3.add_history(editor::HistoryEntry::MeshMeta(
-                                mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
+                            mesh2.data.snapshot_mesh_meta(
+                                self3.get_current_mesh_id().unwrap().to_string(),
+                            ),
                         ));
                         entry.material = current;
                         self3.rebuild_meshes(gl);
@@ -2722,7 +3107,9 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         });
                     if current != entry.color {
                         self3.add_history(editor::HistoryEntry::MeshMeta(
-                                mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
+                            mesh2.data.snapshot_mesh_meta(
+                                self3.get_current_mesh_id().unwrap().to_string(),
+                            ),
                         ));
                         entry.color = current;
                         self3.rebuild_meshes(gl);
@@ -2731,14 +3118,13 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     ui.horizontal(|ui| {
                         ui.label(self2.data.locale.get("texture"));
                         let mut current = entry.texture;
-                        let resp = ui.add(
-                            egui::DragValue::new(&mut current)
-                                .range(0..=255u8)
-                                .speed(1),
-                        );
+                        let resp =
+                            ui.add(egui::DragValue::new(&mut current).range(0..=255u8).speed(1));
                         if resp.changed() {
                             self3.add_history(editor::HistoryEntry::MeshMeta(
-                                mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
+                                mesh2.data.snapshot_mesh_meta(
+                                    self3.get_current_mesh_id().unwrap().to_string(),
+                                ),
                             ));
                             entry.texture = current;
                             self3.rebuild_meshes(gl);
@@ -2751,18 +3137,25 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
             if let Some(key) = data_to_remove {
                 self3.add_history(editor::HistoryEntry::MeshMeta(
-                    mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
+                    mesh2
+                        .data
+                        .snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string()),
                 ));
                 mesh.data.data.shift_remove(&key);
                 self3.rebuild_meshes(gl);
             }
 
             if ui
-                .add_sized([w, 20.], egui::Button::new(self2.data.locale.get("add-data-label")))
+                .add_sized(
+                    [w, 20.],
+                    egui::Button::new(self2.data.locale.get("add-data-label")),
+                )
                 .clicked()
             {
                 self3.add_history(editor::HistoryEntry::MeshMeta(
-                    mesh2.data.snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string())
+                    mesh2
+                        .data
+                        .snapshot_mesh_meta(self3.get_current_mesh_id().unwrap().to_string()),
                 ));
                 mesh.data.data.insert(
                     format!("new_data_{}", mesh.data.data.len()),
@@ -2808,15 +3201,13 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 let _ = sx.send(path);
                             }
                         });
-                        self3.add_routine(Box::new(move |s, gl| {
-                            match rx.try_recv() {
-                                Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
-                                Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
-                                Ok(src) => {
-                                    s.render.renderer.texture_paths.insert(id.clone(), src);
-                                    s.rebuild_meshes(gl);
-                                    RoutineAction::Remove
-                                }
+                        self3.add_routine(Box::new(move |s, gl| match rx.try_recv() {
+                            Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                            Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+                            Ok(src) => {
+                                s.render.renderer.texture_paths.insert(id.clone(), src);
+                                s.rebuild_meshes(gl);
+                                RoutineAction::Remove
                             }
                         }));
                     }
@@ -2832,7 +3223,10 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
 
             if ui
-                .add_sized([w, 20.], egui::Button::new(self2.data.locale.get("add-texture")))
+                .add_sized(
+                    [w, 20.],
+                    egui::Button::new(self2.data.locale.get("add-texture")),
+                )
                 .clicked()
             {
                 let next_key = (0..)
@@ -2841,7 +3235,6 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     .unwrap();
                 mesh.data.textures.insert(next_key, String::new());
             }
-
         }
 
         ui.horizontal(|ui| {
@@ -2862,7 +3255,10 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 });
                 ui.allocate_ui_with_layout(size, layout, |ui| {
                     ui.set_min_width(w2);
-                    ui.checkbox(&mut mesh.data.do_bloom, self2.data.locale.get("setting-bloom"))
+                    ui.checkbox(
+                        &mut mesh.data.do_bloom,
+                        self2.data.locale.get("setting-bloom"),
+                    )
                 });
             });
             ui.horizontal(|ui| {
@@ -2870,11 +3266,17 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 let layout = egui::Layout::left_to_right(egui::Align::Center);
                 ui.allocate_ui_with_layout(size, layout, |ui| {
                     ui.set_min_width(w2);
-                    ui.checkbox(&mut mesh.data.do_mirroring, self2.data.locale.get("setting-mirror"))
+                    ui.checkbox(
+                        &mut mesh.data.do_mirroring,
+                        self2.data.locale.get("setting-mirror"),
+                    )
                 });
                 ui.allocate_ui_with_layout(size, layout, |ui| {
                     ui.set_min_width(w2);
-                    ui.checkbox(&mut mesh.data.do_solid, self2.data.locale.get("setting-solid"))
+                    ui.checkbox(
+                        &mut mesh.data.do_solid,
+                        self2.data.locale.get("setting-solid"),
+                    )
                 });
             });
             egui::ComboBox::from_id_salt("bloomfog_style")
@@ -2886,7 +3288,11 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         BloomfogStyle::Everything,
                         BloomfogStyle::Nothing,
                     ] {
-                        ui.selectable_value(&mut mesh.data.bloomfog_style, style, style.label(&mut self2.data.locale));
+                        ui.selectable_value(
+                            &mut mesh.data.bloomfog_style,
+                            style,
+                            style.label(&mut self2.data.locale),
+                        );
                     }
                 });
         }
@@ -2917,7 +3323,10 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 self3.rebuild_meshes(gl);
             }
             if ui
-                .add_sized([w, 20.], egui::Button::new(self2.data.locale.get("add-credit")))
+                .add_sized(
+                    [w, 20.],
+                    egui::Button::new(self2.data.locale.get("add-credit")),
+                )
                 .clicked()
             {
                 mesh.data.credits.push(String::new());
@@ -2966,7 +3375,10 @@ fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             };
         }
         let mut new_part = None;
-        ui.add_sized([w, 20.], TextInput::new(s2.data.locale.get("add-part"), &mut new_part));
+        ui.add_sized(
+            [w, 20.],
+            TextInput::new(s2.data.locale.get("add-part"), &mut new_part),
+        );
         if let Some(name) = new_part {
             s2.add_history(editor::HistoryEntry::Mesh(light_mesh::LightMeshSnapshot {
                 id: s2.get_current_mesh_id().unwrap().to_string(),
@@ -2978,7 +3390,13 @@ fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32)) {
+fn draw_assembly_gl(
+    s: &UnsafeMutRef<App>,
+    gl: &glow::Context,
+    view: &Mat4,
+    proj: &Mat4,
+    window: (i32, i32),
+) {
     let vp = proj * view;
     if let Some(sel) = s.editor.mesh.as_deref()
         && let Some(Some(vm)) = s.view.meshes.get(sel)
@@ -2989,33 +3407,43 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                 editor::ViewStyle::Edit => {
                     s.ref_mut().render.renderer.draw_meshes(
                         gl,
-                        view, proj,
+                        view,
+                        proj,
                         &[MeshDrawCall {
                             mesh,
                             instances: instances.clone(),
                             wireframe: s.state.wireframe,
                             cull: vm.data.cull,
-                            bloomfog: matches!(vm.data.bloomfog_style, BloomfogStyle::BloomOnly | BloomfogStyle::Everything),
+                            bloomfog: matches!(
+                                vm.data.bloomfog_style,
+                                BloomfogStyle::BloomOnly | BloomfogStyle::Everything
+                            ),
                             bloom: vm.data.do_bloom,
                             solid: vm.data.do_solid,
                             mirror: vm.data.do_mirroring,
                             obstacle: false,
                             highlight: false,
                         }],
-                        s.render.mirror.as_ref(), s.state.wireframe, false,
+                        s.render.mirror.as_ref(),
+                        s.state.wireframe,
+                        false,
                         window,
                     );
                 }
                 editor::ViewStyle::Beatcraft { blackout_sky } => {
                     s.ref_mut().render.renderer.draw_meshes_fancy(
                         gl,
-                        view, proj,
+                        view,
+                        proj,
                         &[MeshDrawCall {
                             mesh,
                             instances: instances.clone(),
                             wireframe: s.state.wireframe,
                             cull: vm.data.cull,
-                            bloomfog: matches!(vm.data.bloomfog_style, BloomfogStyle::BloomOnly | BloomfogStyle::Everything),
+                            bloomfog: matches!(
+                                vm.data.bloomfog_style,
+                                BloomfogStyle::BloomOnly | BloomfogStyle::Everything
+                            ),
                             bloom: vm.data.do_bloom,
                             solid: vm.data.do_solid,
                             mirror: vm.data.do_mirroring,
@@ -3023,10 +3451,20 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                             highlight: false,
                         }],
                         window,
-                        if s.state.show_grid { GridType::WorldGrid } else { GridType::None },
-                        s.render.mirror.as_ref(), s.state.wireframe,
-                        s.view.fog_heights.unwrap_or([-50., -30.]), false,
-                        if blackout_sky { (0., 0., 0., 1.) } else { (0.07, 0.08, 0.11, 1.) }
+                        if s.state.show_grid {
+                            GridType::WorldGrid
+                        } else {
+                            GridType::None
+                        },
+                        s.render.mirror.as_ref(),
+                        s.state.wireframe,
+                        s.view.fog_heights.unwrap_or([-50., -30.]),
+                        false,
+                        if blackout_sky {
+                            (0., 0., 0., 1.)
+                        } else {
+                            (0.07, 0.08, 0.11, 1.)
+                        },
                     );
                 }
             }
@@ -3042,7 +3480,7 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                     instances: vec![InstanceData::new(
                         Vec4::ZERO,
                         Mat4::IDENTITY,
-                        [Vec4::splat(1.); 8]
+                        [Vec4::splat(1.); 8],
                     )],
                 }],
             );
@@ -3056,7 +3494,7 @@ fn draw_assembly_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj
                 instances: vec![InstanceData::new(
                     Vec4::ZERO,
                     Mat4::IDENTITY,
-                    [Vec4::splat(1.); 8]
+                    [Vec4::splat(1.); 8],
                 )],
                 size: 6.,
             });
@@ -3144,8 +3582,8 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             name: self3.get_current_part_name().unwrap().to_string(),
                         },
                         swap: editor::DataSwap {
-                            from: data::VertexId::Named(key.clone()),
-                            to: data::VertexId::Named(name),
+                            from: data::mesh::VertexId::Named(key.clone()),
+                            to: data::mesh::VertexId::Named(name),
                         },
                     });
                     self3.state.ui.working_key = WorkingRenameKey::None;
@@ -3208,8 +3646,8 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             name: self3.get_current_part_name().unwrap().to_string(),
                         },
                         swap: editor::DataSwap {
-                            from: data::VertexId::Named(key.clone()),
-                            to: data::VertexId::Named(name),
+                            from: data::mesh::VertexId::Named(key.clone()),
+                            to: data::mesh::VertexId::Named(name),
                         },
                     });
                     self3.state.ui.working_key = WorkingRenameKey::None;
@@ -3375,7 +3813,10 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
             ui.separator();
             let mut new_uv = None;
-            ui.add_sized([w, 20.], TextInput::new(self3.data.locale.get("add-named-uv"), &mut new_uv));
+            ui.add_sized(
+                [w, 20.],
+                TextInput::new(self3.data.locale.get("add-named-uv"), &mut new_uv),
+            );
             if let Some(name) = new_uv {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
@@ -3442,7 +3883,10 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 );
             }
             ui.separator();
-            if ui.button(self3.data.locale.get("add-indexed-normal")).clicked() {
+            if ui
+                .button(self3.data.locale.get("add-indexed-normal"))
+                .clicked()
+            {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
                         id: self3.get_current_mesh_id().unwrap().to_string(),
@@ -3488,8 +3932,8 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                     name: self3.get_current_part_name().unwrap().to_string(),
                                 },
                                 swap: editor::DataSwap {
-                                    from: data::NormalId::Named(key.clone()),
-                                    to: data::NormalId::Named(name.clone()),
+                                    from: data::mesh::NormalId::Named(key.clone()),
+                                    to: data::mesh::NormalId::Named(name.clone()),
                                 },
                             });
                             self3.state.ui.working_key = WorkingRenameKey::None;
@@ -3536,7 +3980,10 @@ fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 );
             }
             let mut new_norm = None;
-            ui.add_sized([w, 20.], TextInput::new(self3.data.locale.get("add-named-normal"), &mut new_norm));
+            ui.add_sized(
+                [w, 20.],
+                TextInput::new(self3.data.locale.get("add-named-normal"), &mut new_norm),
+            );
             if let Some(name) = new_norm {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
@@ -3666,26 +4113,32 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         &[
             (
                 "left".into(),
-                s.data.keymaps.toggle_mesh_part_back.format(&MODIFIER_NAMES, cfg!(target_os = "macos")).into()
+                s.data
+                    .keymaps
+                    .toggle_mesh_part_back
+                    .format(&MODIFIER_NAMES, cfg!(target_os = "macos"))
+                    .into(),
             ),
             (
                 "right".into(),
-                s.data.keymaps.toggle_mesh_part_forward.format(&MODIFIER_NAMES, cfg!(target_os = "macos")).into()
-            )
-        ].into()
+                s.data
+                    .keymaps
+                    .toggle_mesh_part_forward
+                    .format(&MODIFIER_NAMES, cfg!(target_os = "macos"))
+                    .into(),
+            ),
+        ]
+        .into(),
     );
     ui.label(label);
 
     if let Some(current) = s2.get_current_part_name() {
         let mut rename = None;
-        let ren = s.data.locale.get_with_args(
-            "rename-asset",
-            &[("name".into(), current.into())].into()
-        );
-        ui.add_sized(
-            [w, 20.],
-            TextInput::new(&ren, &mut rename),
-        );
+        let ren = s
+            .data
+            .locale
+            .get_with_args("rename-asset", &[("name".into(), current.into())].into());
+        ui.add_sized([w, 20.], TextInput::new(&ren, &mut rename));
         if let Some(rename) = rename {
             let _ = s.rename(editor::Rename::Part {
                 view_id: s.get_current_mesh_id().unwrap().to_string(),
@@ -3737,15 +4190,15 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             match match *vert {
                 VertexId::Index(i) => {
                     ui.label(format!("{i}"));
-                    VertVal::V3(part.vertices.indexed.get_mut(*i).unwrap())
+                    VertVal::V3(part.vertices.indexed.get_mut(i).unwrap())
                 }
                 VertexId::Named(n) => {
                     ui.label(n);
                     part.vertices
                         .named
-                        .get_mut(n)
+                        .get_mut(&n)
                         .map(VertVal::V3)
-                        .unwrap_or_else(|| VertVal::C3(part.vertices.compute.get_mut(n).unwrap()))
+                        .unwrap_or_else(|| VertVal::C3(part.vertices.compute.get_mut(&n).unwrap()))
                 }
             } {
                 VertVal::V3(v3) => {
@@ -3772,7 +4225,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     let VertexId::Named(key) = vert else {
                         unreachable!()
                     };
-                    compute_vertex_row(ui, (w2, w3), c3, key, part2, self3, gl);
+                    compute_vertex_row(ui, (w2, w3), c3, &key, part2, self3, gl);
                 }
             }
         }
@@ -3781,7 +4234,10 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             && let [v1, v2] = verts2.as_slice()
         {
             let mut comp_name = None;
-            ui.add_sized([w, 20.], TextInput::new(self3.data.locale.get("add-compute-vertex"), &mut comp_name));
+            ui.add_sized(
+                [w, 20.],
+                TextInput::new(self3.data.locale.get("add-compute-vertex"), &mut comp_name),
+            );
             if let Some(name) = comp_name {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
@@ -3809,11 +4265,14 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             .filter_triangles(&verts2)
             .map(|tri| {
                 let [a, b, c] = &mut tri.vertices;
-                ([
-                    (&mut a.normal, &mut a.uv),
-                    (&mut b.normal, &mut b.uv),
-                    (&mut c.normal, &mut c.uv),
-                ], &mut tri.material)
+                (
+                    [
+                        (&mut a.normal, &mut a.uv),
+                        (&mut b.normal, &mut b.uv),
+                        (&mut c.normal, &mut c.uv),
+                    ],
+                    &mut tri.material,
+                )
             })
             .collect();
 
@@ -3823,7 +4282,6 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             let mut v1 = *v1;
             let mut v2 = *v2;
             let mut v3 = *v3;
-
 
             let hint = if tris.len() == 1
                 && let Some(tri) = part4.filter_triangles(&[v1, v2, v3]).next()
@@ -3953,7 +4411,13 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
 
         if !verts.is_empty()
-        && ui.add_sized([w, 20.], egui::Button::new(self3.data.locale.get("dedupe-vertices"))).clicked() {
+            && ui
+                .add_sized(
+                    [w, 20.],
+                    egui::Button::new(self3.data.locale.get("dedupe-vertices")),
+                )
+                .clicked()
+        {
             self3.add_history(editor::HistoryEntry::MeshPart(
                 light_mesh::LightMeshPartSnapshot {
                     id: self3.get_current_mesh_id().unwrap().to_string(),
@@ -3967,7 +4431,13 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &Mat4, window: (i32, i32)) {
+fn draw_edit_gl(
+    s: &UnsafeMutRef<App>,
+    gl: &glow::Context,
+    view: &Mat4,
+    proj: &Mat4,
+    window: (i32, i32),
+) {
     let vp = proj * view;
     if let Some((_, name, _part)) = s.get_current_part()
         && let Some(sel) = s.editor.mesh.as_deref()
@@ -3976,14 +4446,13 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
     {
         let calls = vec![MeshDrawCall {
             mesh,
-            instances: vec![InstanceData::new(
-                Vec4::ZERO,
-                Mat4::IDENTITY,
-                LIGHT_COLORS
-            )],
+            instances: vec![InstanceData::new(Vec4::ZERO, Mat4::IDENTITY, LIGHT_COLORS)],
             wireframe: s.state.wireframe,
             cull: vm.data.cull,
-            bloomfog: matches!(vm.data.bloomfog_style, BloomfogStyle::BloomOnly | BloomfogStyle::Everything),
+            bloomfog: matches!(
+                vm.data.bloomfog_style,
+                BloomfogStyle::BloomOnly | BloomfogStyle::Everything
+            ),
             bloom: vm.data.do_bloom,
             solid: vm.data.do_solid,
             mirror: vm.data.do_mirroring,
@@ -3994,18 +4463,37 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
         match s.state.view_style {
             editor::ViewStyle::Edit => {
                 s.ref_mut().render.renderer.draw_meshes(
-                    gl, view, proj, &calls,
-                    s.render.mirror.as_ref(), s.state.wireframe, false,
+                    gl,
+                    view,
+                    proj,
+                    &calls,
+                    s.render.mirror.as_ref(),
+                    s.state.wireframe,
+                    false,
                     window,
                 );
             }
             editor::ViewStyle::Beatcraft { blackout_sky } => {
                 s.ref_mut().render.renderer.draw_meshes_fancy(
-                    gl, view, proj, &calls,
-                    window, if s.state.show_grid { GridType::WorldGrid } else { GridType::None },
-                    s.render.mirror.as_ref(), s.state.wireframe,
-                    s.view.fog_heights.unwrap_or([-50., -30.]), false,
-                    if blackout_sky { (0., 0., 0., 1.) } else { (0.07, 0.08, 0.11, 1.) }
+                    gl,
+                    view,
+                    proj,
+                    &calls,
+                    window,
+                    if s.state.show_grid {
+                        GridType::WorldGrid
+                    } else {
+                        GridType::None
+                    },
+                    s.render.mirror.as_ref(),
+                    s.state.wireframe,
+                    s.view.fog_heights.unwrap_or([-50., -30.]),
+                    false,
+                    if blackout_sky {
+                        (0., 0., 0., 1.)
+                    } else {
+                        (0.07, 0.08, 0.11, 1.)
+                    },
                 );
             }
         }
@@ -4017,7 +4505,7 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
                 instances: vec![InstanceData::new(
                     Vec4::ZERO,
                     Mat4::IDENTITY,
-                    [Vec4::new(0., 1., 1., 1.); 8]
+                    [Vec4::new(0., 1., 1., 1.); 8],
                 )],
                 size: 2.5,
             });
@@ -4029,7 +4517,7 @@ fn draw_edit_gl(s: &UnsafeMutRef<App>, gl: &glow::Context, view: &Mat4, proj: &M
                 instances: vec![InstanceData::new(
                     Vec4::ZERO,
                     Mat4::IDENTITY,
-                    [Vec4::new(1., 1., 0., 1.); 8]
+                    [Vec4::new(1., 1., 0., 1.); 8],
                 )],
                 size: 4.,
             });
@@ -4171,11 +4659,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                         "texture-label",
                         &[("id".into(), (*display_id).into())].into(),
                     );
-                    if ui
-                        .selectable_label(selected, tex_label)
-                        .clicked()
-                        && !selected
-                    {
+                    if ui.selectable_label(selected, tex_label).clicked() && !selected {
                         s.state.ui.selected_group = *ref_id;
                         s.state.ui.selected_tris.insert(*ref_id, 0);
                         s.state.ui.hovered_uv = None;
@@ -4554,8 +5038,14 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
     }
 }
 
-pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Context, shift: bool, ctrl: bool) {
-
+pub fn draw_mirror_view(
+    s: &mut App,
+    ui: &mut Ui,
+    ctx: &egui::Context,
+    gl: &glow::Context,
+    shift: bool,
+    ctrl: bool,
+) {
     let rd = RefDuper;
     let s2 = unsafe { rd.detach_mut_ref(s) };
     let s3 = unsafe { rd.detach_mut_ref(s) };
@@ -4584,19 +5074,13 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
         let to_screen = |p: Vec2| -> Pos2 {
             let cx = visual_rect.center().x;
             let cy = visual_rect.center().y;
-            Pos2::new(
-                cx + (-p.x + pan.x) * zoom,
-                cy + (-p.y + pan.y) * zoom,
-            )
+            Pos2::new(cx + (-p.x + pan.x) * zoom, cy + (-p.y + pan.y) * zoom)
         };
 
         let from_screen = |p: Pos2| -> Vec2 {
             let cx = visual_rect.center().x;
             let cy = visual_rect.center().y;
-            Vec2::new(
-                -((p.x - cx) / zoom - pan.x),
-                -((p.y - cy) / zoom - pan.y),
-            )
+            Vec2::new(-((p.x - cx) / zoom - pan.x), -((p.y - cy) / zoom - pan.y))
         };
 
         if visual_response.dragged_by(egui::PointerButton::Middle)
@@ -4622,15 +5106,12 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
         {
             let me = &mut s.state.ui.mirror_editor;
 
-            if primary_released
-            && let Some((ti, vi)) = me.dragging_vertex {
+            if primary_released && let Some((ti, vi)) = me.dragging_vertex {
                 let idx = ti * 3 + vi;
                 if idx < s.view.mirror_geometry.len() {
                     let v = s.view.mirror_geometry[idx];
-                    s.view.mirror_geometry[idx] = Vec2::new(
-                        (v.x / 0.25).round() * 0.25,
-                        (v.y / 0.25).round() * 0.25,
-                    );
+                    s.view.mirror_geometry[idx] =
+                        Vec2::new((v.x / 0.25).round() * 0.25, (v.y / 0.25).round() * 0.25);
                     s2.rebuild_meshes(gl);
                 }
                 me.dragging_vertex = None;
@@ -4640,7 +5121,10 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
 
         if primary_down {
             let me = &mut s.state.ui.mirror_editor;
-            if let Some(drag_vert) = me.dragging_vertex && let Some(pp) = pointer_pos && visual_rect.contains(pp) {
+            if let Some(drag_vert) = me.dragging_vertex
+                && let Some(pp) = pointer_pos
+                && visual_rect.contains(pp)
+            {
                 let world_pos = from_screen(pp);
                 let idx = drag_vert.0 * 3 + drag_vert.1;
                 if idx < s.view.mirror_geometry.len() {
@@ -4651,7 +5135,8 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
         }
 
         if (visual_response.clicked() || visual_response.drag_started())
-        && let Some(pp) = pointer_pos {
+            && let Some(pp) = pointer_pos
+        {
             let world_pos = from_screen(pp);
             let hit_radius = 16.0 / zoom;
 
@@ -4659,7 +5144,7 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
             'outer: for ti in 0..num_tris {
                 let start = ti * 3;
                 let end = (start + 3).min(total_verts);
-                for vi in 0..( end - start) {
+                for vi in 0..(end - start) {
                     let v = s.view.mirror_geometry[start + vi];
                     if (v - world_pos).length() < hit_radius {
                         hit = Some((ti, vi));
@@ -4706,8 +5191,16 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
             let stroke_color = egui::Color32::from_rgba_unmultiplied(100, 140, 255, alpha);
 
             if verts.len() == 3 {
-                let pts = [to_screen(verts[0]), to_screen(verts[1]), to_screen(verts[2])];
-                painter.add(egui::Shape::convex_polygon(pts.to_vec(), fill, egui::Stroke::NONE));
+                let pts = [
+                    to_screen(verts[0]),
+                    to_screen(verts[1]),
+                    to_screen(verts[2]),
+                ];
+                painter.add(egui::Shape::convex_polygon(
+                    pts.to_vec(),
+                    fill,
+                    egui::Stroke::NONE,
+                ));
                 painter.line_segment([pts[0], pts[1]], egui::Stroke::new(1.0, stroke_color));
                 painter.line_segment([pts[1], pts[2]], egui::Stroke::new(1.0, stroke_color));
                 painter.line_segment([pts[2], pts[0]], egui::Stroke::new(1.0, stroke_color));
@@ -4742,10 +5235,19 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
             let w2 = w / 2. - 5.;
             ui.set_min_size((w, panel_height).into());
             for vert in s.view.mirror_geometry.iter_mut() {
-                vec2_row(ui, vert, w2,
+                vec2_row(
+                    ui,
+                    vert,
+                    w2,
                     || s2.view.mirror_geometry.clone(),
-                    |g| s3.add_history(editor::HistoryEntry::Mirror(s3.view.mirror_id.clone(), s3.view.mirror_path.clone(), g)),
-                    || s4.rebuild_meshes(gl)
+                    |g| {
+                        s3.add_history(editor::HistoryEntry::Mirror(
+                            s3.view.mirror_id.clone(),
+                            s3.view.mirror_path.clone(),
+                            g,
+                        ))
+                    },
+                    || s4.rebuild_meshes(gl),
                 );
             }
         });
@@ -4757,14 +5259,13 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
             let end = (start + 3).min(total_verts);
             let count = end - start;
             let label = if count == 3 {
-                s.data.locale.get_with_args(
-                    "triangle-label",
-                    &[("id".into(), ti.into())].into()
-                )
+                s.data
+                    .locale
+                    .get_with_args("triangle-label", &[("id".into(), ti.into())].into())
             } else {
                 s.data.locale.get_with_args(
                     "counted-triangle-label",
-                    &[("id".into(), ti.into()), ("count".into(), count.into())].into()
+                    &[("id".into(), ti.into()), ("count".into(), count.into())].into(),
                 )
             };
             let active = s.state.ui.mirror_editor.active_tri == ti;
@@ -4775,14 +5276,17 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
     });
 
     ui.horizontal(|ui| {
-        if ui.button(s.data.locale.get("mirror-add-triangle")).clicked() {
+        if ui
+            .button(s.data.locale.get("mirror-add-triangle"))
+            .clicked()
+        {
             let me = &s.state.ui.mirror_editor;
             let cx = me.pan.x;
             let cy = me.pan.y;
             let size = 50.0 / me.zoom;
-            s.view.mirror_geometry.push(Vec2::new(cx,          cy + size));
-            s.view.mirror_geometry.push(Vec2::new(cx - size,   cy - size));
-            s.view.mirror_geometry.push(Vec2::new(cx + size,   cy - size));
+            s.view.mirror_geometry.push(Vec2::new(cx, cy + size));
+            s.view.mirror_geometry.push(Vec2::new(cx - size, cy - size));
+            s.view.mirror_geometry.push(Vec2::new(cx + size, cy - size));
             let new_tri = (s.view.mirror_geometry.len() - 1) / 3;
             s.state.ui.mirror_editor.active_tri = new_tri;
             s.rebuild_meshes(gl);
@@ -4799,7 +5303,7 @@ pub fn draw_mirror_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow
 }
 
 #[derive(clap::Parser)]
-#[command(name="Beatcraft Editor", version)]
+#[command(name = "Beatcraft Editor", version)]
 /// The Beatcraft general mesh editor and Beat Saber mapping tool
 ///
 /// This tool is for editing all Beatcraft mesh types.
@@ -4810,7 +5314,7 @@ struct Cli {
     path: Option<PathBuf>,
     #[arg(short, long)]
     debug: bool,
-    #[arg(name="log-file")]
+    #[arg(name = "log-file")]
     log_file: Option<PathBuf>,
 }
 
@@ -4851,7 +5355,11 @@ pub fn init_logger(debug: bool, log_file: Option<PathBuf>) -> Option<WorkerGuard
     let stdout_layer = fmt::layer().with_filter(build_env_filter(debug));
 
     let (file_layer, guard) = match log_file {
-        Some(path) => match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        Some(path) => match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
             Ok(file) => {
                 let (non_blocking, guard) = tracing_appender::non_blocking(file);
                 let layer = fmt::layer()
@@ -4881,8 +5389,11 @@ pub fn init_logger(debug: bool, log_file: Option<PathBuf>) -> Option<WorkerGuard
 }
 
 pub fn main() -> Result<(), eframe::Error> {
-
-    let Cli { path, debug, log_file } = Cli::parse();
+    let Cli {
+        path,
+        debug,
+        log_file,
+    } = Cli::parse();
 
     let _guard = init_logger(debug, log_file);
 

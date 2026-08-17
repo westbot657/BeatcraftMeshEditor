@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -17,71 +16,83 @@ type MapSelection = (&'static str, &'static str, &'static str);
 // 2.0.0 | 2.1.0
 static SOMEWHERE_OUT_THERE: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/1e6ff (Somewhere Out There - Swifter_ Mawntee_ Reddek)",
-    "Standard", "Expert"
+    "Standard",
+    "Expert",
 );
 // 2.0.0 | 2.2.0
 static RINGED_GENESIS: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/1694f (Ringed Genesis - That_Narwhal)",
-    "360Degree", "ExpertPlus"
+    "360Degree",
+    "ExpertPlus",
 );
 // 2.0.0 | 2.2.0
 static HEADHUNTER: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/28043 (HEADHUNTER - Swifter)",
-    "Standard", "ExpertPlus"
+    "Standard",
+    "ExpertPlus",
 );
 // 2.0.0 | 2.0.0
 static SEQUENCE_EP: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/14c34 (SEQUENCE EP - Swifter1243)",
-    "Standard", "ExpertPlus"
+    "Standard",
+    "ExpertPlus",
 );
 // 2.1.0 | 3.3.0
 static ILL_SHARP_MINOR: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/40e94 (Ill Sharp Minor - UglyApe)",
-    "Standard", "ExpertPlus"
+    "Standard",
+    "ExpertPlus",
 );
 // 2.0.0 | 2.0.0
 static TENEBROUS: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/11f9c (Tenebrous - Swifter1243)",
-    "Standard", "ExpertPlus"
+    "Standard",
+    "ExpertPlus",
 );
 // 2.1.0 | 3.3.0
 static SPIN_ETERNALLY: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/43774 (Spin Eternally - (MaRrAtOk)____ _______)",
-    "Standard", "Expert"
+    "Standard",
+    "Expert",
 );
 // 2.0.0 | 3.0.0
 static GHOST: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/2c878 (GHOST - Gaming James 828)",
-    "Standard", "ExpertPlus"
+    "Standard",
+    "ExpertPlus",
 );
 // 2.0.0 | 2.2.0
 static CHEAT_CODES: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/29341 (Cheat Codes - Avexus)",
-    "Standard", "ExpertPlus"
+    "Standard",
+    "ExpertPlus",
 );
 // 2.0.0 | 3.0.0
 static ASCENT: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/2a629 (Ascent - nitronik.exe)",
-    "Standard", "ExpertPlus"
+    "Standard",
+    "ExpertPlus",
 );
 // 2.0.0 | 2.0.0
 static REALITY_CHECK: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/25f (Reality Check Through The Skull - DM DOKURO)",
-    "Standard", "ExpertPlus"
+    "Standard",
+    "ExpertPlus",
 );
 
 // 4.0.0 | 4.0.0
 static MOONBEAM: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/Moonbeam",
-    "Standard", "ExpertPlus"
+    "Standard",
+    "ExpertPlus",
 );
 
 // 4.0.0 | 4.1.0
 static PLAYFUL_MASSACRE: MapSelection = (
     "/home/westbot/IdeaProjects/BeatCraft/fabric/run/beatmaps/Playful Massacre - Song for Wemmbu",
-    "Standard", "ExpertPlus"
+    "Standard",
+    "ExpertPlus",
 );
-
 
 static TEST_MAPS_V2: [MapSelection; 7] = [
     SOMEWHERE_OUT_THERE,
@@ -93,17 +104,9 @@ static TEST_MAPS_V2: [MapSelection; 7] = [
     REALITY_CHECK,
 ];
 
-static TEST_MAPS_V3: [MapSelection; 4] = [
-    ILL_SHARP_MINOR,
-    SPIN_ETERNALLY,
-    GHOST,
-    ASCENT,
-];
+static TEST_MAPS_V3: [MapSelection; 4] = [ILL_SHARP_MINOR, SPIN_ETERNALLY, GHOST, ASCENT];
 
-static TEST_MAPS_V4: [MapSelection; 2] = [
-    MOONBEAM,
-    PLAYFUL_MASSACRE,
-];
+static TEST_MAPS_V4: [MapSelection; 2] = [MOONBEAM, PLAYFUL_MASSACRE];
 
 static TEST_MAPS: [MapSelection; 12] = [
     SOMEWHERE_OUT_THERE,
@@ -120,11 +123,7 @@ static TEST_MAPS: [MapSelection; 12] = [
     MOONBEAM,
 ];
 
-static NOODLE_V2_MAPS: [MapSelection; 3] = [
-    TENEBROUS,
-    SEQUENCE_EP,
-    SOMEWHERE_OUT_THERE,
-];
+static NOODLE_V2_MAPS: [MapSelection; 3] = [TENEBROUS, SEQUENCE_EP, SOMEWHERE_OUT_THERE];
 
 fn open_info<V: serde::de::DeserializeOwned>(folder: &Path) -> Result<V> {
     let files = fs::read_dir(folder)?;
@@ -132,12 +131,11 @@ fn open_info<V: serde::de::DeserializeOwned>(folder: &Path) -> Result<V> {
     for file in files {
         let file = file?;
         match file.file_name().to_string_lossy().as_str() {
-            "info.dat" |
-            "Info.dat" => {
+            "info.dat" | "Info.dat" => {
                 info_file = Some(file);
-                break
-            },
-            _ => continue
+                break;
+            }
+            _ => continue,
         }
     }
     let file = info_file.ok_or(anyhow!("no info file found"))?;
@@ -189,16 +187,12 @@ where
 
 #[test]
 fn deserialize_vanilla_map_files_v3() -> Result<()> {
-
     let path = PathBuf::from(ASCENT.0);
     let info: InfoV2 = open_info(&path)?;
 
     println!("Ascent Info.dat:\n{info:#?}");
 
-    let exp = open_char_diff_v2::<_, BeatmapFileV3>(
-        &path, &info,
-        CHEAT_CODES.1, CHEAT_CODES.2
-    )?;
+    let exp = open_char_diff_v2::<_, BeatmapFileV3>(&path, &info, CHEAT_CODES.1, CHEAT_CODES.2)?;
 
     println!("Ascent data:\n{exp:#?}");
 
@@ -255,16 +249,13 @@ fn test_deserialize_all_v2() -> Result<()> {
 
 #[test]
 pub fn deserialize_vanilla_map_files_v2() -> Result<()> {
-
     let path = PathBuf::from(CHEAT_CODES.0);
     let info: InfoV2 = open_info(&path)?;
 
     println!("Cheat Codes Info.dat:\n{info:#?}");
 
-    let mut exp = open_char_diff_v2::<_, BeatmapFileV2>(
-        &path, &info,
-        CHEAT_CODES.1, CHEAT_CODES.2
-    )?;
+    let mut exp =
+        open_char_diff_v2::<_, BeatmapFileV2>(&path, &info, CHEAT_CODES.1, CHEAT_CODES.2)?;
 
     exp.events.clear();
     println!("Cheat codes data:\n{exp:#?}");
@@ -282,13 +273,9 @@ pub fn deserialize_noodle_map_files_v2() -> Result<()> {
 
         println!("Info for {}:\n{:#?}", file, info);
 
-        let exp = open_char_diff_v2::<_, BeatmapFileV2>(
-            &path, &info,
-            set, diff
-        )?;
+        let exp = open_char_diff_v2::<_, BeatmapFileV2>(&path, &info, set, diff)?;
 
         println!("map for {}:\n{:?}", file, exp);
     }
     Ok(())
 }
-

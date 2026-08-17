@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use super::{ArcDataV4, ArcV4, BombNoteDataV4, BombNoteV4, BpmRegion, ChainDataV4, ChainV4, ColorNoteDataV4, ColorNoteV4, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion, NJSEventDataV4, NJSEventV4, ObstacleDataV4, ObstacleV4, SpawnRotationEventDataV4, SpawnRotationEventV4};
-
-
+use super::{
+    ArcDataV4, ArcV4, BombNoteDataV4, BombNoteV4, BpmRegion, ChainDataV4, ChainV4, ColorNoteDataV4,
+    ColorNoteV4, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion, NJSEventDataV4,
+    NJSEventV4, ObstacleDataV4, ObstacleV4, SpawnRotationEventDataV4, SpawnRotationEventV4,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,7 +43,6 @@ pub struct InfoV4 {
     pub environment_names: Vec<String>,
     pub color_schemes: Vec<ColorSchemeV4>,
     pub difficulty_beatmaps: Vec<DifficultyBeatmapV4>,
-
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -94,7 +95,6 @@ pub struct DifficultyBeatmapV4 {
     pub note_jump_start_beat_offset: f32,
     pub beatmap_data_filename: String,
     pub lightshow_data_filename: String,
-
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -142,4 +142,3 @@ impl From<&BpmRegionV4> for BpmRegion {
         }
     }
 }
-

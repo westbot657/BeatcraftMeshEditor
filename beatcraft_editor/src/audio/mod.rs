@@ -1,20 +1,20 @@
+use glow::HasContext;
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::path::Path;
-use std::{ptr, thread};
 use std::sync::{Arc, mpsc};
-use glow::HasContext;
+use std::{ptr, thread};
 
 use eframe::glow;
 use parking_lot::RwLock;
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
+use symphonia::core::audio::sample::Sample;
 use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
-use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::audio::sample::Sample;
 
 use crate::DB_AUDIO;
 
@@ -102,7 +102,9 @@ impl AudioSystem {
             let mut ptr = list_ptr;
             loop {
                 let s = std::ffi::CStr::from_ptr(ptr);
-                if s.to_bytes().is_empty() { break; }
+                if s.to_bytes().is_empty() {
+                    break;
+                }
                 tracing::debug!(target: DB_AUDIO, "Available device: {}", s.to_string_lossy());
                 ptr = ptr.add(s.to_bytes_with_nul().len());
             }
@@ -137,7 +139,6 @@ impl AudioSystem {
     }
 
     pub fn update(&mut self) {
-
         let mut audios = Vec::with_capacity(self.audio_refs.len());
         std::mem::swap(&mut audios, &mut self.audio_refs);
 
@@ -149,7 +150,6 @@ impl AudioSystem {
                 tracing::debug!(target: DB_AUDIO, "Audio unloaded, removing from update queue");
             }
         }
-
     }
 
     pub fn add_task(&self, task: AudioTask) {
@@ -169,10 +169,16 @@ impl AudioSystem {
             hint.with_extension(ext);
         }
 
-        let format = symphonia::default::get_probe()
-            .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())?;
+        let format = symphonia::default::get_probe().probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )?;
 
-        let track = format.default_track(TrackType::Audio).ok_or(AudioError::Str("No valid audio track"))?;
+        let track = format
+            .default_track(TrackType::Audio)
+            .ok_or(AudioError::Str("No valid audio track"))?;
 
         let track_id = track.id;
         let num_frames = track.num_frames;
@@ -182,7 +188,11 @@ impl AudioSystem {
             .make_audio_decoder(track, &AudioDecoderOptions::default())?;
 
         let sample_rate = track.sample_rate.unwrap_or(44100);
-        let channels = track.channels.as_ref().map(|c| c.count() as u16).unwrap_or(2);
+        let channels = track
+            .channels
+            .as_ref()
+            .map(|c| c.count() as u16)
+            .unwrap_or(2);
         let sample_count = num_frames.map(|u| u as usize);
 
         Ok(AudioInfo {
@@ -194,7 +204,6 @@ impl AudioSystem {
             track_id,
         })
     }
-
 }
 
 impl Drop for AudioSystem {
@@ -225,7 +234,6 @@ impl AudioThread {
         let _guard = span.enter();
         tracing::debug!(target: DB_AUDIO, "Started audio thread");
         'mainloop: loop {
-
             'io_loop: loop {
                 match self.commands.try_recv() {
                     Err(mpsc::TryRecvError::Empty) => break 'io_loop,
@@ -244,7 +252,7 @@ impl AudioThread {
             for mut task in tasks.into_iter() {
                 match task() {
                     TaskAction::None => self.tasks.push(task),
-                    TaskAction::Remove => {},
+                    TaskAction::Remove => {}
                 }
             }
         }
@@ -299,7 +307,6 @@ struct SpectrogramGlCache {
     capacity_columns: usize,
 }
 
-
 #[derive(Debug)]
 pub struct Audio {
     data: Arc<RwLock<Vec<i16>>>,
@@ -323,8 +330,11 @@ pub struct Audio {
 }
 
 impl Audio {
-
-    pub fn new(audio_sys: &mut AudioSystem, path: &Path, mode: AudioMode) -> Result<Arc<Self>, AudioError> {
+    pub fn new(
+        audio_sys: &mut AudioSystem,
+        path: &Path,
+        mode: AudioMode,
+    ) -> Result<Arc<Self>, AudioError> {
         let span = tracing::debug_span!("audio init");
         let _guard = span.enter();
         match mode {
@@ -336,7 +346,9 @@ impl Audio {
                 let seek_target = Arc::new(RwLock::new(None));
 
                 let mut buffers = vec![0u32; FULL_BUFFER_COUNT];
-                unsafe { al::alGenBuffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr()); }
+                unsafe {
+                    al::alGenBuffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr());
+                }
                 check_al_error("after alGenBuffers");
                 tracing::debug!(target: DB_AUDIO, "Generated {} AL buffers for streaming", FULL_BUFFER_COUNT);
 
@@ -351,7 +363,9 @@ impl Audio {
                 let loaded = Arc::new(RwLock::new(true));
 
                 let mut src_handle = [0];
-                unsafe { al::alGenSources(1, src_handle.as_mut_ptr()); }
+                unsafe {
+                    al::alGenSources(1, src_handle.as_mut_ptr());
+                }
                 let [src_handle] = src_handle;
 
                 let mut fx_filter = [0];
@@ -370,8 +384,20 @@ impl Audio {
                 let spec_cursor = Arc::clone(&pb_cursor);
                 let sample_rate = audio_info.sample_rate;
                 let dcf2 = Arc::clone(&decode_finished);
-                let (spectrogram_tex_data, spectrogram_columns_done, spectrogram_freq_bins, spectrogram_finished, spectrogram_hop) =
-                    Self::spawn_spectrogram_task(audio_sys, spec_data, spec_cursor, decode_finished, audio_info.channels, sample_rate);
+                let (
+                    spectrogram_tex_data,
+                    spectrogram_columns_done,
+                    spectrogram_freq_bins,
+                    spectrogram_finished,
+                    spectrogram_hop,
+                ) = Self::spawn_spectrogram_task(
+                    audio_sys,
+                    spec_data,
+                    spec_cursor,
+                    decode_finished,
+                    audio_info.channels,
+                    sample_rate,
+                );
 
                 let data2 = Arc::clone(&data);
                 let loaded2 = Arc::clone(&loaded);
@@ -379,7 +405,18 @@ impl Audio {
                 let df2 = Arc::new(RwLock::new(0));
                 let sc2 = Arc::clone(&sample_count);
                 audio_sys.add_task(Box::new(move || {
-                    Self::decode_task_loop(&data2, &sections, &pb_cursor, &seek_target, &loaded2, audio_info.channels, &mut audio_info2, &sc2, &df2, &dcf2)
+                    Self::decode_task_loop(
+                        &data2,
+                        &sections,
+                        &pb_cursor,
+                        &seek_target,
+                        &loaded2,
+                        audio_info.channels,
+                        &mut audio_info2,
+                        &sc2,
+                        &df2,
+                        &dcf2,
+                    )
                 }));
 
                 let audio = Arc::new(Self {
@@ -404,7 +441,7 @@ impl Audio {
                 audio_sys.audio_refs.push(Arc::clone(&audio));
 
                 Ok(audio)
-            },
+            }
             AudioMode::Full => {
                 tracing::debug!(target: DB_AUDIO, ?path, "Loading file in Full mode.");
                 let data = Arc::new(RwLock::new(Vec::new()));
@@ -415,12 +452,16 @@ impl Audio {
                 let load_pos = Arc::new(RwLock::new(0));
 
                 let mut src_handle = [0];
-                unsafe { al::alGenSources(1, src_handle.as_mut_ptr()); }
+                unsafe {
+                    al::alGenSources(1, src_handle.as_mut_ptr());
+                }
                 let [src_handle] = src_handle;
                 check_al_error("after alGenSources");
 
                 let mut buffers = vec![0u32; FULL_BUFFER_COUNT];
-                unsafe { al::alGenBuffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr()); }
+                unsafe {
+                    al::alGenBuffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr());
+                }
                 check_al_error("after alGenBuffers");
                 tracing::debug!(target: DB_AUDIO, "Generated {} AL buffers for full-streaming", FULL_BUFFER_COUNT);
 
@@ -455,11 +496,31 @@ impl Audio {
                 let dcf2 = Arc::clone(&decode_finished);
                 let df2 = Arc::new(RwLock::new(0));
                 audio_sys.add_task(Box::new(move || {
-                    Self::load_full(&data2, &loaded2, &load_pos, &mut audio_info, &sc2, &df2, &dcf2)
+                    Self::load_full(
+                        &data2,
+                        &loaded2,
+                        &load_pos,
+                        &mut audio_info,
+                        &sc2,
+                        &df2,
+                        &dcf2,
+                    )
                 }));
 
-                let (spectrogram_tex_data, spectrogram_columns_done, spectrogram_freq_bins, spectrogram_finished, spectrogram_hop) =
-                    Self::spawn_spectrogram_task(audio_sys, Arc::clone(&data), decode_cursor, decode_finished, channels, sample_rate);
+                let (
+                    spectrogram_tex_data,
+                    spectrogram_columns_done,
+                    spectrogram_freq_bins,
+                    spectrogram_finished,
+                    spectrogram_hop,
+                ) = Self::spawn_spectrogram_task(
+                    audio_sys,
+                    Arc::clone(&data),
+                    decode_cursor,
+                    decode_finished,
+                    channels,
+                    sample_rate,
+                );
 
                 let audio = Arc::new(Self {
                     data,
@@ -482,18 +543,27 @@ impl Audio {
 
                 audio_sys.audio_refs.push(Arc::clone(&audio));
                 Ok(audio)
-            },
+            }
         }
     }
 
     pub fn update(&self) {
         let mut source = self.source.write();
- 
+
         match &mut *source {
-            AudioSource::Stream { loaded_ranges, playback_position, free_buffers, .. } => {
+            AudioSource::Stream {
+                loaded_ranges,
+                playback_position,
+                free_buffers,
+                ..
+            } => {
                 unsafe {
                     let mut processed = [0i32];
-                    al::alGetSourcei(self.src_handle, al::AL_BUFFERS_PROCESSED, processed.as_mut_ptr());
+                    al::alGetSourcei(
+                        self.src_handle,
+                        al::AL_BUFFERS_PROCESSED,
+                        processed.as_mut_ptr(),
+                    );
                     for _ in 0..processed[0] {
                         let mut buf = [0u32];
                         al::alSourceUnqueueBuffers(self.src_handle, 1, buf.as_mut_ptr());
@@ -508,21 +578,45 @@ impl Audio {
 
                 while let Some(buf) = free_buffers.pop() {
                     let remaining = available.saturating_sub(*playback_position);
-                    if remaining == 0 { free_buffers.push(buf); break; }
+                    if remaining == 0 {
+                        free_buffers.push(buf);
+                        break;
+                    }
                     let take = remaining.min(FULL_CHUNK_SAMPLES);
                     let slice = &dat[*playback_position..*playback_position + take];
                     unsafe {
-                        let format = if self.channels == 1 { al::AL_FORMAT_MONO16 } else { al::AL_FORMAT_STEREO16 };
-                        al::alBufferData(buf, format, slice.as_ptr() as *const _, std::mem::size_of_val(slice) as i32, self.sample_rate as i32);
+                        let format = if self.channels == 1 {
+                            al::AL_FORMAT_MONO16
+                        } else {
+                            al::AL_FORMAT_STEREO16
+                        };
+                        al::alBufferData(
+                            buf,
+                            format,
+                            slice.as_ptr() as *const _,
+                            std::mem::size_of_val(slice) as i32,
+                            self.sample_rate as i32,
+                        );
                         al::alSourceQueueBuffers(self.src_handle, 1, &buf);
                     }
                     *playback_position += take;
                 }
-            },
-            AudioSource::Full { load_position, playback_position, free_buffers, queued_sizes, played_samples, .. } => {
+            }
+            AudioSource::Full {
+                load_position,
+                playback_position,
+                free_buffers,
+                queued_sizes,
+                played_samples,
+                ..
+            } => {
                 unsafe {
                     let mut processed = [0i32];
-                    al::alGetSourcei(self.src_handle, al::AL_BUFFERS_PROCESSED, processed.as_mut_ptr());
+                    al::alGetSourcei(
+                        self.src_handle,
+                        al::AL_BUFFERS_PROCESSED,
+                        processed.as_mut_ptr(),
+                    );
                     for _ in 0..processed[0] {
                         let mut buf = [0u32];
                         al::alSourceUnqueueBuffers(self.src_handle, 1, buf.as_mut_ptr());
@@ -539,12 +633,25 @@ impl Audio {
 
                 while let Some(buf) = free_buffers.pop() {
                     let remaining = available.saturating_sub(*playback_position);
-                    if remaining == 0 { free_buffers.push(buf); break; }
+                    if remaining == 0 {
+                        free_buffers.push(buf);
+                        break;
+                    }
                     let take = remaining.min(FULL_CHUNK_SAMPLES);
                     let slice = &dat[*playback_position..*playback_position + take];
                     unsafe {
-                        let format = if self.channels == 1 { al::AL_FORMAT_MONO16 } else { al::AL_FORMAT_STEREO16 };
-                        al::alBufferData(buf, format, slice.as_ptr() as *const _, std::mem::size_of_val(slice) as i32, self.sample_rate as i32);
+                        let format = if self.channels == 1 {
+                            al::AL_FORMAT_MONO16
+                        } else {
+                            al::AL_FORMAT_STEREO16
+                        };
+                        al::alBufferData(
+                            buf,
+                            format,
+                            slice.as_ptr() as *const _,
+                            std::mem::size_of_val(slice) as i32,
+                            self.sample_rate as i32,
+                        );
                         al::alSourceQueueBuffers(self.src_handle, 1, &buf);
                         check_al_error("alBufferData/QueueBuffers");
                     }
@@ -552,7 +659,7 @@ impl Audio {
                     *playback_position += take;
                 }
                 drop(dat);
-            },
+            }
         }
 
         drop(source);
@@ -562,12 +669,11 @@ impl Audio {
                 Ok(()) => {
                     tracing::debug!(target: DB_AUDIO, "Playing queued audio");
                     *self.pending_play.write() = false
-                },
-                Err(PlaybackError::NotReady) => {},
-                Err(_) => {},
+                }
+                Err(PlaybackError::NotReady) => {}
+                Err(_) => {}
             }
         }
-
     }
 
     pub fn sample_count(&self) -> Option<usize> {
@@ -581,7 +687,7 @@ impl Audio {
             let mut queued = [0i32];
             al::alGetSourcei(self.src_handle, al::AL_BUFFERS_QUEUED, queued.as_mut_ptr());
             if state[0] == al::AL_PLAYING {
-                return Ok(())
+                return Ok(());
             }
             if queued[0] > 0 {
                 al::alSourcePlay(self.src_handle);
@@ -609,7 +715,11 @@ impl Audio {
 
         let mut offset_frames = [0i32];
         unsafe {
-            al::alGetSourcei(self.src_handle, al::AL_SAMPLE_OFFSET, offset_frames.as_mut_ptr());
+            al::alGetSourcei(
+                self.src_handle,
+                al::AL_SAMPLE_OFFSET,
+                offset_frames.as_mut_ptr(),
+            );
         }
 
         let played_frames = played_samples / self.channels as usize;
@@ -674,14 +784,27 @@ impl Audio {
 
         let mut source = self.source.write();
         match &mut *source {
-            AudioSource::Full { load_position, playback_position, free_buffers, queued_sizes, played_samples, all_buffers } => {
+            AudioSource::Full {
+                load_position,
+                playback_position,
+                free_buffers,
+                queued_sizes,
+                played_samples,
+                all_buffers,
+            } => {
                 let loaded = *load_position.read();
                 if target_sample > loaded {
                     return Err(PlaybackError::InvalidSeekPosition(target));
                 }
 
                 let mut was_playing = [0i32];
-                unsafe { al::alGetSourcei(self.src_handle, al::AL_SOURCE_STATE, was_playing.as_mut_ptr()); }
+                unsafe {
+                    al::alGetSourcei(
+                        self.src_handle,
+                        al::AL_SOURCE_STATE,
+                        was_playing.as_mut_ptr(),
+                    );
+                }
                 let was_playing = was_playing[0] == al::AL_PLAYING;
 
                 unsafe {
@@ -707,15 +830,25 @@ impl Audio {
             AudioSource::Stream { .. } => {
                 drop(source);
                 self.seek_stream(target)
-            },
+            }
         }
     }
 
     fn seek_stream(&self, target: f32) -> Result<(), PlaybackError> {
         let target_sample = (target * self.sample_rate as f32) as usize * self.channels as usize;
         let mut source = self.source.write();
-        if let AudioSource::Stream { loaded_ranges, playback_position, seek_target, free_buffers, queued_sizes, played_samples, .. } = &mut *source {
-            let already_loaded = Self::contiguous_loaded_end(&loaded_ranges.read(), target_sample) > target_sample;
+        if let AudioSource::Stream {
+            loaded_ranges,
+            playback_position,
+            seek_target,
+            free_buffers,
+            queued_sizes,
+            played_samples,
+            ..
+        } = &mut *source
+        {
+            let already_loaded =
+                Self::contiguous_loaded_end(&loaded_ranges.read(), target_sample) > target_sample;
 
             unsafe {
                 al::alSourceStop(self.src_handle);
@@ -740,7 +873,11 @@ impl Audio {
     }
 
     fn contiguous_loaded_end(ranges: &[(usize, usize)], pos: usize) -> usize {
-        ranges.iter().find(|&&(s, e)| s <= pos && pos < e).map(|&(_, e)| e).unwrap_or(pos)
+        ranges
+            .iter()
+            .find(|&&(s, e)| s <= pos && pos < e)
+            .map(|&(_, e)| e)
+            .unwrap_or(pos)
     }
 
     pub fn mode(&self) -> AudioMode {
@@ -769,7 +906,6 @@ impl Audio {
         decoded_frames: &Arc<RwLock<usize>>,
         decode_finished: &Arc<RwLock<bool>>,
     ) -> TaskAction {
-
         if !{ *loaded.read() } {
             *decode_finished.write() = true;
             *sample_count.write() = Some(*decoded_frames.read());
@@ -782,8 +918,8 @@ impl Audio {
                 Ok(None) => {
                     *decode_finished.write() = true;
                     *sample_count.write() = Some(*decoded_frames.read());
-                    return TaskAction::Remove
-                },
+                    return TaskAction::Remove;
+                }
                 Err(symphonia::core::errors::Error::ResetRequired) => {
                     unimplemented!("why do I have to deal with OGG");
                 }
@@ -810,7 +946,7 @@ impl Audio {
                 dat.reserve(size);
                 dat.append(&mut vec![i16::MID; size]);
                 let end = dat.len();
-                let slice = &mut dat[(end-size)..];
+                let slice = &mut dat[(end - size)..];
                 buf.copy_to_slice_interleaved(slice);
                 *load_pos.write() += size;
 
@@ -839,14 +975,22 @@ impl Audio {
         decode_finished: Arc<RwLock<bool>>,
         channels: u16,
         sample_rate: u32,
-    ) -> (Arc<RwLock<Vec<f32>>>, Arc<RwLock<usize>>, usize, Arc<RwLock<bool>>, usize) {
+    ) -> (
+        Arc<RwLock<Vec<f32>>>,
+        Arc<RwLock<usize>>,
+        usize,
+        Arc<RwLock<bool>>,
+        usize,
+    ) {
         const WINDOW_SIZE: usize = 1024;
         let freq_bins = WINDOW_SIZE / 2;
         const TARGET_COLUMNS_PER_SEC: f32 = 16.0;
         let hop = ((sample_rate as f32 / TARGET_COLUMNS_PER_SEC) as usize).max(WINDOW_SIZE / 4);
 
         let hann: Vec<f32> = (0..WINDOW_SIZE)
-            .map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (WINDOW_SIZE - 1) as f32).cos())
+            .map(|i| {
+                0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (WINDOW_SIZE - 1) as f32).cos()
+            })
             .collect();
 
         let mut planner = FftPlanner::new();
@@ -920,9 +1064,11 @@ impl Audio {
                 Ok(None) => {
                     *decode_finished.write() = true;
                     *sample_count.write() = Some(*decoded_frames.read());
-                    return TaskAction::Remove
-                },
-                Err(symphonia::core::errors::Error::ResetRequired) => unimplemented!("why do I have to deal with OGG"),
+                    return TaskAction::Remove;
+                }
+                Err(symphonia::core::errors::Error::ResetRequired) => {
+                    unimplemented!("why do I have to deal with OGG")
+                }
                 Err(err) => {
                     tracing::error!(target: DB_AUDIO, "{err}");
                     *decode_finished.write() = true;
@@ -930,8 +1076,12 @@ impl Audio {
                     return TaskAction::Remove;
                 }
             };
-            while !info.format_reader.metadata().is_latest() { info.format_reader.metadata().pop(); }
-            if packet.track_id != info.track_id { continue; }
+            while !info.format_reader.metadata().is_latest() {
+                info.format_reader.metadata().pop();
+            }
+            if packet.track_id != info.track_id {
+                continue;
+            }
             break packet;
         };
 
@@ -941,7 +1091,9 @@ impl Audio {
             let end = start + size;
 
             let mut dat = data.write();
-            if dat.len() < end { dat.resize(end, i16::MID); }
+            if dat.len() < end {
+                dat.resize(end, i16::MID);
+            }
             buf.copy_to_slice_interleaved(&mut dat[start..end]);
             drop(dat);
 
@@ -976,7 +1128,8 @@ impl Audio {
                 let sample_idx = frame_idx * state.channels as usize;
                 let s: f32 = (0..state.channels as usize)
                     .map(|c| data[sample_idx + c] as f32 / i16::MAX as f32)
-                    .sum::<f32>() / state.channels as f32;
+                    .sum::<f32>()
+                    / state.channels as f32;
                 Complex::new(s * state.hann[i], 0.0)
             })
             .collect();
@@ -1020,11 +1173,17 @@ impl Audio {
     }
 
     pub fn spectrogram_uploaded_columns(&self) -> usize {
-        self.spectrogram_gl_cache.read().as_ref().map(|c| c.uploaded_columns).unwrap_or(0)
+        self.spectrogram_gl_cache
+            .read()
+            .as_ref()
+            .map(|c| c.uploaded_columns)
+            .unwrap_or(0)
     }
 
     pub fn spectrogram_synced_coverage(&self) -> f32 {
-        let Some(total_frames) = *self.sample_count.read() else { return 1.0 };
+        let Some(total_frames) = *self.sample_count.read() else {
+            return 1.0;
+        };
         if total_frames == 0 || self.spectrogram_hop == 0 {
             return 1.0;
         }
@@ -1034,7 +1193,9 @@ impl Audio {
     }
 
     pub fn spectrogram_coverage(&self) -> f32 {
-        let Some(total_frames) = *self.sample_count.read() else { return 1.0 };
+        let Some(total_frames) = *self.sample_count.read() else {
+            return 1.0;
+        };
         if total_frames == 0 || self.spectrogram_hop == 0 {
             return 1.0;
         }
@@ -1044,11 +1205,11 @@ impl Audio {
     }
 
     pub fn get_spectrogram_tex(&self, gl: &glow::Context) -> Option<glow::NativeTexture> {
-    let freq_bins = self.spectrogram_freq_bins;
-    let columns_done = *self.spectrogram_columns_done.read();
-    if columns_done == 0 {
-        return None;
-    }
+        let freq_bins = self.spectrogram_freq_bins;
+        let columns_done = *self.spectrogram_columns_done.read();
+        if columns_done == 0 {
+            return None;
+        }
 
         let finished = *self.spectrogram_finished.read();
         let max_tex_size = unsafe { gl.get_parameter_i32(glow::MAX_TEXTURE_SIZE) as usize };
@@ -1078,21 +1239,47 @@ impl Audio {
                 if let Some(old) = cache.take() {
                     gl.delete_texture(old.tex);
                 }
-                let tex = gl.create_texture().expect("failed to create spectrogram texture");
+                let tex = gl
+                    .create_texture()
+                    .expect("failed to create spectrogram texture");
                 gl.bind_texture(glow::TEXTURE_2D, Some(tex));
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_BORDER as i32);
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_BORDER as i32);
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_WRAP_S,
+                    glow::CLAMP_TO_BORDER as i32,
+                );
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_WRAP_T,
+                    glow::CLAMP_TO_BORDER as i32,
+                );
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_MIN_FILTER,
+                    glow::NEAREST as i32,
+                );
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_MAG_FILTER,
+                    glow::NEAREST as i32,
+                );
                 gl.tex_image_2d(
-                    glow::TEXTURE_2D, 0,
+                    glow::TEXTURE_2D,
+                    0,
                     glow::R32F as i32,
-                    freq_bins as i32, capacity_columns as i32, 0,
-                    glow::RED, glow::FLOAT,
+                    freq_bins as i32,
+                    capacity_columns as i32,
+                    0,
+                    glow::RED,
+                    glow::FLOAT,
                     glow::PixelUnpackData::Slice(None),
                 );
                 gl.bind_texture(glow::TEXTURE_2D, None);
-                *cache = Some(SpectrogramGlCache { tex, uploaded_columns: 0, capacity_columns });
+                *cache = Some(SpectrogramGlCache {
+                    tex,
+                    uploaded_columns: 0,
+                    capacity_columns,
+                });
             }
         }
 
@@ -1109,10 +1296,14 @@ impl Audio {
                 unsafe {
                     gl.bind_texture(glow::TEXTURE_2D, Some(cache_ref.tex));
                     gl.tex_sub_image_2d(
-                        glow::TEXTURE_2D, 0,
-                        0, start as i32,
-                        freq_bins as i32, (end - start) as i32,
-                        glow::RED, glow::FLOAT,
+                        glow::TEXTURE_2D,
+                        0,
+                        0,
+                        start as i32,
+                        freq_bins as i32,
+                        (end - start) as i32,
+                        glow::RED,
+                        glow::FLOAT,
                         glow::PixelUnpackData::Slice(Some(bytemuck::cast_slice(slice))),
                     );
                     gl.bind_texture(glow::TEXTURE_2D, None);
@@ -1155,8 +1346,12 @@ impl Drop for Audio {
         {
             let source = self.source.read();
             match &*source {
-                AudioSource::Full { all_buffers: bufs, .. } => all_buffers.extend_from_slice(bufs),
-                AudioSource::Stream { free_buffers, .. } => all_buffers.extend_from_slice(free_buffers),
+                AudioSource::Full {
+                    all_buffers: bufs, ..
+                } => all_buffers.extend_from_slice(bufs),
+                AudioSource::Stream { free_buffers, .. } => {
+                    all_buffers.extend_from_slice(free_buffers)
+                }
             }
         }
         if !all_buffers.is_empty() {
@@ -1169,5 +1364,3 @@ impl Drop for Audio {
         tracing::debug!(target: DB_AUDIO, "Dropped audio resources");
     }
 }
-
-

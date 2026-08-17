@@ -39,7 +39,7 @@ impl MapIndexable for IndexMap<String, f32> {
 
 pub fn eval<M>(expr: &str, var_table: &mut M) -> Option<f32>
 where
-    M: MapIndexable + Debug
+    M: MapIndexable + Debug,
 {
     tracing::debug!(target: DB_MATH, "Evaluating expression: {expr}");
     eval_inner(expr, var_table, false)

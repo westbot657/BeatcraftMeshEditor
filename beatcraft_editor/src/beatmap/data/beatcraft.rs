@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::VERSION;
 
-
 pub const APP_NAME: &str = "BeatcraftEditor";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -27,4 +26,3 @@ impl Default for BeatcraftEditorInfoV2 {
         }
     }
 }
-

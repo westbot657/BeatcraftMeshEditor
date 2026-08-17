@@ -1,8 +1,8 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde::ser::SerializeMap;
 use super::beatcraft::{APP_NAME, BeatcraftEditorInfoV2};
 use super::is_value_f;
 use super::settings_setter::CustomSettingsV2;
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InfoCustomDataV2 {
@@ -224,4 +224,3 @@ pub struct DifficultyBeatmapCustomDataV2 {
     #[serde(flatten)]
     pub extra: Option<serde_json::Map<String, serde_json::Value>>,
 }
-

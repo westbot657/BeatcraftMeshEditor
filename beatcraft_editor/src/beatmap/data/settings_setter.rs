@@ -1,5 +1,5 @@
+use super::{BeatmapDataError, convert_u8};
 use serde::{Deserialize, Serialize};
-use super::{convert_u8, BeatmapDataError};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CustomSettingsV2 {
@@ -25,7 +25,6 @@ pub struct CustomSettingsV2 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note_tweaks: Option<NoteTweaksOptionsV2>,
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlayerOptionsV2 {
@@ -94,9 +93,8 @@ pub enum NoteJumpDurationTypeSettingsV2 {
         #[serde(rename = "_noteJumpFixedDuration")]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         note_jump_fixed_duration: Option<f32>,
-    }
+    },
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModifiersOptionsV2 {
@@ -168,7 +166,6 @@ pub enum SongSpeed {
     Slow,
     SuperFast,
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EnvironmentOptionsV2 {
@@ -248,7 +245,6 @@ pub enum MaxShockwaveParticles {
 }
 convert_u8! { MaxShockwaveParticles : 0..=2 }
 
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChromaOptionsV2 {
     #[serde(rename = "_disableChromaEvents")]
@@ -264,7 +260,6 @@ pub struct ChromaOptionsV2 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub force_zen_mode_walls: Option<bool>,
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CountersPlusOptionsV2 {
@@ -303,7 +298,6 @@ pub struct CountersPlusOptionsV2 {
     pub fail_enabled: Option<bool>,
 }
 
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UiTweaksOptionsV2 {
     #[serde(rename = "_multiplierEnabled")]
@@ -322,7 +316,6 @@ pub struct UiTweaksOptionsV2 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress_enabled: Option<bool>,
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NoteTweaksOptionsV2 {
@@ -381,4 +374,3 @@ pub struct NoteTweaksOptionsV2 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bomb_scale: Option<f32>,
 }
-

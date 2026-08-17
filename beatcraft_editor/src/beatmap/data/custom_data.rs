@@ -94,44 +94,54 @@ pub struct CustomObstacleDataV2 {
 pub struct CustomArcDataV2 {
     #[serde(flatten)]
     base: CommonCustomDataV2,
-
 }
 
 impl Deref for CustomNoteDataV2 {
     type Target = CommonCustomDataV2;
-    fn deref(&self) -> &Self::Target { &self.base }
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
 }
 impl DerefMut for CustomNoteDataV2 {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.base }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
 }
 
 impl Deref for CustomBombDataV2 {
     type Target = CommonCustomDataV2;
-    fn deref(&self) -> &Self::Target { &self.base }
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
 }
 impl DerefMut for CustomBombDataV2 {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.base }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
 }
 
 impl Deref for CustomObstacleDataV2 {
     type Target = CommonCustomDataV2;
-    fn deref(&self) -> &Self::Target { &self.base }
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
 }
 impl DerefMut for CustomObstacleDataV2 {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.base }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
 }
 
 impl Deref for CustomArcDataV2 {
     type Target = CommonCustomDataV2;
-    fn deref(&self) -> &Self::Target { &self.base }
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
 }
 impl DerefMut for CustomArcDataV2 {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.base }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
 }
 
-
 // V3
-
-
-
-

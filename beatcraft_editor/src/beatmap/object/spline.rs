@@ -1,6 +1,5 @@
 use glam::Vec3;
 
-
 pub struct BezierPath {
     points: Vec<Vec3>,
 }
@@ -31,7 +30,9 @@ impl BezierPath {
         let mut pt = Vec3::ZERO;
 
         for i in 0i32..=n {
-            let coeff = Self::binomial_coefficient(n, i) as f32 * f32::powi(1. - t, n - i) * f32::powi(t, i);
+            let coeff = Self::binomial_coefficient(n, i) as f32
+                * f32::powi(1. - t, n - i)
+                * f32::powi(t, i);
             pt += coeff * unsafe { self.points.get_unchecked(i as usize) };
         }
         pt
@@ -39,7 +40,9 @@ impl BezierPath {
 
     pub fn derivative(&self, t: f32) -> Vec3 {
         let n = self.points.len() as i32 - 1;
-        if n == 0 { return Vec3::ZERO }
+        if n == 0 {
+            return Vec3::ZERO;
+        }
 
         let mut pt = Vec3::ZERO;
 
@@ -47,7 +50,11 @@ impl BezierPath {
             let coeff = (n * Self::binomial_coefficient(n - 1, i)) as f32
                 * f32::powi(1. - t, (n - 1) - i)
                 * f32::powi(t, i);
-            pt += coeff * unsafe { self.points.get_unchecked((i + 1) as usize) - self.points.get_unchecked(i as usize) };
+            pt += coeff
+                * unsafe {
+                    self.points.get_unchecked((i + 1) as usize)
+                        - self.points.get_unchecked(i as usize)
+                };
         }
         pt
     }
@@ -55,7 +62,6 @@ impl BezierPath {
     pub fn points(&self) -> &[Vec3] {
         self.points.as_slice()
     }
-
 }
 
 pub struct BezierCurve {
@@ -107,4 +113,3 @@ impl Spline for BezierCurve {
         Self::derivative(self, t)
     }
 }
-

@@ -10,13 +10,15 @@ use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 
 use crate::config::LocaleCache;
-use crate::{DB_DATA, DB_MATH, RefDuper};
-use crate::data::{
-    BillboardData, ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData, MaterialFlags, MeshType, NormalId, PartData, PlacementData, ShaderSettingsData, StateSet, TriangleData, TriangleEntry, UvId, VertRefData, VertexId
+use crate::data::mesh::{
+    BillboardData, ComputeNormalData, ComputeVertexData, LightMeshData, MaterialData,
+    MaterialFlags, MeshType, NormalId, PartData, PlacementData, ShaderSettingsData, StateSet,
+    TriangleData, TriangleEntry, UvId, VertRefData, VertexId,
 };
 use crate::easing::Easing;
 use crate::editor::DataSwap;
 use crate::renaming::light_mesh::rehash;
+use crate::{DB_DATA, DB_MATH, RefDuper};
 
 #[derive(Debug, Clone)]
 pub struct ComputeVertex {
@@ -998,7 +1000,6 @@ impl Part {
         std::mem::swap(&mut self.normals.indexed, &mut n_index_updated);
         std::mem::swap(&mut self.normals.named, &mut n_named_updated);
         std::mem::swap(&mut self.normals.compute, &mut n_comp_updated);
-
     }
 
     /// Iterates over triangles where all 3 vertices of the triangle are in `ids`
@@ -1519,11 +1520,10 @@ impl LightMesh {
             cull: self.cull,
         }
     }
-
 }
 
-impl From<crate::data::LightMeshData> for LightMesh {
-    fn from(value: crate::data::LightMeshData) -> Self {
+impl From<crate::data::mesh::LightMeshData> for LightMesh {
+    fn from(value: crate::data::mesh::LightMeshData) -> Self {
         let parts: IndexMap<String, Part> = value
             .parts
             .into_iter()
@@ -1547,7 +1547,7 @@ impl From<crate::data::LightMeshData> for LightMesh {
     }
 }
 
-impl From<LightMesh> for crate::data::LightMeshData {
+impl From<LightMesh> for crate::data::mesh::LightMeshData {
     fn from(value: LightMesh) -> Self {
         Self {
             mesh_format: Default::default(),

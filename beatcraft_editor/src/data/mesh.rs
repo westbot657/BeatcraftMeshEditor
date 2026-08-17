@@ -79,17 +79,17 @@ impl AsRef<NormalId> for NormalId {
 }
 
 bitflags! {
-    #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-    #[serde(from = "[u32; 1]", into = "[u32; 1]")]
-    pub struct MaterialFlags: u32 {
-        const OVERRIDE_BLACK = 0x7000_0000;
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "[u32; 1]", into = "[u32; 1]")]
+pub struct MaterialFlags: u32 {
+    const OVERRIDE_BLACK = 0x7000_0000;
 
-        const OBSTACLE_TOP   = 0b100_0000_0000;
-        const OBSTACLE_BACK  = 0b010_0000_0000;
-        const OBSTACLE_RIGHT = 0b001_0000_0000;
+    const OBSTACLE_TOP   = 0b100_0000_0000;
+    const OBSTACLE_BACK  = 0b010_0000_0000;
+    const OBSTACLE_RIGHT = 0b001_0000_0000;
 
-        const _ = !0;
-    }
+    const _ = !0;
+}
 }
 
 impl From<[u32; 1]> for MaterialFlags {
@@ -112,7 +112,14 @@ pub enum VertRefData {
 }
 
 impl VertRefData {
-    pub(crate) fn take_all(self) -> (VertexId, Option<UvId>, Option<NormalId>, Option<MaterialFlags>) {
+    pub(crate) fn take_all(
+        self,
+    ) -> (
+        VertexId,
+        Option<UvId>,
+        Option<NormalId>,
+        Option<MaterialFlags>,
+    ) {
         match self {
             Self::Full(v, u, n, flags) => (v, Some(u), Some(n), flags),
             Self::WithUv(v, u, flags) => (v, Some(u), None, flags),
@@ -198,7 +205,12 @@ pub struct BillboardData {
 
 impl Default for BillboardData {
     fn default() -> Self {
-        Self { origin: Vec3::ZERO, axis: Vec3::Y, normal: Vec3::NEG_Z, camera_lock: false }
+        Self {
+            origin: Vec3::ZERO,
+            axis: Vec3::Y,
+            normal: Vec3::NEG_Z,
+            camera_lock: false,
+        }
     }
 }
 
@@ -300,7 +312,13 @@ impl MaterialType {
         }
     }
     pub fn iter_all() -> impl Iterator<Item = Self> {
-        [Self::Solid, Self::SolidLight, Self::TranslucentLight, Self::TintedSolid].into_iter()
+        [
+            Self::Solid,
+            Self::SolidLight,
+            Self::TranslucentLight,
+            Self::TintedSolid,
+        ]
+        .into_iter()
     }
 }
 
@@ -325,7 +343,6 @@ impl From<u8> for MaterialType {
         }
     }
 }
-
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
 #[serde(default)]
@@ -421,13 +438,13 @@ pub enum EventGroup {
     #[default]
     #[serde(skip_serializing)]
     None,
-    #[serde(rename="outer-ring")]
+    #[serde(rename = "outer-ring")]
     OuterRing,
-    #[serde(rename="inner-ring")]
+    #[serde(rename = "inner-ring")]
     InnerRing,
-    #[serde(rename="left-spinning")]
+    #[serde(rename = "left-spinning")]
     LeftSpinning,
-    #[serde(rename="right-spinning")]
+    #[serde(rename = "right-spinning")]
     RightSpinning,
 }
 
@@ -448,7 +465,7 @@ pub enum TypeData {
         starts: Option<[f32; 4]>,
     },
     #[default]
-    None
+    None,
 }
 
 #[derive(Debug, Clone)]
@@ -467,7 +484,6 @@ impl<T: Copy> Default for IdList<T> {
 }
 
 impl<T: Copy> IdList<T> {
-
     pub fn push(&mut self, t: T) -> Option<()> {
         if self.length == 8 {
             None
@@ -482,7 +498,7 @@ impl<T: Copy> IdList<T> {
         if self.length == 0 {
             None
         } else {
-            let out = self.ids[self.length-1].take();
+            let out = self.ids[self.length - 1].take();
             self.length -= 1;
             out
         }
@@ -497,19 +513,11 @@ impl<T: Copy> IdList<T> {
     }
 
     pub fn get(&self, i: usize) -> Option<T> {
-        if i > 7 {
-            None
-        } else {
-            self.ids[i]
-        }
+        if i > 7 { None } else { self.ids[i] }
     }
 
     pub fn get_mut(&mut self, i: usize) -> Option<&mut T> {
-        if i > 7 {
-            None
-        } else {
-            self.ids[i].as_mut()
-        }
+        if i > 7 { None } else { self.ids[i].as_mut() }
     }
 
     pub fn list(&self) -> &[Option<T>; 8] {
@@ -519,7 +527,6 @@ impl<T: Copy> IdList<T> {
     pub fn list_mut(&mut self) -> &mut [Option<T>; 8] {
         &mut self.ids
     }
-
 }
 
 impl<'de> Deserialize<'de> for IdList<(LightGroup, usize)> {
@@ -569,20 +576,20 @@ impl Serialize for IdList<(LightGroup, usize)> {
 #[serde(untagged)]
 pub enum LightIdElement {
     GroupName(LightGroup),
-    Id(u32)
+    Id(u32),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LightGroup {
-    #[serde(rename="left-lasers", alias="left-lights")]
+    #[serde(rename = "left-lasers", alias = "left-lights")]
     LeftLasers,
-    #[serde(rename="right-lasers", alias="right-lights")]
+    #[serde(rename = "right-lasers", alias = "right-lights")]
     RightLasers,
-    #[serde(rename="center-lasers", alias="center-light")]
+    #[serde(rename = "center-lasers", alias = "center-light")]
     CenterLasers,
-    #[serde(rename="back-lasers", alias="back-lights")]
+    #[serde(rename = "back-lasers", alias = "back-lights")]
     BackLasers,
-    #[serde(rename="ring-lights", alias="ring-laseers")]
+    #[serde(rename = "ring-lights", alias = "ring-laseers")]
     RingLights,
 }
 
@@ -603,16 +610,16 @@ impl LightGroup {
             Self::RightLasers,
             Self::CenterLasers,
             Self::BackLasers,
-            Self::RingLights
-        ].into_iter()
+            Self::RingLights,
+        ]
+        .into_iter()
     }
-
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct EnvPlacementData {
-    #[serde(rename="type", skip_serializing_if="EventGroup::is_none")]
+    #[serde(rename = "type", skip_serializing_if = "EventGroup::is_none")]
     pub typ: EventGroup,
     #[serde(skip_serializing_if = "IdList::is_empty")]
     pub ids: IdList<(LightGroup, usize)>,
@@ -624,13 +631,16 @@ pub struct EnvPlacementData {
     pub count: u32,
     #[serde(default, skip_serializing_if = "is_quat_identity")]
     pub rotation: Quat,
-    #[serde(rename="rotation-offset", skip_serializing_if = "is_quat_identity")]
+    #[serde(rename = "rotation-offset", skip_serializing_if = "is_quat_identity")]
     pub rotation_offset: Quat,
     #[serde(skip_serializing_if = "is_quat_identity")]
     pub orientation: Quat,
-    #[serde(rename="orientation-offset", skip_serializing_if = "is_quat_identity")]
+    #[serde(
+        rename = "orientation-offset",
+        skip_serializing_if = "is_quat_identity"
+    )]
     pub orientation_offset: Quat,
-    #[serde(rename="id-step", skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "id-step", skip_serializing_if = "Vec::is_empty")]
     pub id_step: Vec<i32>,
     #[serde(flatten)]
     pub type_data: TypeData,
@@ -686,7 +696,11 @@ impl From<&ViewPlacement> for EnvPlacementData {
 }
 
 impl EnvPlacementData {
-    pub fn to_view(&self, resource_location: Option<String>, path: Option<PathBuf>) -> ViewPlacement {
+    pub fn to_view(
+        &self,
+        resource_location: Option<String>,
+        path: Option<PathBuf>,
+    ) -> ViewPlacement {
         let mut id_step = IdList::default();
         for s in self.id_step.iter() {
             id_step.push(*s);
@@ -703,13 +717,27 @@ impl EnvPlacementData {
             orientation_offset: self.orientation_offset,
             action_type: match (&self.typ, &self.type_data) {
                 (EventGroup::None, TypeData::None) => ActionType::Static,
-                (EventGroup::OuterRing, TypeData::Rings { angles, deltas, starts }) => ActionType::Ring {
+                (
+                    EventGroup::OuterRing,
+                    TypeData::Rings {
+                        angles,
+                        deltas,
+                        starts,
+                    },
+                ) => ActionType::Ring {
                     layer: crate::editor::RingType::Outer,
                     angles: angles.clone(),
                     deltas: deltas.clone(),
                     start: *starts,
                 },
-                (EventGroup::InnerRing, TypeData::Rings { angles, deltas, starts }) => ActionType::Ring {
+                (
+                    EventGroup::InnerRing,
+                    TypeData::Rings {
+                        angles,
+                        deltas,
+                        starts,
+                    },
+                ) => ActionType::Ring {
                     layer: crate::editor::RingType::Inner,
                     angles: angles.clone(),
                     deltas: deltas.clone(),
@@ -717,21 +745,21 @@ impl EnvPlacementData {
                 },
                 (EventGroup::LeftSpinning, TypeData::Spinning { axis }) => ActionType::Spinning {
                     side: crate::editor::SpinSide::Left,
-                    axis: Some(*axis)
+                    axis: Some(*axis),
                 },
                 (EventGroup::RightSpinning, TypeData::Spinning { axis }) => ActionType::Spinning {
                     side: crate::editor::SpinSide::Right,
-                    axis: Some(*axis)
+                    axis: Some(*axis),
                 },
                 (EventGroup::LeftSpinning, TypeData::None) => ActionType::Spinning {
                     side: crate::editor::SpinSide::Left,
-                    axis: None
+                    axis: None,
                 },
                 (EventGroup::RightSpinning, TypeData::None) => ActionType::Spinning {
                     side: crate::editor::SpinSide::Right,
-                    axis: None
+                    axis: None,
                 },
-                _ => ActionType::Static
+                _ => ActionType::Static,
             },
             resource_location,
             path,
@@ -752,9 +780,7 @@ impl From<Vec<EnvPlacementData>> for EnvMeshData {
         match value.len() {
             0 => Self::None,
             1 => Self::SinglePlacement(Box::new(value.pop().unwrap())),
-            _ => Self::MultiPlacement {
-                placements: value
-            }
+            _ => Self::MultiPlacement { placements: value },
         }
     }
 }
@@ -815,11 +841,11 @@ pub struct SpectrogramData {
     #[serde(skip_serializing_if = "i_is_127")]
     pub count: u32,
     pub style: TowerStyle,
-    #[serde(rename="half-split", skip_serializing_if="Clone::clone")]
+    #[serde(rename = "half-split", skip_serializing_if = "Clone::clone")]
     pub half_split: bool,
-    #[serde(rename="level-modifier", skip_serializing_if="f_is_1")]
+    #[serde(rename = "level-modifier", skip_serializing_if = "f_is_1")]
     pub level_modifier: f32,
-    #[serde(rename="base-height", skip_serializing_if="f_is_0")]
+    #[serde(rename = "base-height", skip_serializing_if = "f_is_0")]
     pub base_height: f32,
     #[serde(skip_serializing_if = "Easing::is_default")]
     pub easing: Easing,
@@ -864,7 +890,6 @@ fn is_quat_identity(q: &Quat) -> bool {
     q.is_near_identity()
 }
 
-
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct EnvData {
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
@@ -891,7 +916,6 @@ pub struct SessionData {
     #[serde(default, skip)]
     pub env: Option<EnvData>,
 }
-
 
 impl Serialize for EnvMeshData {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -928,8 +952,7 @@ impl<'de> Deserialize<'de> for EnvMeshData {
                 Ok(EnvMeshData::MultiPlacement { placements })
             }
             serde_json::Value::Object(_) => {
-                let data = EnvPlacementData::deserialize(map)
-                    .map_err(serde::de::Error::custom)?;
+                let data = EnvPlacementData::deserialize(map).map_err(serde::de::Error::custom)?;
                 Ok(EnvMeshData::SinglePlacement(Box::new(data)))
             }
             _ => Err(serde::de::Error::custom("expected an object")),
@@ -950,7 +973,11 @@ impl Serialize for TypeData {
                 map.serialize_entry("axis", axis)?;
                 map.end()
             }
-            TypeData::Rings { angles, deltas, starts } => {
+            TypeData::Rings {
+                angles,
+                deltas,
+                starts,
+            } => {
                 let len = if starts.is_some() { 3 } else { 2 };
                 let mut map = serializer.serialize_map(Some(len))?;
                 map.serialize_entry("angles", angles)?;
@@ -971,19 +998,25 @@ impl<'de> Deserialize<'de> for TypeData {
         match &map {
             serde_json::Value::Object(obj) if obj.is_empty() => Ok(TypeData::None),
             serde_json::Value::Object(obj) if obj.contains_key("axis") => {
-                let axis = Vec3::deserialize(&obj["axis"])
-                    .map_err(serde::de::Error::custom)?;
+                let axis = Vec3::deserialize(&obj["axis"]).map_err(serde::de::Error::custom)?;
                 Ok(TypeData::Spinning { axis })
             }
-            serde_json::Value::Object(obj) if obj.contains_key("angles") || obj.contains_key("deltas") => {
-                let angles = Vec::<f32>::deserialize(&obj["angles"])
-                    .map_err(serde::de::Error::custom)?;
-                let deltas = Vec::<f32>::deserialize(&obj["deltas"])
-                    .map_err(serde::de::Error::custom)?;
-                let starts = obj.get("starts")
+            serde_json::Value::Object(obj)
+                if obj.contains_key("angles") || obj.contains_key("deltas") =>
+            {
+                let angles =
+                    Vec::<f32>::deserialize(&obj["angles"]).map_err(serde::de::Error::custom)?;
+                let deltas =
+                    Vec::<f32>::deserialize(&obj["deltas"]).map_err(serde::de::Error::custom)?;
+                let starts = obj
+                    .get("starts")
                     .map(|v| <[f32; 4]>::deserialize(v).map_err(serde::de::Error::custom))
                     .transpose()?;
-                Ok(TypeData::Rings { angles, deltas, starts })
+                Ok(TypeData::Rings {
+                    angles,
+                    deltas,
+                    starts,
+                })
             }
             _ => Err(serde::de::Error::custom("expected an object")),
         }
@@ -1059,28 +1092,39 @@ mod triangle_data_serde {
     #[derive(Serialize, Deserialize)]
     #[serde(untagged)]
     pub(crate) enum IdInner {
-        Full(Id, Id, Id, #[serde(default, skip_serializing_if="Option::is_none")] Option<MaterialFlags>),
-        Uv(Id, Id, #[serde(default, skip_serializing_if="Option::is_none")] Option<MaterialFlags>),
-        BareFlagged(Id, #[serde(default, skip_serializing_if="Option::is_none")] Option<MaterialFlags>),
+        Full(
+            Id,
+            Id,
+            Id,
+            #[serde(default, skip_serializing_if = "Option::is_none")] Option<MaterialFlags>,
+        ),
+        Uv(
+            Id,
+            Id,
+            #[serde(default, skip_serializing_if = "Option::is_none")] Option<MaterialFlags>,
+        ),
+        BareFlagged(
+            Id,
+            #[serde(default, skip_serializing_if = "Option::is_none")] Option<MaterialFlags>,
+        ),
         Bare(Id),
     }
 
     impl From<&VertRefData> for IdInner {
         fn from(value: &VertRefData) -> Self {
             match value {
-                VertRefData::Full(vert_id, uv_id, normal_id, flags) => {
-                    IdInner::Full(Id::from(vert_id), Id::from(uv_id), Id::from(normal_id), *flags)
-                }
+                VertRefData::Full(vert_id, uv_id, normal_id, flags) => IdInner::Full(
+                    Id::from(vert_id),
+                    Id::from(uv_id),
+                    Id::from(normal_id),
+                    *flags,
+                ),
                 VertRefData::WithUv(vert_id, uv_id, flags) => {
                     IdInner::Uv(Id::from(vert_id), Id::from(uv_id), *flags)
                 }
-                VertRefData::Bare(n, flags) => {
-                    match flags {
-                        Some(f) if !f.is_empty() => {
-                            IdInner::BareFlagged(Id::from(n), *flags)
-                        },
-                        _ => IdInner::Bare(Id::from(n))
-                    }
+                VertRefData::Bare(n, flags) => match flags {
+                    Some(f) if !f.is_empty() => IdInner::BareFlagged(Id::from(n), *flags),
+                    _ => IdInner::Bare(Id::from(n)),
                 },
             }
         }
@@ -1089,10 +1133,12 @@ mod triangle_data_serde {
     impl From<IdInner> for VertRefData {
         fn from(value: IdInner) -> Self {
             match value {
-                IdInner::Full(v, u, n, flags) => VertRefData::Full(v.into(), u.into(), n.into(), flags),
+                IdInner::Full(v, u, n, flags) => {
+                    VertRefData::Full(v.into(), u.into(), n.into(), flags)
+                }
                 IdInner::Uv(v, u, flags) => VertRefData::WithUv(v.into(), u.into(), flags),
                 IdInner::BareFlagged(v, flags) => VertRefData::Bare(v.into(), flags),
-                IdInner::Bare(v) => VertRefData::Bare(v.into(), None)
+                IdInner::Bare(v) => VertRefData::Bare(v.into(), None),
             }
         }
     }
@@ -1106,7 +1152,9 @@ mod triangle_data_serde {
 
     impl From<&TriangleData> for TriData {
         fn from(t: &TriangleData) -> Self {
-            if let Some(mat) = &t.mat && *mat != "default" {
+            if let Some(mat) = &t.mat
+                && *mat != "default"
+            {
                 TriData::WithMat([
                     (&t.verts[0]).into(),
                     (&t.verts[1]).into(),
@@ -1153,12 +1201,12 @@ mod data_tests {
     use anyhow::anyhow;
     use serde_json::Value;
 
-    use crate::data::*;
+    use super::*;
     use crate::light_mesh::BloomfogStyle;
 
     #[test]
     fn test_deserialize() -> anyhow::Result<()> {
-        let _setup: Value = serde_json::from_str(include_str!("../../local/old/test_mesh.json"))?;
+        let _setup: Value = serde_json::from_str(include_str!("../../../local/old/test_mesh.json"))?;
 
         let data = serde_json::to_string(&_setup)?;
 
@@ -1180,17 +1228,17 @@ mod data_tests {
     #[test]
     fn test_ser() -> anyhow::Result<()> {
         macro_rules! map {
-            () => {
-                IndexMap::new()
-            };
-            ( $( $key:literal: $value:expr ),* ) => {
-                {
-                    let mut map = indexmap::IndexMap::new();
-                    $( map.insert($key.to_string(), $value); )*
-                    map
-                }
-            };
-        }
+        () => {
+            IndexMap::new()
+        };
+        ( $( $key:literal: $value:expr ),* ) => {
+            {
+                let mut map = indexmap::IndexMap::new();
+                $( map.insert($key.to_string(), $value); )*
+                map
+            }
+        };
+    }
 
         let value = LightMeshData {
             mesh_format: FormatMarker,

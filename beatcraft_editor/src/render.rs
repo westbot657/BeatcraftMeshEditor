@@ -3,23 +3,26 @@ use std::f32;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use eframe::egui_glow::check_for_gl_error;
 use eframe::glow::{self, HasContext, NativeProgram, SHADER_STORAGE_BUFFER};
 use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 
 use crate::beatmap::render::BeatmapRenderer;
-use crate::{DB_RENDER, RefDuper, data};
-use crate::data::{MaterialData, MaterialFlags, MaterialType, ShaderSettingsData};
+use crate::data::mesh::{MaterialData, MaterialFlags, MaterialType, ShaderSettingsData};
 use crate::light_mesh::{LightMesh, Part, Triangle, Vertex};
+use crate::{DB_RENDER, RefDuper, data};
 
 static MISSING_TEXTURE_BYTES: &[u8] = include_bytes!("./assets/textures/missing.png");
 
 pub static LIGHT_COLORS: [Vec4; 8] = [
-    Vec4::new(0.55,0.70,1.00, 1.), Vec4::new(1.00,0.25,0.35, 1.),
-    Vec4::new(0.15,0.95,0.45, 1.), Vec4::new(1.00,0.90,0.10, 1.),
-    Vec4::new(0.20,0.50,1.00, 1.), Vec4::new(0.90,0.20,1.00, 1.),
-    Vec4::new(0.10,0.95,0.95, 1.), Vec4::new(1.00,0.55,0.10, 1.)
+    Vec4::new(0.55, 0.70, 1.00, 1.),
+    Vec4::new(1.00, 0.25, 0.35, 1.),
+    Vec4::new(0.15, 0.95, 0.45, 1.),
+    Vec4::new(1.00, 0.90, 0.10, 1.),
+    Vec4::new(0.20, 0.50, 1.00, 1.),
+    Vec4::new(0.90, 0.20, 1.00, 1.),
+    Vec4::new(0.10, 0.95, 0.95, 1.),
+    Vec4::new(1.00, 0.55, 0.10, 1.),
 ];
 
 #[repr(C)]
@@ -45,23 +48,19 @@ pub struct GameObjectInstanceData {
     pub cut_plane: Vec4,
 }
 
-const _: () = assert!(
-    std::mem::size_of::<GameObjectInstanceData>()
-    == std::mem::size_of::<InstanceData>()
-);
-const _: () = assert!(
-    std::mem::align_of::<GameObjectInstanceData>()
-    == std::mem::align_of::<InstanceData>()
-);
+const _: () =
+    assert!(std::mem::size_of::<GameObjectInstanceData>() == std::mem::size_of::<InstanceData>());
+const _: () =
+    assert!(std::mem::align_of::<GameObjectInstanceData>() == std::mem::align_of::<InstanceData>());
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(i32)]
 pub enum RenderPass {
-    Normal    = 0,
-    Bloom     = 1,
-    Bloomfog  = 2,
-    Lights    = 3,
-    Obstacle  = 4,
+    Normal = 0,
+    Bloom = 1,
+    Bloomfog = 2,
+    Lights = 3,
+    Obstacle = 4,
     Highlight = 5,
 }
 
@@ -74,8 +73,8 @@ impl From<RenderPass> for i32 {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(i32)]
 pub enum RenderMode {
-    Beatcraft       = 0,
-    Editor          = 1,
+    Beatcraft = 0,
+    Editor = 1,
     EditorWireframe = 2,
 }
 
@@ -86,15 +85,11 @@ impl From<RenderMode> for i32 {
 }
 
 impl InstanceData {
-    pub fn new(
-        clipping_plane: Vec4,
-        model: Mat4,
-        colors: [Vec4; 8]
-    ) -> Self {
+    pub fn new(clipping_plane: Vec4, model: Mat4, colors: [Vec4; 8]) -> Self {
         Self {
             clipping_plane,
             model,
-            colors
+            colors,
         }
     }
 
@@ -137,9 +132,13 @@ impl GameObjectInstanceData {
         cut_plane: Vec4,
     ) -> Self {
         Self::new(
-            clipping_plane, model,
-            color, Vec3::ZERO,
-            dissolve, index, cut_plane
+            clipping_plane,
+            model,
+            color,
+            Vec3::ZERO,
+            dissolve,
+            index,
+            cut_plane,
         )
     }
 
@@ -151,11 +150,7 @@ impl GameObjectInstanceData {
         index: u32,
         cut_plane: Vec4,
     ) -> Self {
-        Self::color_note(
-            clipping_plane, model,
-            color,
-            dissolve, index, cut_plane
-        )
+        Self::color_note(clipping_plane, model, color, dissolve, index, cut_plane)
     }
 
     pub fn obstacle(
@@ -167,17 +162,19 @@ impl GameObjectInstanceData {
         wall_size: Vec3,
     ) -> Self {
         Self::new(
-            clipping_plane, model,
+            clipping_plane,
+            model,
             color,
-            wall_size, dissolve,
-            index, Vec4::ZERO,
+            wall_size,
+            dissolve,
+            index,
+            Vec4::ZERO,
         )
     }
 
     pub fn into_data(self) -> InstanceData {
         self.into()
     }
-
 }
 
 impl From<GameObjectInstanceData> for InstanceData {
@@ -285,7 +282,10 @@ impl GpuMesh {
     ) {
         let span = tracing::trace_span!("mesh-rebuild");
         let _guard = span.enter();
-        assert!(billboard_data.len() < 16, "Billboard data can only have up to 15 elements.");
+        assert!(
+            billboard_data.len() < 16,
+            "Billboard data can only have up to 15 elements."
+        );
         self.vertex_count = position_us.len();
         self.point_count = point_positions.len();
 
@@ -318,7 +318,11 @@ impl GpuMesh {
                     ssbo
                 });
                 gl.bind_buffer(glow::SHADER_STORAGE_BUFFER, Some(ssbo));
-                gl.buffer_data_u8_slice(glow::SHADER_STORAGE_BUFFER, bytemuck::cast_slice(billboard_data), glow::STATIC_DRAW);
+                gl.buffer_data_u8_slice(
+                    glow::SHADER_STORAGE_BUFFER,
+                    bytemuck::cast_slice(billboard_data),
+                    glow::STATIC_DRAW,
+                );
             }
 
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
@@ -340,7 +344,10 @@ impl GpuMesh {
     ) -> Self {
         let span = tracing::debug_span!("new-mesh");
         let _guard = span.enter();
-        assert!(billboard_data.len() < 16, "Billboard data can only have up to 15 elements.");
+        assert!(
+            billboard_data.len() < 16,
+            "Billboard data can only have up to 15 elements."
+        );
         unsafe {
             let vao = gl.create_vertex_array().unwrap();
             tracing::debug!(target: DB_RENDER, "Created new VAO '{}'", vao.0);
@@ -379,7 +386,11 @@ impl GpuMesh {
             } else {
                 let ssbo = gl.create_buffer().unwrap();
                 gl.bind_buffer(glow::SHADER_STORAGE_BUFFER, Some(ssbo));
-                gl.buffer_data_u8_slice(SHADER_STORAGE_BUFFER, bytemuck::cast_slice(billboard_data), glow::STATIC_DRAW);
+                gl.buffer_data_u8_slice(
+                    SHADER_STORAGE_BUFFER,
+                    bytemuck::cast_slice(billboard_data),
+                    glow::STATIC_DRAW,
+                );
                 gl.bind_buffer_base(SHADER_STORAGE_BUFFER, 0, Some(ssbo));
                 gl.bind_buffer(SHADER_STORAGE_BUFFER, None);
                 tracing::debug!(target: DB_RENDER, "Created new billboard SSBO '{}'", ssbo.0);
@@ -443,7 +454,12 @@ impl GpuMesh {
             gl.bind_buffer_base(glow::SHADER_STORAGE_BUFFER, 0, self.billboard_ssbo);
             gl.draw_arrays_instanced(glow::TRIANGLES, 0, self.vertex_count as i32, n);
             if wireframe {
-                renderer.set_int(gl, shader, "u_render_mode", RenderMode::EditorWireframe.into());
+                renderer.set_int(
+                    gl,
+                    shader,
+                    "u_render_mode",
+                    RenderMode::EditorWireframe.into(),
+                );
                 gl.polygon_mode(glow::FRONT_AND_BACK, glow::LINE);
                 gl.line_width(0.5);
                 gl.draw_arrays_instanced(glow::TRIANGLES, 0, self.vertex_count as i32, n);
@@ -605,10 +621,7 @@ impl GpuMesh {
 
             let tex_path: Option<&PathBuf> = data
                 .get(material_key.unwrap_or("default"))
-                .and_then(|mat_data| {
-                    mesh_textures
-                        .get(&mat_data.texture.to_string())
-                })
+                .and_then(|mat_data| mesh_textures.get(&mat_data.texture.to_string()))
                 .and_then(|asset_key| texture_paths.get(asset_key));
 
             let remap = |uv: Vec2| -> Vec2 {
@@ -640,7 +653,7 @@ impl GpuMesh {
 
                 (
                     [v0.extend(u0.x), v1.extend(u1.x), v2.extend(u2.x)],
-                    [n0.extend(u0.y), n1.extend(u1.y), n2.extend(u2.y)]
+                    [n0.extend(u0.y), n1.extend(u1.y), n2.extend(u2.y)],
                 )
             };
 
@@ -709,20 +722,19 @@ impl GpuMesh {
         for placement in light_mesh.placements.iter() {
             let mat = placement.transform();
             let part = light_mesh.parts.get(&placement.part).unwrap();
-            let bb_idx = placement.billboard.as_ref()
-                .map(|bb| {
-                    let desc = BillboardDesc {
-                        origin: bb.origin.extend(0.),
-                        axis: bb.axis.extend(0.),
-                        normal_lock: bb.normal.extend(if bb.camera_lock {1.} else {0.})
-                    };
-                    if let Some((idx, _)) = billboards.iter().enumerate().find(|(_, d)| **d == desc) {
-                        (idx + 1) as u8
-                    } else {
-                        billboards.push(desc);
-                        billboards.len() as u8
-                    }
-                });
+            let bb_idx = placement.billboard.as_ref().map(|bb| {
+                let desc = BillboardDesc {
+                    origin: bb.origin.extend(0.),
+                    axis: bb.axis.extend(0.),
+                    normal_lock: bb.normal.extend(if bb.camera_lock { 1. } else { 0. }),
+                };
+                if let Some((idx, _)) = billboards.iter().enumerate().find(|(_, d)| **d == desc) {
+                    (idx + 1) as u8
+                } else {
+                    billboards.push(desc);
+                    billboards.len() as u8
+                }
+            });
             Self::add_triangle_data(
                 &mut vertice_us,
                 &mut normal_vs,
@@ -783,14 +795,7 @@ impl GpuMesh {
             points.extend_from_slice(&[pos, sx, sy, sz]);
         }
 
-        self.rebuild(
-            gl,
-            &vertice_us,
-            &normal_vs,
-            &materials,
-            &points,
-            &[],
-        );
+        self.rebuild(gl, &vertice_us, &normal_vs, &materials, &points, &[]);
     }
 
     pub fn set_from_light_mesh_part(
@@ -823,19 +828,11 @@ impl GpuMesh {
         );
         Self::add_point_data(&mut points, part, &Mat4::IDENTITY);
 
-        self.rebuild(
-            gl,
-            &vertice_us,
-            &normal_vs,
-            &materials,
-            &points,
-            &[],
-        );
+        self.rebuild(gl, &vertice_us, &normal_vs, &materials, &points, &[]);
     }
 }
 
-
-impl data::SpectrogramData {
+impl data::mesh::SpectrogramData {
     pub fn generate(&self, gl: &glow::Context, vm: &mut GpuMesh) {
         // NOTE: update to a match block when more styles get added.
 
@@ -844,32 +841,54 @@ impl data::SpectrogramData {
 
         let v = [
             self.rotation * Vec3::new(-0.5, 0., -0.5),
-            self.rotation * Vec3::new(-0.5, 0.,  0.5),
-            self.rotation * Vec3::new( 0.5, 0.,  0.5),
-            self.rotation * Vec3::new( 0.5, 0., -0.5),
-
+            self.rotation * Vec3::new(-0.5, 0., 0.5),
+            self.rotation * Vec3::new(0.5, 0., 0.5),
+            self.rotation * Vec3::new(0.5, 0., -0.5),
             self.rotation * Vec3::new(-0.5, self.base_height, -0.5),
-            self.rotation * Vec3::new(-0.5, self.base_height,  0.5),
-            self.rotation * Vec3::new( 0.5, self.base_height,  0.5),
-            self.rotation * Vec3::new( 0.5, self.base_height, -0.5),
+            self.rotation * Vec3::new(-0.5, self.base_height, 0.5),
+            self.rotation * Vec3::new(0.5, self.base_height, 0.5),
+            self.rotation * Vec3::new(0.5, self.base_height, -0.5),
         ];
 
         let tris = [
-            v[7], v[5], v[6], v[7], v[4], v[5],
-            v[1], v[2], v[6], v[1], v[6], v[5],
-            v[3], v[0], v[4], v[3], v[4], v[7],
-            v[0], v[1], v[5], v[0], v[5], v[4],
-            v[2], v[3], v[7], v[2], v[7], v[6],
+            v[7], v[5], v[6], v[7], v[4], v[5], v[1], v[2], v[6], v[1], v[6], v[5], v[3], v[0],
+            v[4], v[3], v[4], v[7], v[0], v[1], v[5], v[0], v[5], v[4], v[2], v[3], v[7], v[2],
+            v[7], v[6],
         ];
 
         let normals = [
-            Vec3::Y, Vec3::Y, Vec3::Y, Vec3::Y, Vec3::Y, Vec3::Y,
-            Vec3::Z, Vec3::Z, Vec3::Z, Vec3::Z, Vec3::Z, Vec3::Z,
-            Vec3::NEG_Z,Vec3::NEG_Z,Vec3::NEG_Z,Vec3::NEG_Z,Vec3::NEG_Z,Vec3::NEG_Z,
-            Vec3::NEG_X,Vec3::NEG_X,Vec3::NEG_X,Vec3::NEG_X,Vec3::NEG_X,Vec3::NEG_X,
-            Vec3::X, Vec3::X, Vec3::X, Vec3::X, Vec3::X, Vec3::X,
-        ].map(|n| self.rotation * n);
-
+            Vec3::Y,
+            Vec3::Y,
+            Vec3::Y,
+            Vec3::Y,
+            Vec3::Y,
+            Vec3::Y,
+            Vec3::Z,
+            Vec3::Z,
+            Vec3::Z,
+            Vec3::Z,
+            Vec3::Z,
+            Vec3::Z,
+            Vec3::NEG_Z,
+            Vec3::NEG_Z,
+            Vec3::NEG_Z,
+            Vec3::NEG_Z,
+            Vec3::NEG_Z,
+            Vec3::NEG_Z,
+            Vec3::NEG_X,
+            Vec3::NEG_X,
+            Vec3::NEG_X,
+            Vec3::NEG_X,
+            Vec3::NEG_X,
+            Vec3::NEG_X,
+            Vec3::X,
+            Vec3::X,
+            Vec3::X,
+            Vec3::X,
+            Vec3::X,
+            Vec3::X,
+        ]
+        .map(|n| self.rotation * n);
 
         let offset = self.rotation * self.offset;
 
@@ -877,40 +896,44 @@ impl data::SpectrogramData {
         let mut norms = Vec::new();
 
         for i in 0..self.count {
-            let tower: Vec<Vec3> = tris.iter().map(|v| v + self.position + offset * (i as f32)).collect();
+            let tower: Vec<Vec3> = tris
+                .iter()
+                .map(|v| v + self.position + offset * (i as f32))
+                .collect();
             geo.extend_from_slice(&tower);
             norms.extend_from_slice(&normals);
         }
-
 
         let tower_multiplier = if let Some(plane) = self.mirror {
             let mn = plane.xyz().normalize();
             let d = plane.w;
 
-            let mirror = |point: Vec3| -> Vec3 {
-                point - 2. * (mn.dot(point) + d) * mn
-            };
+            let mirror = |point: Vec3| -> Vec3 { point - 2. * (mn.dot(point) + d) * mn };
 
             let mut mirror_tris = [
-                v[6], v[5], v[7], v[5], v[4], v[7],
-                v[2], v[1], v[6], v[6], v[1], v[5],
-                v[0], v[3], v[4], v[4], v[3], v[7],
-                v[1], v[0], v[5], v[5], v[0], v[4],
-                v[3], v[2], v[7], v[7], v[2], v[6],
+                v[6], v[5], v[7], v[5], v[4], v[7], v[2], v[1], v[6], v[6], v[1], v[5], v[0], v[3],
+                v[4], v[4], v[3], v[7], v[1], v[0], v[5], v[5], v[0], v[4], v[3], v[2], v[7], v[7],
+                v[2], v[6],
             ];
-            let mirror_normals: Vec<Vec3> = normals.iter().map(|v| v - 2. * mn.dot(*v) * mn).collect();
+            let mirror_normals: Vec<Vec3> =
+                normals.iter().map(|v| v - 2. * mn.dot(*v) * mn).collect();
             mirror_tris.iter_mut().for_each(|v| *v = mirror(*v));
 
             let offset = offset - 2. * mn.dot(offset) * mn;
             let pos = mirror(self.position);
 
             for i in 0..self.count {
-                let tower: Vec<Vec3> = mirror_tris.iter().map(|v| v + pos + offset * (i as f32)).collect();
+                let tower: Vec<Vec3> = mirror_tris
+                    .iter()
+                    .map(|v| v + pos + offset * (i as f32))
+                    .collect();
                 geo.extend_from_slice(&tower);
                 norms.extend_from_slice(&mirror_normals);
             }
             2
-        } else { 1 };
+        } else {
+            1
+        };
 
         tracing::trace!(target: DB_RENDER, ?geo, ?norms, "Constructed {} towers", self.count * tower_multiplier);
 
@@ -921,7 +944,7 @@ impl data::SpectrogramData {
             let res = match i {
                 0 => Vec2::ZERO,
                 1 => Vec2::new(0.5, 0.),
-                _ => Vec2::new(0., 0.5)
+                _ => Vec2::new(0., 0.5),
             };
             i = (i + 1) % 3;
             res
@@ -967,7 +990,6 @@ pub enum GridType {
 }
 
 impl Renderer {
-
     fn compile_shader(gl: &glow::Context, kind: u32, src: &str) -> Result<glow::Shader, String> {
         unsafe {
             let shader = gl.create_shader(kind).map_err(|e| e.to_string())?;
@@ -1045,7 +1067,7 @@ impl Renderer {
             let mirror = Self::build_program(
                 gl,
                 include_str!("./assets/shaders/mirror.vert"),
-                include_str!("./assets/shaders/mirror.frag")
+                include_str!("./assets/shaders/mirror.frag"),
             )?;
             tracing::debug!(target: DB_RENDER, "Compiling point shader");
             let point = Self::build_program(
@@ -1285,37 +1307,31 @@ impl Renderer {
         }
     }
 
-    pub fn draw_grid(
-        &self,
-        gl: &glow::Context,
-        view: &Mat4,
-        proj: &Mat4,
-    ) {
+    pub fn draw_grid(&self, gl: &glow::Context, view: &Mat4, proj: &Mat4) {
         unsafe {
             let grid = self.grid;
             gl.use_program(Some(grid));
             gl.bind_vertex_array(Some(self.grid_vao));
             gl.blend_func_separate(
-                glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA,
-                glow::ZERO, glow::ONE,
+                glow::SRC_ALPHA,
+                glow::ONE_MINUS_SRC_ALPHA,
+                glow::ZERO,
+                glow::ONE,
             );
             self.set_mat4(gl, grid, "view", view);
             self.set_mat4(gl, grid, "proj", proj);
             gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
             gl.bind_vertex_array(None);
             gl.blend_func_separate(
-                glow::ONE, glow::ONE_MINUS_SRC_ALPHA,
-                glow::ONE_MINUS_SRC_COLOR, glow::ONE,
+                glow::ONE,
+                glow::ONE_MINUS_SRC_ALPHA,
+                glow::ONE_MINUS_SRC_COLOR,
+                glow::ONE,
             );
         }
     }
 
-    pub fn draw_map_grid(
-        &self,
-        gl: &glow::Context,
-        view: &Mat4,
-        proj: &Mat4,
-    ) {
+    pub fn draw_map_grid(&self, gl: &glow::Context, view: &Mat4, proj: &Mat4) {
         self.beatmap.render_grid(self, gl, view, proj);
     }
 
@@ -1338,8 +1354,18 @@ impl Renderer {
         let self2 = unsafe { rd.detach_mut_ref(self) };
         let self3 = unsafe { rd.detach_ref(self) };
         self.bloomfog.draw_meshes(
-            self2, gl, view, proj, calls, window, draw_grid,
-            Some(&self3.bloomfog.grab_target), mirror_mesh, wireframe, fog_heights, draw_mirror,
+            self2,
+            gl,
+            view,
+            proj,
+            calls,
+            window,
+            draw_grid,
+            Some(&self3.bloomfog.grab_target),
+            mirror_mesh,
+            wireframe,
+            fog_heights,
+            draw_mirror,
             bg_color,
         );
     }
@@ -1348,7 +1374,8 @@ impl Renderer {
     pub fn draw_meshes(
         &mut self,
         gl: &glow::Context,
-        view: &Mat4, proj: &Mat4,
+        view: &Mat4,
+        proj: &Mat4,
         calls: &[MeshDrawCall<'_>],
         mirror_mesh: Option<&GpuMesh>,
         wireframe: bool,
@@ -1362,9 +1389,17 @@ impl Renderer {
             let self2 = rd.detach_mut_ref(self);
             if draw_mirror && let Some(mirror_mesh) = mirror_mesh {
                 self.bloomfog.draw_mirror(
-                    self2, gl, view, proj, calls, mirror_mesh,
-                    RenderMode::Editor, wireframe, [-50., -30.],
-                    None, window
+                    self2,
+                    gl,
+                    view,
+                    proj,
+                    calls,
+                    mirror_mesh,
+                    RenderMode::Editor,
+                    wireframe,
+                    [-50., -30.],
+                    None,
+                    window,
                 );
             }
         }
@@ -1373,7 +1408,8 @@ impl Renderer {
     fn draw_meshes_internal(
         &mut self,
         gl: &glow::Context,
-        view: &Mat4, proj: &Mat4,
+        view: &Mat4,
+        proj: &Mat4,
         calls: &[MeshDrawCall<'_>],
         window: (i32, i32),
     ) {
@@ -1398,7 +1434,9 @@ impl Renderer {
 
             self.set_int(gl, self.mesh, "passType", RenderPass::Normal.into());
             for call in calls {
-                if call.highlight { continue };
+                if call.highlight {
+                    continue;
+                };
                 self.set_int(gl, self.mesh, "u_render_mode", RenderMode::Editor.into());
                 call.mesh
                     .draw_tris(gl, &call.instances, call.wireframe, self, self.mesh);
@@ -1410,7 +1448,9 @@ impl Renderer {
 
             self.set_int(gl, self.mesh, "passType", RenderPass::Highlight.into());
             for call in calls {
-                if !call.highlight { continue };
+                if !call.highlight {
+                    continue;
+                };
                 self.set_int(gl, self.mesh, "u_render_mode", RenderMode::Editor.into());
                 call.mesh
                     .draw_tris(gl, &call.instances, call.wireframe, self, self.mesh);
@@ -1419,19 +1459,62 @@ impl Renderer {
             gl.depth_mask(false);
             gl.disable(glow::DEPTH_TEST);
 
-            self.bloomfog.apply_effect_pass(self, gl, &self.bloomfog.bloom_input, Some(&self.bloomfog.extra_buffer), PassType::GaussianV, false, Some((0., 0., 0., 0.)), window, 1., 1.);
-            self.bloomfog.apply_effect_pass(self, gl, &self.bloomfog.extra_buffer, Some(&self.bloomfog.blurred_buffer), PassType::GaussianH, false, Some((0., 0., 0., 0.)), window, 1., 1.);
-            self.bloomfog.apply_effect_pass(self, gl, &self.bloomfog.blurred_buffer, Some(&self.bloomfog.extra_buffer), PassType::Highlight, false, Some((0., 0., 0., 0.)), window, 1., 1.);
+            self.bloomfog.apply_effect_pass(
+                self,
+                gl,
+                &self.bloomfog.bloom_input,
+                Some(&self.bloomfog.extra_buffer),
+                PassType::GaussianV,
+                false,
+                Some((0., 0., 0., 0.)),
+                window,
+                1.,
+                1.,
+            );
+            self.bloomfog.apply_effect_pass(
+                self,
+                gl,
+                &self.bloomfog.extra_buffer,
+                Some(&self.bloomfog.blurred_buffer),
+                PassType::GaussianH,
+                false,
+                Some((0., 0., 0., 0.)),
+                window,
+                1.,
+                1.,
+            );
+            self.bloomfog.apply_effect_pass(
+                self,
+                gl,
+                &self.bloomfog.blurred_buffer,
+                Some(&self.bloomfog.extra_buffer),
+                PassType::Highlight,
+                false,
+                Some((0., 0., 0., 0.)),
+                window,
+                1.,
+                1.,
+            );
 
             gl.bind_framebuffer(glow::FRAMEBUFFER, None);
             gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
 
-            self.bloomfog.apply_effect_pass(self, gl, &self.bloomfog.extra_buffer, None, PassType::Blit, false, None, window, 1., 1.);
+            self.bloomfog.apply_effect_pass(
+                self,
+                gl,
+                &self.bloomfog.extra_buffer,
+                None,
+                PassType::Blit,
+                false,
+                None,
+                window,
+                1.,
+                1.,
+            );
 
             gl.depth_mask(true);
             gl.enable(glow::DEPTH_TEST);
             gl.enable(glow::SCISSOR_TEST);
-
         }
     }
 
@@ -1451,7 +1534,8 @@ impl Renderer {
             gl.use_program(Some(self.handles));
             self.set_mat4(gl, self.handles, "uVP", vp);
             for call in calls {
-                call.mesh.draw_tris(gl, &call.instances, false, self, self.handles);
+                call.mesh
+                    .draw_tris(gl, &call.instances, false, self, self.handles);
             }
             gl.use_program(Some(self.handle_points));
             self.set_mat4(gl, self.handle_points, "uVP", vp);
@@ -1477,7 +1561,13 @@ impl Renderer {
         }
     }
 
-    pub(crate) fn set_mat4(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, m: &Mat4) {
+    pub(crate) fn set_mat4(
+        &self,
+        gl: &glow::Context,
+        prog: glow::NativeProgram,
+        name: &str,
+        m: &Mat4,
+    ) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_matrix_4_f32_slice(Some(&l), false, &m.to_cols_array());
@@ -1492,35 +1582,65 @@ impl Renderer {
     //     }
     // }
 
-    pub(crate) fn set_vec3(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec3) {
+    pub(crate) fn set_vec3(
+        &self,
+        gl: &glow::Context,
+        prog: glow::NativeProgram,
+        name: &str,
+        v: Vec3,
+    ) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_3_f32(Some(&l), v.x, v.y, v.z);
             }
         }
     }
-    pub(crate) fn set_float(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: f32) {
+    pub(crate) fn set_float(
+        &self,
+        gl: &glow::Context,
+        prog: glow::NativeProgram,
+        name: &str,
+        v: f32,
+    ) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_1_f32(Some(&l), v);
             }
         }
     }
-    pub(crate) fn set_vec2(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: Vec2) {
+    pub(crate) fn set_vec2(
+        &self,
+        gl: &glow::Context,
+        prog: glow::NativeProgram,
+        name: &str,
+        v: Vec2,
+    ) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_2_f32(Some(&l), v.x, v.y);
             }
         }
     }
-    pub(crate) fn set_int(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: i32) {
+    pub(crate) fn set_int(
+        &self,
+        gl: &glow::Context,
+        prog: glow::NativeProgram,
+        name: &str,
+        v: i32,
+    ) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_1_i32(Some(&l), v);
             }
         }
     }
-    pub(crate) fn set_uint(&self, gl: &glow::Context, prog: glow::NativeProgram, name: &str, v: u32) {
+    pub(crate) fn set_uint(
+        &self,
+        gl: &glow::Context,
+        prog: glow::NativeProgram,
+        name: &str,
+        v: u32,
+    ) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_1_u32(Some(&l), v);
@@ -1549,36 +1669,74 @@ impl RenderTarget {
             tracing::debug!(target: DB_RENDER, "Created color texture '{}'", color.0);
             gl.bind_texture(glow::TEXTURE_2D, Some(color));
             gl.tex_image_2d(
-                glow::TEXTURE_2D, 0,
+                glow::TEXTURE_2D,
+                0,
                 glow::RGBA as i32,
-                width, height, 0,
-                glow::RGBA, glow::UNSIGNED_BYTE,
+                width,
+                height,
+                0,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
                 glow::PixelUnpackData::Slice(None),
             );
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MIN_FILTER,
+                glow::NEAREST as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MAG_FILTER,
+                glow::NEAREST as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_S,
+                glow::CLAMP_TO_EDGE as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_T,
+                glow::CLAMP_TO_EDGE as i32,
+            );
             gl.framebuffer_texture_2d(
-                glow::FRAMEBUFFER, glow::COLOR_ATTACHMENT0,
-                glow::TEXTURE_2D, Some(color), 0,
+                glow::FRAMEBUFFER,
+                glow::COLOR_ATTACHMENT0,
+                glow::TEXTURE_2D,
+                Some(color),
+                0,
             );
 
             let depth = gl.create_texture().unwrap();
             tracing::debug!(target: DB_RENDER, "Created depth texture '{}'", depth.0);
             gl.bind_texture(glow::TEXTURE_2D, Some(depth));
             gl.tex_image_2d(
-                glow::TEXTURE_2D, 0,
+                glow::TEXTURE_2D,
+                0,
                 glow::DEPTH_COMPONENT24 as i32,
-                width, height, 0,
-                glow::DEPTH_COMPONENT, glow::UNSIGNED_INT,
+                width,
+                height,
+                0,
+                glow::DEPTH_COMPONENT,
+                glow::UNSIGNED_INT,
                 glow::PixelUnpackData::Slice(None),
             );
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MIN_FILTER,
+                glow::NEAREST as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MAG_FILTER,
+                glow::NEAREST as i32,
+            );
             gl.framebuffer_texture_2d(
-                glow::FRAMEBUFFER, glow::DEPTH_ATTACHMENT,
-                glow::TEXTURE_2D, Some(depth), 0,
+                glow::FRAMEBUFFER,
+                glow::DEPTH_ATTACHMENT,
+                glow::TEXTURE_2D,
+                Some(depth),
+                0,
             );
 
             assert_eq!(
@@ -1590,7 +1748,12 @@ impl RenderTarget {
             gl.bind_framebuffer(glow::FRAMEBUFFER, None);
             gl.bind_texture(glow::TEXTURE_2D, None);
 
-            Self { fbo, color, depth, size: (width, height) }
+            Self {
+                fbo,
+                color,
+                depth,
+                size: (width, height),
+            }
         }
     }
 
@@ -1599,19 +1762,27 @@ impl RenderTarget {
         unsafe {
             gl.bind_texture(glow::TEXTURE_2D, Some(self.color));
             gl.tex_image_2d(
-                glow::TEXTURE_2D, 0,
+                glow::TEXTURE_2D,
+                0,
                 glow::RGBA as i32,
-                width, height, 0,
-                glow::RGBA, glow::UNSIGNED_BYTE,
+                width,
+                height,
+                0,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
                 glow::PixelUnpackData::Slice(None),
             );
 
             gl.bind_texture(glow::TEXTURE_2D, Some(self.depth));
             gl.tex_image_2d(
-                glow::TEXTURE_2D, 0,
+                glow::TEXTURE_2D,
+                0,
                 glow::DEPTH_COMPONENT24 as i32,
-                width, height, 0,
-                glow::DEPTH_COMPONENT, glow::UNSIGNED_INT,
+                width,
+                height,
+                0,
+                glow::DEPTH_COMPONENT,
+                glow::UNSIGNED_INT,
                 glow::PixelUnpackData::Slice(None),
             );
 
@@ -1679,53 +1850,45 @@ impl BloomfogRenderer {
         let vsh = include_str!("assets/shaders/core/beatcraft_fx.vsh");
 
         tracing::debug!(target: DB_RENDER, "Compiling blur downsample shader");
-        let blur_down = Renderer::build_program(gl,
+        let blur_down = Renderer::build_program(
+            gl,
             vsh,
-            include_str!("assets/shaders/core/bloomfog_downsample.fsh")
+            include_str!("assets/shaders/core/bloomfog_downsample.fsh"),
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling blur upsample shader");
-        let blur_up = Renderer::build_program(gl,
+        let blur_up = Renderer::build_program(
+            gl,
             vsh,
-            include_str!("assets/shaders/core/bloomfog_upsample.fsh")
+            include_str!("assets/shaders/core/bloomfog_upsample.fsh"),
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling gaussian vertical shader");
-        let gaussian_v = Renderer::build_program(gl,
-            vsh,
-            include_str!("assets/shaders/core/gaussian_v.fsh")
-        )?;
+        let gaussian_v =
+            Renderer::build_program(gl, vsh, include_str!("assets/shaders/core/gaussian_v.fsh"))?;
 
         tracing::debug!(target: DB_RENDER, "Compiling gaussian horizontal shader");
-        let gaussian_h = Renderer::build_program(gl,
-            vsh,
-            include_str!("assets/shaders/core/gaussian_h.fsh")
-        )?;
+        let gaussian_h =
+            Renderer::build_program(gl, vsh, include_str!("assets/shaders/core/gaussian_h.fsh"))?;
 
         tracing::debug!(target: DB_RENDER, "Compiling blue noise shader");
-        let blue_noise = Renderer::build_program(gl,
-            vsh,
-            include_str!("assets/shaders/core/blue_noise.fsh")
-        )?;
+        let blue_noise =
+            Renderer::build_program(gl, vsh, include_str!("assets/shaders/core/blue_noise.fsh"))?;
 
         tracing::debug!(target: DB_RENDER, "Compiling blit shader");
-        let blit = Renderer::build_program(gl,
+        let blit = Renderer::build_program(
+            gl,
             vsh,
-            include_str!("assets/shaders/core/beatcraft_blit.fsh")
+            include_str!("assets/shaders/core/beatcraft_blit.fsh"),
         )?;
 
         tracing::debug!(target: DB_RENDER, "Compiling composite shader");
-        let comp = Renderer::build_program(gl,
-            vsh,
-            include_str!("assets/shaders/core/composite.fsh")
-        )?;
+        let comp =
+            Renderer::build_program(gl, vsh, include_str!("assets/shaders/core/composite.fsh"))?;
 
         tracing::debug!(target: DB_RENDER, "Compiling highlight shader");
-        let highlight = Renderer::build_program(
-            gl,
-            vsh,
-            include_str!("assets/shaders/core/highlight.fsh")
-        )?;
+        let highlight =
+            Renderer::build_program(gl, vsh, include_str!("assets/shaders/core/highlight.fsh"))?;
 
         unsafe {
             let vao = gl.create_vertex_array()?;
@@ -1774,9 +1937,9 @@ impl BloomfogRenderer {
     }
 
     pub fn resize(&mut self, gl: &glow::Context, window: (i32, i32)) {
-        self.framebuffer.resize(gl, window.0*2, window.1*2);
-        self.blurred_buffer.resize(gl, window.0*2, window.1*2);
-        self.extra_buffer.resize(gl, window.0*2, window.1*2);
+        self.framebuffer.resize(gl, window.0 * 2, window.1 * 2);
+        self.blurred_buffer.resize(gl, window.0 * 2, window.1 * 2);
+        self.extra_buffer.resize(gl, window.0 * 2, window.1 * 2);
         self.bloom_input.resize(gl, window.0, window.1);
         self.bloom_swap.resize(gl, window.0, window.1);
         self.bloom_output.resize(gl, window.0, window.1);
@@ -1787,7 +1950,11 @@ impl BloomfogRenderer {
         let mut md = 2.;
         for rt in self.pyramid_buffers.iter_mut() {
             if window.0 as f32 / md > 0. && window.1 as f32 / md > 0. {
-                rt.resize(gl, (window.0 as f32 * 2. / md) as i32, (window.1 as f32 * 2. / md) as i32);
+                rt.resize(
+                    gl,
+                    (window.0 as f32 * 2. / md) as i32,
+                    (window.1 as f32 * 2. / md) as i32,
+                );
             }
             md *= 2.;
         }
@@ -1810,7 +1977,6 @@ impl BloomfogRenderer {
         window: (i32, i32),
     ) {
         unsafe {
-
             let mut saved_vp = [0i32; 4];
             gl.get_parameter_i32_slice(glow::VIEWPORT, &mut saved_vp);
 
@@ -1834,10 +2000,7 @@ impl BloomfogRenderer {
 
             gl.enable(glow::CLIP_DISTANCE0);
             if render_mode == RenderMode::Beatcraft {
-                self.render_solid(
-                    renderer, gl, &view_f, proj, &mirrored,
-                    fog_heights
-                );
+                self.render_solid(renderer, gl, &view_f, proj, &mirrored, fog_heights);
             } else {
                 renderer.draw_meshes_internal(gl, &view_f, proj, &mirrored, window);
                 gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
@@ -1854,20 +2017,28 @@ impl BloomfogRenderer {
             gl.use_program(Some(renderer.mirror));
 
             gl.enable(glow::CULL_FACE);
-            renderer.set_sampler(gl, renderer.mirror, "u_texture", Some(self.mirror_target.color), 0);
+            renderer.set_sampler(
+                gl,
+                renderer.mirror,
+                "u_texture",
+                Some(self.mirror_target.color),
+                0,
+            );
             renderer.set_sampler(gl, renderer.mirror, "u_noise", Some(renderer.blue_noise), 1);
-            renderer.set_sampler(gl, renderer.mirror, "u_bloomfog", Some(self.blurred_buffer.color), 2);
+            renderer.set_sampler(
+                gl,
+                renderer.mirror,
+                "u_bloomfog",
+                Some(self.blurred_buffer.color),
+                2,
+            );
             renderer.set_vec3(gl, renderer.mirror, "u_worldPos", Vec3::ZERO);
             renderer.set_mat4(gl, renderer.mirror, "u_view", view);
             renderer.set_mat4(gl, renderer.mirror, "u_projection", proj);
             renderer.set_int(gl, renderer.mirror, "u_render_mode", render_mode.into());
             mirror.draw_tris(
                 gl,
-                &[InstanceData::new(
-                    Vec4::ZERO,
-                    Mat4::IDENTITY,
-                    LIGHT_COLORS
-                )],
+                &[InstanceData::new(Vec4::ZERO, Mat4::IDENTITY, LIGHT_COLORS)],
                 wireframe,
                 renderer,
                 renderer.mirror,
@@ -1912,7 +2083,6 @@ impl BloomfogRenderer {
                 gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
             }
 
-
             self.framebuffer.bind(gl);
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
             self.render_bloomfog(renderer, gl, view, proj, calls, fog_heights);
@@ -1920,7 +2090,18 @@ impl BloomfogRenderer {
 
             self.apply_pyramid_blur(renderer, gl, window);
 
-            self.apply_effect_pass(renderer, gl, &self.blurred_buffer, main_target, PassType::Blit, false, Some((0., 0., 0., 0.)), window, 11., 2.);
+            self.apply_effect_pass(
+                renderer,
+                gl,
+                &self.blurred_buffer,
+                main_target,
+                PassType::Blit,
+                false,
+                Some((0., 0., 0., 0.)),
+                window,
+                11.,
+                2.,
+            );
             gl.depth_mask(true);
 
             // render mirrored?
@@ -1929,8 +2110,15 @@ impl BloomfogRenderer {
             //   draw mirrors
             if draw_mirror && let Some(mirror_mesh) = mirror_mesh {
                 self.draw_mirror(
-                    renderer, gl, view, proj, calls, mirror_mesh,
-                    RenderMode::Beatcraft, wireframe, fog_heights,
+                    renderer,
+                    gl,
+                    view,
+                    proj,
+                    calls,
+                    mirror_mesh,
+                    RenderMode::Beatcraft,
+                    wireframe,
+                    fog_heights,
                     main_target,
                     window,
                 );
@@ -1948,14 +2136,21 @@ impl BloomfogRenderer {
             // render smoke
             // render bloom
             self.render_bloom(
-                renderer, gl, view, proj, calls, window,
-                saved_vp, main_target, mirror_mesh,
-                fog_heights
+                renderer,
+                gl,
+                view,
+                proj,
+                calls,
+                window,
+                saved_vp,
+                main_target,
+                mirror_mesh,
+                fog_heights,
             );
             gl.enable(glow::DEPTH_TEST);
 
             match draw_grid {
-                GridType::None => {},
+                GridType::None => {}
                 GridType::WorldGrid => renderer.draw_grid(gl, view, proj),
                 GridType::BeatGrid => renderer.draw_map_grid(gl, view, proj),
             }
@@ -1964,13 +2159,20 @@ impl BloomfogRenderer {
 
             gl.bind_framebuffer(glow::FRAMEBUFFER, None);
             gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
-            self.apply_effect_pass(renderer, gl, main_target.unwrap(), None, PassType::Blit, false, None, window, 11., 1.);
-
-            self.render_obstacles(
+            self.apply_effect_pass(
                 renderer,
-                gl, view, proj,
-                calls,
+                gl,
+                main_target.unwrap(),
+                None,
+                PassType::Blit,
+                false,
+                None,
+                window,
+                11.,
+                1.,
             );
+
+            self.render_obstacles(renderer, gl, view, proj, calls);
 
             self.bloom_input.bind(gl);
             gl.disable(glow::SCISSOR_TEST);
@@ -1978,8 +2180,15 @@ impl BloomfogRenderer {
             gl.use_program(Some(renderer.mesh));
             renderer.set_int(gl, renderer.mesh, "passType", RenderPass::Highlight.into());
             for call in calls {
-                if !call.highlight { continue };
-                renderer.set_int(gl, renderer.mesh, "u_render_mode", RenderMode::Editor.into());
+                if !call.highlight {
+                    continue;
+                };
+                renderer.set_int(
+                    gl,
+                    renderer.mesh,
+                    "u_render_mode",
+                    RenderMode::Editor.into(),
+                );
                 call.mesh
                     .draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
             }
@@ -1987,19 +2196,62 @@ impl BloomfogRenderer {
             gl.depth_mask(false);
             gl.disable(glow::DEPTH_TEST);
 
-            self.apply_effect_pass(renderer, gl, &self.bloom_input, Some(&self.extra_buffer), PassType::GaussianV, false, Some((0., 0., 0., 0.)), window, 1., 1.);
-            self.apply_effect_pass(renderer, gl, &self.extra_buffer, Some(&self.blurred_buffer), PassType::GaussianH, false, Some((0., 0., 0., 0.)), window, 1., 1.);
-            self.apply_effect_pass(renderer, gl, &self.blurred_buffer, Some(&self.extra_buffer), PassType::Highlight, false, Some((0., 0., 0., 0.)), window, 1., 1.);
+            self.apply_effect_pass(
+                renderer,
+                gl,
+                &self.bloom_input,
+                Some(&self.extra_buffer),
+                PassType::GaussianV,
+                false,
+                Some((0., 0., 0., 0.)),
+                window,
+                1.,
+                1.,
+            );
+            self.apply_effect_pass(
+                renderer,
+                gl,
+                &self.extra_buffer,
+                Some(&self.blurred_buffer),
+                PassType::GaussianH,
+                false,
+                Some((0., 0., 0., 0.)),
+                window,
+                1.,
+                1.,
+            );
+            self.apply_effect_pass(
+                renderer,
+                gl,
+                &self.blurred_buffer,
+                Some(&self.extra_buffer),
+                PassType::Highlight,
+                false,
+                Some((0., 0., 0., 0.)),
+                window,
+                1.,
+                1.,
+            );
 
             gl.bind_framebuffer(glow::FRAMEBUFFER, None);
             gl.viewport(saved_vp[0], saved_vp[1], saved_vp[2], saved_vp[3]);
 
-            self.apply_effect_pass(renderer, gl, &self.extra_buffer, None, PassType::Blit, false, None, window, 1., 1.);
+            self.apply_effect_pass(
+                renderer,
+                gl,
+                &self.extra_buffer,
+                None,
+                PassType::Blit,
+                false,
+                None,
+                window,
+                1.,
+                1.,
+            );
 
             gl.depth_mask(true);
             gl.enable(glow::DEPTH_TEST);
             gl.enable(glow::SCISSOR_TEST);
-
         }
     }
 
@@ -2018,15 +2270,25 @@ impl BloomfogRenderer {
 
             gl.enable(glow::CLIP_DISTANCE0);
 
-
             gl.use_program(Some(renderer.mesh));
             renderer.set_mat4(gl, renderer.mesh, "u_view", view);
             renderer.set_mat4(gl, renderer.mesh, "u_projection", proj);
             let tex = renderer.atlas.or(Some(renderer.missing_texture));
             renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
-            renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.extra_buffer.color), 1);
+            renderer.set_sampler(
+                gl,
+                renderer.mesh,
+                "u_bloomfog",
+                Some(self.extra_buffer.color),
+                1,
+            );
             renderer.set_int(gl, renderer.mesh, "passType", 2);
-            renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
+            renderer.set_vec2(
+                gl,
+                renderer.mesh,
+                "u_fog",
+                Vec2::new(fog_heights[0], fog_heights[1]),
+            );
 
             let mut u_camera_pos = Mat4::from_translation(cam_pos);
             u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());
@@ -2040,7 +2302,8 @@ impl BloomfogRenderer {
                 }
                 gl.bind_vertex_array(Some(call.mesh.vao));
                 renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
-                call.mesh.draw_tris(gl, &call.instances, false, renderer, renderer.mesh);
+                call.mesh
+                    .draw_tris(gl, &call.instances, false, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
@@ -2067,15 +2330,25 @@ impl BloomfogRenderer {
             gl.enable(glow::CLIP_DISTANCE0);
             gl.depth_mask(true);
 
-
             gl.use_program(Some(renderer.mesh));
             renderer.set_mat4(gl, renderer.mesh, "u_view", view);
             renderer.set_mat4(gl, renderer.mesh, "u_projection", proj);
             let tex = renderer.atlas.or(Some(renderer.missing_texture));
             renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
-            renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.blurred_buffer.color), 1);
+            renderer.set_sampler(
+                gl,
+                renderer.mesh,
+                "u_bloomfog",
+                Some(self.blurred_buffer.color),
+                1,
+            );
             renderer.set_int(gl, renderer.mesh, "passType", RenderPass::Normal.into());
-            renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
+            renderer.set_vec2(
+                gl,
+                renderer.mesh,
+                "u_fog",
+                Vec2::new(fog_heights[0], fog_heights[1]),
+            );
             let mut u_camera_pos = Mat4::from_translation(cam_pos);
             u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());
             renderer.set_mat4(gl, renderer.mesh, "u_camera_pos", &u_camera_pos);
@@ -2087,8 +2360,14 @@ impl BloomfogRenderer {
                     gl.enable(glow::CULL_FACE);
                 }
                 gl.bind_vertex_array(Some(call.mesh.vao));
-                renderer.set_int(gl, renderer.mesh, "u_render_mode", RenderMode::Beatcraft.into());
-                call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
+                renderer.set_int(
+                    gl,
+                    renderer.mesh,
+                    "u_render_mode",
+                    RenderMode::Beatcraft.into(),
+                );
+                call.mesh
+                    .draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
@@ -2103,8 +2382,14 @@ impl BloomfogRenderer {
                     gl.enable(glow::CULL_FACE);
                 }
                 gl.bind_vertex_array(Some(call.mesh.vao));
-                renderer.set_int(gl, renderer.mesh, "u_render_mode", RenderMode::Beatcraft.into());
-                call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
+                renderer.set_int(
+                    gl,
+                    renderer.mesh,
+                    "u_render_mode",
+                    RenderMode::Beatcraft.into(),
+                );
+                call.mesh
+                    .draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
@@ -2139,9 +2424,26 @@ impl BloomfogRenderer {
             renderer.set_mat4(gl, renderer.mesh, "u_projection", proj);
             let tex = renderer.atlas.or(Some(renderer.missing_texture));
             renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
-            renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.blurred_buffer.color), 1);
-            renderer.set_vec2(gl, renderer.mesh, "u_fog", Vec2::new(fog_heights[0], fog_heights[1]));
-            renderer.set_sampler(gl, renderer.mesh, "u_depth", Some(self.light_depth.depth), 2);
+            renderer.set_sampler(
+                gl,
+                renderer.mesh,
+                "u_bloomfog",
+                Some(self.blurred_buffer.color),
+                1,
+            );
+            renderer.set_vec2(
+                gl,
+                renderer.mesh,
+                "u_fog",
+                Vec2::new(fog_heights[0], fog_heights[1]),
+            );
+            renderer.set_sampler(
+                gl,
+                renderer.mesh,
+                "u_depth",
+                Some(self.light_depth.depth),
+                2,
+            );
             renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
             renderer.set_int(gl, renderer.mesh, "passType", 0);
             for call in calls {
@@ -2151,13 +2453,20 @@ impl BloomfogRenderer {
                 if call.cull {
                     gl.enable(glow::CULL_FACE);
                 }
-                call.mesh.draw_tris(gl, &call.instances, false, renderer, renderer.mesh);
+                call.mesh
+                    .draw_tris(gl, &call.instances, false, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
             }
             if let Some(mirror_mesh) = mirror_mesh {
-                mirror_mesh.draw_tris(gl, &[InstanceData::new(Vec4::ZERO, Mat4::IDENTITY, LIGHT_COLORS)], false, renderer, renderer.mesh);
+                mirror_mesh.draw_tris(
+                    gl,
+                    &[InstanceData::new(Vec4::ZERO, Mat4::IDENTITY, LIGHT_COLORS)],
+                    false,
+                    renderer,
+                    renderer.mesh,
+                );
             }
             renderer.set_int(gl, renderer.mesh, "passType", 1);
             for call in calls {
@@ -2167,12 +2476,12 @@ impl BloomfogRenderer {
                 if call.cull {
                     gl.enable(glow::CULL_FACE);
                 }
-                call.mesh.draw_tris(gl, &call.instances, false, renderer, renderer.mesh);
+                call.mesh
+                    .draw_tris(gl, &call.instances, false, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
             }
-
 
             self.bloom_input.bind(gl);
             gl.clear_color(0., 0., 0., 0.);
@@ -2187,14 +2496,37 @@ impl BloomfogRenderer {
                 if call.cull {
                     gl.enable(glow::CULL_FACE);
                 }
-                call.mesh.draw_tris(gl, &call.instances, false, renderer, renderer.mesh);
+                call.mesh
+                    .draw_tris(gl, &call.instances, false, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
             }
 
-            self.apply_effect_pass(renderer, gl, &self.bloom_input, Some(&self.bloom_swap), PassType::GaussianH, true, Some((0., 0., 0., 0.)), window, 3.25, 1.);
-            self.apply_effect_pass(renderer, gl, &self.bloom_swap, Some(&self.bloom_output), PassType::GaussianV, true, Some((0., 0., 0., 0.)), window, 3.25, 1.);
+            self.apply_effect_pass(
+                renderer,
+                gl,
+                &self.bloom_input,
+                Some(&self.bloom_swap),
+                PassType::GaussianH,
+                true,
+                Some((0., 0., 0., 0.)),
+                window,
+                3.25,
+                1.,
+            );
+            self.apply_effect_pass(
+                renderer,
+                gl,
+                &self.bloom_swap,
+                Some(&self.bloom_output),
+                PassType::GaussianV,
+                true,
+                Some((0., 0., 0., 0.)),
+                window,
+                3.25,
+                1.,
+            );
 
             if let Some(t) = main_target {
                 t.bind(gl);
@@ -2205,13 +2537,25 @@ impl BloomfogRenderer {
 
             gl.blend_func(glow::ONE, glow::ONE);
 
-            self.apply_effect_pass(renderer, gl, &self.bloom_output, main_target, PassType::Blit, false, None, window, 11., 1.);
-
-            gl.blend_func_separate(
-                glow::ONE, glow::ONE_MINUS_SRC_ALPHA,
-                glow::ONE_MINUS_SRC_COLOR, glow::ONE,
+            self.apply_effect_pass(
+                renderer,
+                gl,
+                &self.bloom_output,
+                main_target,
+                PassType::Blit,
+                false,
+                None,
+                window,
+                11.,
+                1.,
             );
 
+            gl.blend_func_separate(
+                glow::ONE,
+                glow::ONE_MINUS_SRC_ALPHA,
+                glow::ONE_MINUS_SRC_COLOR,
+                glow::ONE,
+            );
         }
     }
 
@@ -2237,10 +2581,27 @@ impl BloomfogRenderer {
             renderer.set_mat4(gl, renderer.mesh, "u_projection", proj);
             let tex = renderer.atlas.or(Some(renderer.missing_texture));
             renderer.set_sampler(gl, renderer.mesh, "u_texture", tex, 0);
-            renderer.set_sampler(gl, renderer.mesh, "u_bloomfog", Some(self.grab_target.color), 1);
-            renderer.set_sampler(gl, renderer.mesh, "u_depth", Some(self.grab_target.depth), 2);
+            renderer.set_sampler(
+                gl,
+                renderer.mesh,
+                "u_bloomfog",
+                Some(self.grab_target.color),
+                1,
+            );
+            renderer.set_sampler(
+                gl,
+                renderer.mesh,
+                "u_depth",
+                Some(self.grab_target.depth),
+                2,
+            );
             renderer.set_int(gl, renderer.mesh, "passType", RenderPass::Obstacle.into());
-            renderer.set_float(gl, renderer.mesh, "u_time", self.inst.elapsed().as_secs_f32());
+            renderer.set_float(
+                gl,
+                renderer.mesh,
+                "u_time",
+                self.inst.elapsed().as_secs_f32(),
+            );
             let mut u_camera_pos = Mat4::from_translation(cam_pos);
             u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());
             renderer.set_mat4(gl, renderer.mesh, "u_camera_pos", &u_camera_pos);
@@ -2252,8 +2613,14 @@ impl BloomfogRenderer {
                     gl.enable(glow::CULL_FACE);
                 }
                 gl.bind_vertex_array(Some(call.mesh.vao));
-                renderer.set_int(gl, renderer.mesh, "u_render_mode", RenderMode::Beatcraft.into());
-                call.mesh.draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
+                renderer.set_int(
+                    gl,
+                    renderer.mesh,
+                    "u_render_mode",
+                    RenderMode::Beatcraft.into(),
+                );
+                call.mesh
+                    .draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
                 if call.cull {
                     gl.disable(glow::CULL_FACE);
                 }
@@ -2275,15 +2642,69 @@ impl BloomfogRenderer {
 
         let mut current = &self.framebuffer;
         for l in 0..7 {
-            self.apply_effect_pass(renderer, gl, current, Some(&self.pyramid_buffers[l]), PassType::DownSample, true, Some((0., 0., 0., 0.)), window, 11., quad_size);
+            self.apply_effect_pass(
+                renderer,
+                gl,
+                current,
+                Some(&self.pyramid_buffers[l]),
+                PassType::DownSample,
+                true,
+                Some((0., 0., 0., 0.)),
+                window,
+                11.,
+                quad_size,
+            );
             current = &self.pyramid_buffers[l];
         }
 
-        self.apply_effect_pass(renderer, gl, current, Some(&self.extra_buffer), PassType::UpSample, true, Some((0., 0., 0., 0.)), window, 11., quad_size);
-        self.apply_effect_pass(renderer, gl, &self.extra_buffer, Some(&self.framebuffer), PassType::GaussianV, true, Some((0., 0., 0., 0.)), window, 11., quad_size);
-        self.apply_effect_pass(renderer, gl, &self.framebuffer, Some(&self.extra_buffer), PassType::GaussianH, true, Some((0., 0., 0., 0.)), window, 11., quad_size);
-        self.apply_effect_pass(renderer, gl, &self.extra_buffer, Some(&self.blurred_buffer), PassType::BlueNoise, false, Some((0., 0., 0., 0.)), window, 11., quad_size);
-
+        self.apply_effect_pass(
+            renderer,
+            gl,
+            current,
+            Some(&self.extra_buffer),
+            PassType::UpSample,
+            true,
+            Some((0., 0., 0., 0.)),
+            window,
+            11.,
+            quad_size,
+        );
+        self.apply_effect_pass(
+            renderer,
+            gl,
+            &self.extra_buffer,
+            Some(&self.framebuffer),
+            PassType::GaussianV,
+            true,
+            Some((0., 0., 0., 0.)),
+            window,
+            11.,
+            quad_size,
+        );
+        self.apply_effect_pass(
+            renderer,
+            gl,
+            &self.framebuffer,
+            Some(&self.extra_buffer),
+            PassType::GaussianH,
+            true,
+            Some((0., 0., 0., 0.)),
+            window,
+            11.,
+            quad_size,
+        );
+        self.apply_effect_pass(
+            renderer,
+            gl,
+            &self.extra_buffer,
+            Some(&self.blurred_buffer),
+            PassType::BlueNoise,
+            false,
+            Some((0., 0., 0., 0.)),
+            window,
+            11.,
+            quad_size,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2322,39 +2743,49 @@ impl BloomfogRenderer {
 
             gl.use_program(Some(shader));
             renderer.set_sampler(gl, shader, "Sampler0", Some(input.color), 0);
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, if linear { glow::LINEAR } else { glow::NEAREST } as i32);
-            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, if linear { glow::LINEAR } else { glow::NEAREST } as i32);
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MIN_FILTER,
+                if linear { glow::LINEAR } else { glow::NEAREST } as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MAG_FILTER,
+                if linear { glow::LINEAR } else { glow::NEAREST } as i32,
+            );
             if pass == PassType::BlueNoise {
                 renderer.set_sampler(gl, shader, "Sampler1", Some(renderer.blue_noise), 1);
-                renderer.set_vec2(gl, shader, "texelSize", Vec2::new(512. / window.0 as f32, 512. / window.1 as f32));
-            }
-            else if pass == PassType::Comp {
+                renderer.set_vec2(
+                    gl,
+                    shader,
+                    "texelSize",
+                    Vec2::new(512. / window.0 as f32, 512. / window.1 as f32),
+                );
+            } else if pass == PassType::Comp {
                 renderer.set_sampler(gl, shader, "Sampler1", None, 1);
-            }
-            else {
-                renderer.set_vec2(gl, shader, "texelSize", Vec2::new(radius / window.0 as f32, radius / window.1 as f32));
+            } else {
+                renderer.set_vec2(
+                    gl,
+                    shader,
+                    "texelSize",
+                    Vec2::new(radius / window.0 as f32, radius / window.1 as f32),
+                );
             }
 
             let data: [f32; 30] = [
-                -quad_size, -quad_size, 0.,  0., 0.,
-                 quad_size, -quad_size, 0.,  1., 0.,
-                 quad_size,  quad_size, 0.,  1., 1.,
-
-                -quad_size, -quad_size, 0.,  0., 0.,
-                 quad_size,  quad_size, 0.,  1., 1.,
-                -quad_size,  quad_size, 0.,  0., 1.,
+                -quad_size, -quad_size, 0., 0., 0., quad_size, -quad_size, 0., 1., 0., quad_size,
+                quad_size, 0., 1., 1., -quad_size, -quad_size, 0., 0., 0., quad_size, quad_size,
+                0., 1., 1., -quad_size, quad_size, 0., 0., 1.,
             ];
             gl.bind_vertex_array(Some(self.vao));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
             gl.buffer_data_u8_slice(
                 glow::ARRAY_BUFFER,
                 bytemuck::cast_slice(&data),
-                glow::DYNAMIC_DRAW
+                glow::DYNAMIC_DRAW,
             );
             gl.draw_arrays(glow::TRIANGLES, 0, 6);
             gl.bind_vertex_array(None);
         }
     }
-
 }
-

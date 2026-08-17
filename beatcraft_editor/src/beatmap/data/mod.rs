@@ -1,26 +1,24 @@
-
 use std::fmt::{Debug, Display};
 
 use glam::{Quat, Vec4};
 use num_traits::{Num, Zero};
 use serde::{Deserialize, Serialize};
 
-
-use serde::{Deserializer, Serializer};
 use serde::de::Error as _;
+use serde::{Deserializer, Serializer};
 
 use crate::easing::Easing;
 
+pub mod beatcraft;
+pub mod chroma;
+pub mod custom_data;
+pub mod noodle;
+pub mod settings_setter;
+pub mod song_core;
+pub mod tracks;
 pub mod v2;
 pub mod v3;
 pub mod v4;
-pub mod custom_data;
-pub mod song_core;
-pub mod settings_setter;
-pub mod tracks;
-pub mod noodle;
-pub mod chroma;
-pub mod beatcraft;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum VersionClass {
@@ -70,7 +68,6 @@ pub enum InfoVersion {
     V4_0_1,
 }
 
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MapCharacteristic {
     Standard,
@@ -86,7 +83,7 @@ pub enum MapCharacteristic {
     Lawless,
 
     #[serde(untagged)]
-    Unknown(String)
+    Unknown(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -130,15 +127,15 @@ pub struct RGBAColor {
 #[serde(try_from = "u8", into = "u8")]
 pub enum CutDirection {
     #[default]
-    Up        = 0,
-    Down      = 1,
-    Left      = 2,
-    Right     = 3,
-    UpLeft    = 4,
-    UpRight   = 5,
-    DownLeft  = 6,
+    Up = 0,
+    Down = 1,
+    Left = 2,
+    Right = 3,
+    UpLeft = 4,
+    UpRight = 5,
+    DownLeft = 6,
     DownRight = 7,
-    Dot       = 8,
+    Dot = 8,
 }
 impl CutDirection {
     pub fn is_default(&self) -> bool {
@@ -200,10 +197,10 @@ pub struct ColorNoteV2 {
     #[serde(rename = "_time")]
     pub time: f32,
     #[serde(rename = "_lineIndex")]
-    #[serde(default, skip_serializing_if="Zero::is_zero")]
+    #[serde(default, skip_serializing_if = "Zero::is_zero")]
     pub line_index: f32,
     #[serde(rename = "_lineLayer")]
-    #[serde(default, skip_serializing_if="Zero::is_zero")]
+    #[serde(default, skip_serializing_if = "Zero::is_zero")]
     pub line_layer: f32,
     #[serde(rename = "_type")]
     pub typ: Color,
@@ -272,10 +269,10 @@ pub struct BombNoteV2 {
     #[serde(rename = "_time")]
     pub beat: f32,
     #[serde(rename = "_lineIndex")]
-    #[serde(default, skip_serializing_if="Zero::is_zero")]
+    #[serde(default, skip_serializing_if = "Zero::is_zero")]
     pub line_index: f32,
     #[serde(rename = "_lineLayer")]
-    #[serde(default, skip_serializing_if="Zero::is_zero")]
+    #[serde(default, skip_serializing_if = "Zero::is_zero")]
     pub line_layer: f32,
     _type: Sentinel<3>,
     #[serde(rename = "_cutDirection")]
@@ -327,8 +324,8 @@ pub struct BombNoteDataV4 {
 #[serde(try_from = "u8", into = "u8")]
 pub enum ObstacleV2Type {
     FullHeight = 0,
-    Crouch     = 1,
-    Free       = 2,
+    Crouch = 1,
+    Free = 2,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -341,16 +338,16 @@ pub struct ObstacleV2 {
     #[serde(rename = "_duration")]
     pub duration: f32,
     #[serde(rename = "_lineIndex")]
-    #[serde(default, skip_serializing_if="Zero::is_zero")]
+    #[serde(default, skip_serializing_if = "Zero::is_zero")]
     pub line_index: f32,
     #[serde(rename = "_lineLayer")]
-    #[serde(default, skip_serializing_if="Zero::is_zero")]
+    #[serde(default, skip_serializing_if = "Zero::is_zero")]
     pub line_layer: f32,
     #[serde(rename = "_width")]
     pub width: f32,
     #[serde(rename = "_height")]
-    #[serde(default="default_f::<{ 5f32.to_bits() }>")]
-    #[serde(skip_serializing_if="is_value_f::<{ 5f32.to_bits() }>")]
+    #[serde(default = "default_f::<{ 5f32.to_bits() }>")]
+    #[serde(skip_serializing_if = "is_value_f::<{ 5f32.to_bits() }>")]
     pub height: f32,
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -411,8 +408,8 @@ pub struct ObstacleDataV4 {
 #[serde(try_from = "u8", into = "u8")]
 pub enum ArcMidAnchorMode {
     #[default]
-    Straight         = 0,
-    Clockwise        = 1,
+    Straight = 0,
+    Clockwise = 1,
     CounterClockwise = 2,
 }
 impl ArcMidAnchorMode {
@@ -429,10 +426,10 @@ pub struct ArcV2 {
     #[serde(rename = "_headTime")]
     pub head_beat: f32,
     #[serde(rename = "_headLineIndex")]
-    #[serde(default, skip_serializing_if="Zero::is_zero")]
+    #[serde(default, skip_serializing_if = "Zero::is_zero")]
     pub head_line_index: f32,
     #[serde(rename = "_headLineLayer")]
-    #[serde(default, skip_serializing_if="Zero::is_zero")]
+    #[serde(default, skip_serializing_if = "Zero::is_zero")]
     pub head_line_layer: f32,
     #[serde(rename = "_headCutDirection")]
     pub head_cut_direction: CutDirection,
@@ -441,10 +438,10 @@ pub struct ArcV2 {
     #[serde(rename = "_tailTime")]
     pub tail_beat: f32,
     #[serde(rename = "_tailLineIndex")]
-    #[serde(default, skip_serializing_if="Zero::is_zero")]
+    #[serde(default, skip_serializing_if = "Zero::is_zero")]
     pub tail_line_index: f32,
     #[serde(rename = "_tailLineLayer")]
-    #[serde(default, skip_serializing_if="Zero::is_zero")]
+    #[serde(default, skip_serializing_if = "Zero::is_zero")]
     pub tail_line_layer: f32,
     #[serde(rename = "_tailCutDirection")]
     pub tail_cut_direction: CutDirection,
@@ -598,7 +595,7 @@ pub struct ChainDataV4 {
 #[serde(try_from = "u8", into = "u8")]
 pub enum SpawnRotationExecutionTime {
     LegacyEarly = 14,
-    LegacyLate  = 15,
+    LegacyLate = 15,
 }
 convert_u8! { SpawnRotationExecutionTime: 14 | 15 }
 impl SpawnRotationExecutionTime {
@@ -618,29 +615,28 @@ pub enum SpawnRotationAngle {
     CCW45 = 1,
     CCW30 = 2,
     CCW15 = 3,
-    CW15  = 4,
-    CW30  = 5,
-    CW45  = 6,
-    CW60  = 7,
+    CW15 = 4,
+    CW30 = 5,
+    CW45 = 6,
+    CW60 = 7,
 }
-impl TryFrom<u8>for SpawnRotationAngle {
+impl TryFrom<u8> for SpawnRotationAngle {
     type Error = BeatmapDataError;
-    fn try_from(value: u8) -> Result<Self,Self::Error>{
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
         Ok(match value {
-            0..=7 => unsafe {
-                std::mem::transmute::<u8,Self>(value)
-            },
-            _ => return Err(BeatmapDataError::ToEnum {
-                enum_name: stringify!(SpawnRotationAngle),val: value as i32,
-            })
+            0..=7 => unsafe { std::mem::transmute::<u8, Self>(value) },
+            _ => {
+                return Err(BeatmapDataError::ToEnum {
+                    enum_name: stringify!(SpawnRotationAngle),
+                    val: value as i32,
+                });
+            }
         })
     }
 }
-impl From<SpawnRotationAngle>for u8 {
+impl From<SpawnRotationAngle> for u8 {
     fn from(value: SpawnRotationAngle) -> Self {
-        unsafe {
-            std::mem::transmute::<SpawnRotationAngle,u8>(value)
-        }
+        unsafe { std::mem::transmute::<SpawnRotationAngle, u8>(value) }
     }
 }
 impl SpawnRotationAngle {
@@ -755,10 +751,10 @@ pub struct NJSEventV4 {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NJSEventDataV4 {
-    #[serde(rename = "p", with="bool_u8_serde")]
+    #[serde(rename = "p", with = "bool_u8_serde")]
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub extend: bool,
-    #[serde(rename = "e", with="easing_as_i8")]
+    #[serde(rename = "e", with = "easing_as_i8")]
     #[serde(default, skip_serializing_if = "Easing::is_default")]
     pub easing: Easing,
     #[serde(rename = "d")]
@@ -844,17 +840,15 @@ impl PartialEq<MapDifficulty> for &str {
 impl MapVersion {
     pub fn classifier(&self) -> VersionClass {
         match self {
-            MapVersion::V2_0_0 |
-            MapVersion::V2_2_0 |
-            MapVersion::V2_4_0 |
-            MapVersion::V2_5_0 |
-            MapVersion::V2_6_0 => VersionClass::V2,
-            MapVersion::V3_0_0 |
-            MapVersion::V3_1_0 |
-            MapVersion::V3_2_0 |
-            MapVersion::V3_3_0 => VersionClass::V3,
-            MapVersion::V4_0_0 |
-            MapVersion::V4_1_0 => VersionClass::V4,
+            MapVersion::V2_0_0
+            | MapVersion::V2_2_0
+            | MapVersion::V2_4_0
+            | MapVersion::V2_5_0
+            | MapVersion::V2_6_0 => VersionClass::V2,
+            MapVersion::V3_0_0 | MapVersion::V3_1_0 | MapVersion::V3_2_0 | MapVersion::V3_3_0 => {
+                VersionClass::V3
+            }
+            MapVersion::V4_0_0 | MapVersion::V4_1_0 => VersionClass::V4,
         }
     }
 }
@@ -873,10 +867,8 @@ impl PartialEq<MapVersion> for VersionClass {
 impl InfoVersion {
     pub fn classifier(&self) -> VersionClass {
         match self {
-            InfoVersion::V2_0_0 |
-            InfoVersion::V2_1_0 => VersionClass::V2,
-            InfoVersion::V4_0_0 |
-            InfoVersion::V4_0_1 => VersionClass::V4,
+            InfoVersion::V2_0_0 | InfoVersion::V2_1_0 => VersionClass::V2,
+            InfoVersion::V4_0_0 | InfoVersion::V4_0_1 => VersionClass::V4,
         }
     }
 }
@@ -903,13 +895,11 @@ impl VersionClass {
 
     pub fn as_info_version(&self) -> InfoVersion {
         match self {
-            VersionClass::V2 |
-            VersionClass::V3 => InfoVersion::V2_1_0,
+            VersionClass::V2 | VersionClass::V3 => InfoVersion::V2_1_0,
             VersionClass::V4 => InfoVersion::V4_0_1,
         }
     }
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -963,9 +953,7 @@ impl AudioDataFile {
     }
 }
 
-
 // extra helpers
-
 
 macro_rules! convert_u8 {
     ($cl:ty: $values:pat) => {
@@ -974,10 +962,12 @@ macro_rules! convert_u8 {
             fn try_from(value: u8) -> Result<Self, Self::Error> {
                 Ok(match value {
                     $values => unsafe { std::mem::transmute::<u8, Self>(value) },
-                    _ => return Err(BeatmapDataError::ToEnum {
-                        enum_name: stringify!($cl),
-                        val: value as i32,
-                    })
+                    _ => {
+                        return Err(BeatmapDataError::ToEnum {
+                            enum_name: stringify!($cl),
+                            val: value as i32,
+                        });
+                    }
                 })
             }
         }
@@ -1010,7 +1000,6 @@ convert_u8! { CutDirection: 0..=8 }
 convert_u8! { ObstacleV2Type: 0..=2 }
 convert_u8! { ArcMidAnchorMode: 0..=2 }
 
-
 use self::v2::{AudioDataFileV2, BeatmapFileV2, InfoV2};
 use self::v3::BeatmapFileV3;
 use self::v4::{AudioDataFileV4, BeatmapFileV4, InfoV4};
@@ -1040,7 +1029,7 @@ impl<'de, const N: u8> Deserialize<'de> for Sentinel<N> {
 }
 
 pub(crate) mod bool_u8_serde {
-    use serde::{Deserializer, Serializer, Deserialize};
+    use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(val: &bool, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -1066,8 +1055,8 @@ pub(crate) mod bool_u8_serde {
 
 pub(crate) mod easing_as_i8 {
     use super::Easing;
-    use serde::{Deserialize, Deserializer, Serializer};
     use serde::de::Error as _;
+    use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(easing: &Easing, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -1085,10 +1074,9 @@ pub(crate) mod easing_as_i8 {
     }
 }
 
-
 pub(crate) mod vec4_array {
-    use serde::{Deserialize, Serialize, Deserializer, Serializer};
     use glam::Vec4;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S>(v: &Vec4, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -1120,8 +1108,8 @@ pub(crate) mod vec4_array {
 }
 
 pub(crate) mod vec4_array_opt {
-    use serde::{Deserialize, Serialize, Deserializer, Serializer};
     use glam::Vec4;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S>(v: &Option<Vec4>, serializer: S) -> Result<S::Ok, S::Error>
     where
