@@ -983,6 +983,12 @@ pub(crate) use convert_u8;
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Sentinel<const N: u8>;
 
+impl<const N: u8> Default for Sentinel<N> {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl<const N: u8> Debug for Sentinel<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Sentinel").field(&N).finish()

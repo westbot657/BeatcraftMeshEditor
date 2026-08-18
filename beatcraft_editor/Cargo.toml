@@ -44,6 +44,7 @@ bitflags = { version = "2.13.1", features = ["serde"] }
 rand = "0.10.2"
 egui-keybind = { version = "0.8.0", features = ["serde"] }
 fluent-templates = "0.15.1"
+bincode-next = { version = "3.1.1", features = ["serde"] }
 
 [build-dependencies]
 bindgen = "0.72.1"

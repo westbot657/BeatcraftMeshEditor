@@ -1,4 +1,4 @@
-use super::beatcraft::{APP_NAME, BeatcraftEditorInfoV2};
+use super::beatcraft::{APP_NAME, BeatcraftEditorInfo, BeatmapDifficultyCustomData};
 use super::is_value_f;
 use super::settings_setter::CustomSettingsV2;
 use serde::ser::SerializeMap;
@@ -27,7 +27,7 @@ pub struct InfoCustomDataV2 {
 #[derive(Clone, Debug)]
 pub struct EditorInfoV2 {
     pub last_edited_by: Option<String>,
-    pub beatcraft: BeatcraftEditorInfoV2,
+    pub beatcraft: BeatcraftEditorInfo,
     pub editor_info: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
@@ -64,7 +64,7 @@ impl<'de> Deserialize<'de> for EditorInfoV2 {
 
         let beatcraft = match map.remove(APP_NAME) {
             Some(v) => serde_json::from_value(v).map_err(serde::de::Error::custom)?,
-            None => BeatcraftEditorInfoV2::default(),
+            None => BeatcraftEditorInfo::default(),
         };
 
         let editor_info = if map.is_empty() { None } else { Some(map) };
@@ -220,6 +220,9 @@ pub struct DifficultyBeatmapCustomDataV2 {
     #[serde(rename = "_settings")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings: Option<CustomSettingsV2>,
+    #[serde(rename = "_beatcraftEditorData")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beatcraft_editor_data: Option<BeatmapDifficultyCustomData>,
 
     #[serde(flatten)]
     pub extra: Option<serde_json::Map<String, serde_json::Value>>,
