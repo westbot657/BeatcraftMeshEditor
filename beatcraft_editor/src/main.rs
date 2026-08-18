@@ -28,13 +28,14 @@ use std::sync::{Arc, mpsc};
 use clap::Parser;
 use eframe::glow::{self, HasContext};
 use egui::{Align2, Color32, Frame, ImageSource, Layout, Pos2, Sense, Ui};
+use fluent_templates::LanguageIdentifier;
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
-use self::config::{AppData, LocaleCache, RawAppData, RecentProject};
+use self::config::{AppData, KeyMaps, LocaleCache, RawAppData, RecentProject};
 use self::data::mesh::{
     BillboardData, LightGroup, LightMeshData, MaterialType, NormalId, ShaderSettingsData,
     ShaderStyle, SpectrogramData, UvId, VertexId,
@@ -93,8 +94,9 @@ pub static BEATMAP_EDITOR_ICON: egui::ImageSource =
 pub static MISSING_EDITOR_ICON: egui::ImageSource =
     egui::include_image!("assets/textures/svg/missing_editor.svg");
 
-pub static PKG_NAME: &str = env!("CARGO_PKG_NAME");
-pub static VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 
 const MODIFIER_NAMES: egui::ModifierNames<'_> = egui::ModifierNames {
     is_short: false,
@@ -244,7 +246,9 @@ impl eframe::App for App {
         }
 
         if let Some(settings_page) = self.state.settings_screen.as_mut() {
-            Self::draw_settings_page(&mut self.data.locale, ctx, settings_page);
+            if !Self::draw_settings_page(&mut self.data.locale, ctx, &mut self.data.keymaps, settings_page) {
+                self.state.settings_screen = None;
+            }
         } else {
             match self.context {
                 editor::EditorContext::Model(model_editor_context) => match model_editor_context {
@@ -300,31 +304,197 @@ impl App {
     fn draw_settings_page(
         lang: &mut LocaleCache,
         ctx: &egui::Context,
+        keymaps: &mut KeyMaps,
         settings: &mut SettingsScreen,
-    ) {
-        egui::SidePanel::new(egui::panel::Side::Left, "setting selector")
+    ) -> bool {
+        if !egui::SidePanel::new(egui::panel::Side::Left, "setting selector")
             .exact_width(300.)
             .show(ctx, |ui| {
-                let mut b = ui.button(lang.get("keybind-label"));
-                if settings.page == SettingsPage::Keymaps {
-                    b = b.highlight();
-                }
-                if b.clicked() {
-                    settings.page = SettingsPage::Keymaps;
-                }
-                let mut b2 = ui.button(lang.get("language-label"));
-                if settings.page == SettingsPage::Language {
-                    b2 = b2.highlight();
-                }
-                if b2.clicked() {
-                    settings.page = SettingsPage::Language;
-                }
-            });
+                ui.allocate_ui_with_layout(
+                    ui.available_size(),
+                    egui::Layout::top_down(egui::Align::Center),
+                    |ui| {
+                        ui.add_space(10.);
+                        if ui.add_sized(
+                            [280., 30.],
+                            egui::Button::new(lang.get("back-button"))
+                        ).clicked() {
+                            return false;
+                        }
+                        ui.add_space(10.);
+                        ui.separator();
+                        ui.add_space(10.);
+                        if ui.add_sized(
+                            [280., 30.],
+                            egui::Button::new(lang.get("keybinds-label"))
+                                .selected(settings.page == SettingsPage::Keymaps)
+                        ).clicked() {
+                            settings.page = SettingsPage::Keymaps;
+                            settings.cached_binds = Some(keymaps.clone());
+                        }
+                        if ui.add_sized(
+                            [280., 30.],
+                            egui::Button::new(lang.get("language-label"))
+                                .selected(settings.page == SettingsPage::Language)
+                        ).clicked() {
+                            settings.page = SettingsPage::Language;
+                        }
+                        true
+                    }
+                ).inner
+            }).inner {
+                return false
+            }
 
         egui::CentralPanel::default().show(ctx, |ui| match settings.page {
-            SettingsPage::Keymaps => {}
-            SettingsPage::Language => {}
+            SettingsPage::Keymaps => {
+                ui.allocate_ui_with_layout(
+                    ui.available_size(),
+                    egui::Layout::top_down(egui::Align::Center),
+                    |ui| {
+                        ui.add_space(20.);
+                        egui::ScrollArea::vertical()
+                            .max_width(ui.available_width())
+                            .max_height(ui.available_height() - 100.)
+                            .show(ui, |ui| {
+                                macro_rules! key_label {
+                                    ( $name:literal ) => {
+                                        ui.add_sized(
+                                            [ui.available_width(), 30.],
+                                            egui::Label::new(
+                                                egui::RichText::new(lang.get($name))
+                                                    .strong().size(22.)
+                                            )
+                                        );
+                                    };
+                                }
+
+                                macro_rules! key_row {
+                                    ( $attr:tt, $id:literal ) => {
+                                        ui.allocate_ui_with_layout(
+                                            [ui.available_width(), 20.].into(),
+                                            egui::Layout::left_to_right(egui::Align::Center),
+                                            |ui| {
+                                                ui.allocate_ui_with_layout(
+                                                    [ui.available_width() / 2. - 10., 15.].into(),
+                                                    egui::Layout::right_to_left(egui::Align::Center),
+                                                    |ui| {
+                                                        ui.add(egui::Label::new(
+                                                            lang.get($id)
+                                                        ));
+                                                    }
+                                                );
+                                                ui.allocate_ui_with_layout(
+                                                    [ui.available_width() / 2. - 10., 15.].into(),
+                                                    egui::Layout::left_to_right(egui::Align::Center),
+                                                    |ui| {
+                                                        ui.add(
+                                                            egui_keybind::Keybind::new(&mut keymaps.$attr, $id)
+                                                        )
+                                                    }
+                                                );
+                                            }
+                                        );
+                                    };
+                                }
+
+                                key_label!("keygroup-general");
+                                key_row!(toggle_wireframe, "key-toggle-wireframe");
+                                key_row!(toggle_grid, "key-toggle-grid");
+                                key_row!(toggle_render_style, "key-toggle-render-style");
+                                key_row!(deselect, "key-deselect");
+                                key_row!(save, "key-save");
+                                key_row!(undo, "key-undo");
+                                key_row!(redo, "key-redo");
+
+                                ui.add_space(20.);
+
+                                key_label!("keygroup-mesh");
+                                key_row!(toggle_vertices, "key-toggle-vertices");
+                                key_row!(toggle_mesh_part_back, "key-toggle-mesh-part-back");
+                                key_row!(toggle_mesh_part_forward, "key-toggle-mesh-part-forward");
+                                key_row!(toggle_edit_component, "key-toggle-edit-component");
+                                key_row!(toggle_assembly_view, "key-toggle-assembly-view");
+                                key_row!(create_or_remove_triangles, "key-toggle-triangles");
+                                key_row!(flip_triangles, "key-flip-triangles");
+                                key_row!(create_vertex, "key-create-vertex");
+
+                                ui.add_space(20.);
+
+                                key_label!("keygroup-beatmap");
+                                key_row!(toggle_map_playback, "key-toggle-map-playback");
+                                key_row!(rotate_map_grid_left, "key-rotate-grid-left");
+                                key_row!(rotate_map_grid_right, "key-rotate-grid-right");
+                                key_row!(map_fly_forward, "key-fly-forward");
+                                key_row!(map_fly_backward, "key-fly-backward");
+                                key_row!(map_fly_left, "key-fly-left");
+                                key_row!(map_fly_right, "key-fly-right");
+                                key_row!(map_fly_up, "key-fly-up");
+                                key_row!(map_fly_down, "key-fly-down");
+
+                                ui.add_space(20.);
+
+                                key_label!("keygroup-debug");
+                                key_row!(rebuild_meshes, "key-rebuild-meshes");
+                            });
+
+                        ui.separator();
+                        ui.add_space(20.);
+
+                        if ui.add_sized(
+                            [200., 20.],
+                            egui::Button::new(lang.get("revert-keys-label"))
+                        ).clicked() && let Some(cached) = settings.cached_binds.clone() {
+                            *keymaps = cached;
+                        }
+                        ui.add_space(10.);
+                        if ui.add_sized(
+                            [200., 20.],
+                            egui::Button::new(lang.get("reset-keys-label"))
+                        ).clicked() {
+                            *keymaps = KeyMaps::default();
+                        }
+                    }
+                );
+            }
+            SettingsPage::Language => {
+                ui.allocate_ui_with_layout(
+                    ui.available_size(),
+                    egui::Layout::top_down(egui::Align::Center),
+                    |ui| {
+                        ui.add_space(20.);
+                        ui.add_sized(
+                            [200., 30.],
+                            egui::Label::new(egui::RichText::new(lang.get("select-language"))),
+                        );
+
+                        egui::ScrollArea::vertical()
+                            .max_height(ui.available_height() - 60.)
+                            .max_width(ui.available_width())
+                            .show(ui, |ui| {
+                                if ui.add_sized(
+                                    [300., 50.],
+                                    egui::Button::new("English")
+                                    .selected(lang.locale.matches(&"en-US".parse::<LanguageIdentifier>().unwrap(), false, false))
+                                ).clicked() {
+                                    lang.locale = "en-US".parse().unwrap();
+                                }
+
+                            });
+
+                        ui.add_space(ui.available_height() - 60.);
+                        ui.label(lang.get_with_args(
+                            "language-help",
+                            &[
+                                ("url".into(), REPOSITORY.into()),
+                                ("discord".into(), "@westbot".into())
+                            ].into()
+                        ));
+                    }
+                );
+            }
         });
+        true
     }
 
     fn draw_welcome_page(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -332,6 +502,9 @@ impl App {
             ui.add_space(2.);
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button(self.data.locale.get("settings-label").to_string(), |ui| {
+                    if ui.button(self.data.locale.get("settings-button")).clicked() {
+                        self.open_settings();
+                    }
                     let mut minecraft_font: bool = ui.memory_mut(|m| {
                         m.data
                             .get_persisted("use_minecraft_font".into())
@@ -589,6 +762,13 @@ impl App {
                     ui.ctx().request_repaint();
                 },
             );
+        });
+    }
+
+    pub fn open_settings(&mut self) {
+        self.state.settings_screen = Some(SettingsScreen {
+            page: SettingsPage::Keymaps,
+            cached_binds: Some(self.data.keymaps.clone()),
         });
     }
 
@@ -887,6 +1067,9 @@ impl App {
                     ui.checkbox(&mut self.state.show_verts, vertices);
                 });
                 ui.menu_button(self.data.locale.get("settings-label").to_string(), |ui| {
+                    if ui.button(self.data.locale.get("settings-button")).clicked() {
+                        self.open_settings();
+                    }
                     let mut minecraft_font: bool = ui.memory_mut(|m| m.data.get_persisted("use_minecraft_font".into()).unwrap_or(true));
                     let old = minecraft_font;
                     ui.checkbox(&mut minecraft_font, self.data.locale.get("minecraft-font-label"));
@@ -2717,7 +2900,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                     ui.horizontal(|ui| {
                         ui.label(self2.data.locale.get("position"));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |_ui| {
                             // if ui.small_button("Paste").clicked() { /* TODO */ }
                             // if ui.small_button("Copy").clicked() { /* TODO */ }
                         });
@@ -2740,7 +2923,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                     ui.horizontal(|ui| {
                         ui.label(self2.data.locale.get("rotation"));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |_ui| {
                             // if ui.small_button("Paste").clicked() { /* TODO */ }
                             // if ui.small_button("Copy").clicked() { /* TODO */ }
                         });
@@ -2764,7 +2947,7 @@ fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                     ui.horizontal(|ui| {
                         ui.label(self2.data.locale.get("scale"));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |_ui| {
                             // if ui.small_button("Paste").clicked() { /* TODO */ }
                             // if ui.small_button("Copy").clicked() { /* TODO */ }
                             // TODO: re-add lock system when it works
@@ -4225,7 +4408,7 @@ fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     let VertexId::Named(key) = vert else {
                         unreachable!()
                     };
-                    compute_vertex_row(ui, (w2, w3), c3, &key, part2, self3, gl);
+                    compute_vertex_row(ui, (w2, w3), c3, key, part2, self3, gl);
                 }
             }
         }

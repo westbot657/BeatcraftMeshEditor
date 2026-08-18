@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
 use crate::config::ProjectType;
 use crate::data::mesh::LightMeshData;
-use crate::editor::{App, EditorContext, RoutineAction, Selection, ViewStyle};
+use crate::editor::{App, EditorContext, MINECRAFT_F, RoutineAction, SOURCE_CODE_F, Selection, ViewStyle, setup_fonts};
 use crate::light_mesh::LightMesh;
 use crate::render::{GpuMesh, GridType, InstanceData, MeshDrawCall, Renderer};
 use crate::{
@@ -398,6 +398,32 @@ impl App {
                             self.audio_system.remove_dead_audio();
                             self.state.playback_speed = 1.;
                         }
+                    }
+                });
+                ui.menu_button(self.data.locale.get("settings-label").to_string(), |ui| {
+                    if ui.button(self.data.locale.get("settings-button")).clicked() {
+                        self.open_settings();
+                    }
+                    let mut minecraft_font: bool = ui.memory_mut(|m| {
+                        m.data
+                            .get_persisted("use_minecraft_font".into())
+                            .unwrap_or(true)
+                    });
+                    let old = minecraft_font;
+                    ui.checkbox(
+                        &mut minecraft_font,
+                        self.data.locale.get("minecraft-font-label"),
+                    );
+                    if old != minecraft_font {
+                        if minecraft_font {
+                            setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], ctx);
+                        } else {
+                            setup_fonts(&[SOURCE_CODE_F, MINECRAFT_F], ctx);
+                        }
+                        ui.memory_mut(|m| {
+                            m.data
+                                .insert_persisted("use_minecraft_font".into(), minecraft_font)
+                        });
                     }
                 });
             });

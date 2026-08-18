@@ -147,8 +147,8 @@ impl Default for KeyMaps {
 
 #[derive(Debug, Default)]
 pub struct LocaleCache {
-    locale: LanguageIdentifier,
-    cache: HashMap<&'static str, String>,
+    pub locale: LanguageIdentifier,
+    pub cache: HashMap<&'static str, String>,
 }
 
 impl LocaleCache {

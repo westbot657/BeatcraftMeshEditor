@@ -1,4 +1,5 @@
 settings-label = Settings
+settings-button = Settings...
 minecraft-font-label = Minecraft Font
 recent-projects = Recent Projects
 open = Open
@@ -178,5 +179,51 @@ open-beatmap-folder = Open map folder...
 remove-from-list = Remove
 grid-spacing = Grid spacing
 default-value = Default: {$value}
+back-button = Back
+select-language = Select language
+language-help =
+    If you would like to have a language added
+    please open a PR at {$url}
+    or contact {$discord} on discord
+
+keygroup-general = Global controlls
+key-toggle-wireframe = Toggle wireframe
+key-toggle-grid = Toggle grid
+key-toggle-render-style = Toggle VFX
+key-deselect = Deselect
+key-save = Save current project
+key-undo = Undo most recent change
+key-redo = Redo most recent change
+
+keygroup-mesh = Mesh editor controlls
+key-toggle-vertices = Toggle vertices
+key-toggle-mesh-part-back = Cycle part backwards
+key-toggle-mesh-part-forward = Cycle part forwards
+key-toggle-edit-component = Toggle mesh component editing
+key-toggle-assembly-view = Toggle assembly view
+key-toggle-triangles = Create/Remove triangles
+key-flip-triangles = Flip selected triangle winding
+key-create-vertex = Spawn vertex
+
+keygroup-beatmap = Beatmap controlls
+key-toggle-map-playback = Play/Pause beatmap playback
+key-rotate-grid-left = Rotate placement grid left
+key-rotate-grid-right = Rotate placement grid right
+key-fly-forward = Move camera forward
+key-fly-backward = Move camera backward
+key-fly-left = Move camera left
+key-fly-right = Move camera right
+key-fly-up = Move camera up
+key-fly-down = Move camera down
+
+keygroup-debug = Debug controlls
+key-rebuild-meshes = Rebuild texture atlas and meshes
+
+revert-keys-label = Revert current changes
+reset-keys-label = Reset to defaults
+
+
+
+
 
 

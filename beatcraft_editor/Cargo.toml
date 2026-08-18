@@ -2,6 +2,7 @@
 name = "beatcraft-editor"
 version = "0.1.0"
 edition = "2024"
+repository = "https://github.com/westbot657/BeatcraftMeshEditor"
 
 [[bin]]
 name = "beatcraft_editor"
