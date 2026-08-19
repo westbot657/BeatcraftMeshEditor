@@ -231,7 +231,10 @@ impl From<RawAppData> for AppData {
 
 impl From<RawRecentProjects> for RecentProjects {
     fn from(value: RawRecentProjects) -> Self {
-        Self(value.0.into_iter().map(Into::into).collect())
+        let mut projects: Vec<RecentProject> = value.0.into_iter().map(Into::into).collect();
+        projects.sort_by_key(|a| a.modified);
+        projects.reverse();
+        Self(projects)
     }
 }
 
@@ -338,7 +341,9 @@ impl AppData {
                     kind,
                 }
                 .into(),
-            )
+            );
         }
+        self.recents.sort_by_key(|a| a.modified);
+        self.recents.reverse();
     }
 }

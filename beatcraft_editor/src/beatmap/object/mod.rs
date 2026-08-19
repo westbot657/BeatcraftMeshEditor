@@ -303,7 +303,7 @@ pub trait GameObject: Debug {
         const JUMP_FAR_Z: f32 = 500.;
         const PRE_ROLL_SECONDS: f32 = 1.0;
         const POST_ROLL_SECONDS: f32 = 1.0;
-        const LOOK_FREEZE_DISTANCE: f32 = 1.0;
+        const LOOK_FREEZE_DISTANCE: f32 = 1.25;
 
         let b = self.beat();
         let dur = self.duration();
@@ -352,12 +352,6 @@ pub trait GameObject: Debug {
 
         let start_y = -0.3;
 
-        // Parabola only applies while approaching (z >= 0, i.e. before the hit).
-        // Once z has crossed 0 — whether still in the normal phase or already
-        // into post-roll — height is just static at gp.y, since that's exactly
-        // where the parabola ends up at z == 0 anyway. Clamping the input to
-        // spawn_parabola at zero (rather than branching separately) makes this
-        // fall out for free instead of needing a third case.
         let y = if self.do_gravity() {
             if in_pre_roll {
                 start_y

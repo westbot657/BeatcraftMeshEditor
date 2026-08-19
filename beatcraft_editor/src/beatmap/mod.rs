@@ -9,6 +9,7 @@ use indexmap::IndexMap;
 
 use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
 use crate::config::ProjectType;
+use crate::data::map_editing::GlobalEditingData;
 use crate::data::mesh::LightMeshData;
 use crate::editor::{App, EditorContext, MINECRAFT_F, RoutineAction, SOURCE_CODE_F, Selection, ViewStyle, setup_fonts};
 use crate::light_mesh::LightMesh;
@@ -84,6 +85,9 @@ pub struct BeatmapProject {
     pub sets: Vec<BeatmapProjectSet>,
     pub controller: Option<BeatmapController>,
 
+    pub editor_data_path: Option<PathBuf>,
+    pub editor_data: GlobalEditingData,
+
     /// Option<(sets index, diff index)>
     pub selected_diff: Option<(usize, usize)>,
 }
@@ -103,6 +107,8 @@ pub struct BeatmapEditor {
     pub map: Option<BeatmapProject>,
     pub mesh_set: BeatmapMeshSet,
     pub scroll_step: f32,
+    pub grid_snap: bool,
+    pub editor_data: GlobalEditingData,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -196,6 +202,8 @@ impl BeatmapEditor {
             map: None,
             mesh_set: BeatmapMeshSet::new(gl, renderer)?,
             scroll_step: 0.125,
+            grid_snap: true,
+            editor_data: Default::default(),
         };
 
         if let Some(map) = map {
@@ -309,6 +317,8 @@ impl BeatmapEditor {
             cover_image,
             sets,
             controller: None,
+            editor_data_path: None,
+            editor_data: Default::default(),
             selected_diff: None,
         };
 
