@@ -1760,40 +1760,6 @@ impl App {
                     }
                 }
                 EditorContext::Map(MapEditorContext::Beatmap) => {
-                    let beatmap = &self.render.renderer.beatmap;
-                    let placement_r = beatmap.placement_r;
-                    let placement_z = beatmap.placement_z;
-                    let half_width = 2. * 0.6;
-                    let grid_height = 3. * 0.6;
-                    const COLS: u32 = 4;
-                    const ROWS: u32 = 3;
-                    self.render.renderer.beatmap.hovered_placement_cell = u32::MAX;
-                    let vp = self.cam().vp(w, h);
-                    let (ray_pos, ray_dir) =
-                        Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &vp);
-
-                    let inv_rot = Quat::from_rotation_y(-placement_r);
-                    let local_ray_pos = inv_rot * ray_pos;
-                    let local_ray_dir = inv_rot * ray_dir;
-
-                    let denom = local_ray_dir.z;
-                    if denom.abs() > 1e-6 {
-                        let t = (placement_z - local_ray_pos.z) / denom;
-                        if t > 0.0 {
-                            let hit = local_ray_pos + local_ray_dir * t;
-                            if hit.x.abs() <= half_width && hit.y >= 0.0 && hit.y <= grid_height {
-                                let u = (half_width - hit.x) / (2.0 * half_width);
-                                let v = hit.y / grid_height;
-                                let col =
-                                    (u * COLS as f32).floor().clamp(0.0, (COLS - 1) as f32) as u32;
-                                let row =
-                                    (v * ROWS as f32).floor().clamp(0.0, (ROWS - 1) as f32) as u32;
-                                self.render.renderer.beatmap.hovered_placement_cell =
-                                    row * COLS + col;
-                            }
-                        }
-                    }
-
                     let move_speed = if shift {
                         if alt { 0.0125 } else { 0.125 }
                     } else if alt {

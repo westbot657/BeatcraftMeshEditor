@@ -4,7 +4,7 @@ use std::sync::mpsc;
 use std::thread;
 
 use eframe::glow::{self, Context, HasContext};
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 
 use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
@@ -1086,7 +1086,7 @@ impl HitBox {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum HitTargetType {
     Object(ObjectType),
-    Grid { row: isize, column: isize },
+    Grid { row: isize, column: isize, index: usize, },
 }
 
 impl From<ObjectType> for HitTargetType {
@@ -1223,6 +1223,31 @@ fn draw_map_gl(
         (Vec3::ZERO, Vec3::ZERO)
     };
     let mut hits = Vec::new();
+
+    // TODO: grid hit logic but bettern't
+    const HITBOX: HitBox = HitBox::new(
+        Vec3::new(-0.25, -0.25, 0.),
+        Vec3::new(0.25, 0.25, 0.),
+    );
+    s.ref_mut().render.renderer.beatmap.hovered_placement_cell = u32::MAX;
+    let mut base = Mat4::from_quat(Quat::from_rotation_y(beatmap.placement_r));
+    base *= Mat4::from_translation(Vec3::new(0., 0., beatmap.placement_z));
+
+    let mut i = 0;
+    for (y, row) in [(0.3, 0), (0.9, 1), (1.5, 2)] {
+        for (x, col) in [(0.9, 0), (0.3, 1), (-0.3, 2), (-0.9, 3)] {
+            let pos = base * Mat4::from_translation(Vec3::new(x, y, 0.));
+            if let Some(hit) = check_collision(
+                pos, HITBOX, orig, dir,
+                HitTargetType::Grid { row, column: col, index: i },
+                i
+            ) {
+                hits.push((hit, None));
+            }
+            i += 1;
+        }
+    }
+
     for (i, t, object) in controller
         .color_notes
         .iter()
@@ -1273,7 +1298,7 @@ fn draw_map_gl(
                 && object.upcast_chain_head().is_none()
                 && let Some(hit) = check_collision(mat, object.editor_hitbox(), orig, dir, t, i)
             {
-                hits.push((hit, t, inst, None));
+                hits.push((hit, Some((t, inst, None))));
             }
             let is_highlighted = match t {
                 ObjectType::ColorNote => {
@@ -1360,7 +1385,7 @@ fn draw_map_gl(
                         }
                     }
                     if let Some(hit) = hit0 {
-                        hits.push((hit, t, inst, Some(insts)));
+                        hits.push((hit, Some((t, inst, Some(insts)))));
                     }
                     if sel {
                         chain_head_highlights.push(inst.into_data().highlight(Vec4::splat(1.)));
@@ -1594,7 +1619,9 @@ fn draw_map_gl(
         },
     ];
 
-    hits.sort_by(|(hit0, _, _, _), (hit1, _, _, _)| {
+
+
+    hits.sort_by(|(hit0, _), (hit1, _)| {
         hit0.distance.partial_cmp(&hit1.distance).unwrap()
     });
     if let Some((
@@ -1603,9 +1630,7 @@ fn draw_map_gl(
             typ,
             index,
         },
-        closest_ty,
-        closest,
-        links,
+        object_data,
     )) = hits.first()
     {
         match typ {
@@ -1618,49 +1643,37 @@ fn draw_map_gl(
                     }
                 }
             }
-            HitTargetType::Grid { row, column } => {
+            HitTargetType::Grid { row, column, index } => {
                 // TODO: grid placement logic
+                s.ref_mut().render.renderer.beatmap.hovered_placement_cell = *index as u32;
             }
         }
-        let (m, a, m2) = match (closest_ty, links) {
-            (ObjectType::ChainHead, Some(link_insts)) => (
-                c,
-                Some(a),
-                Some(
-                    link_insts
-                        .iter()
-                        .map(|i| Into::<InstanceData>::into(*i))
-                        .collect::<Vec<_>>(),
+        if let Some((closest_ty, closest, links)) = object_data {
+            let (m, a, m2) = match (closest_ty, links) {
+                (ObjectType::ChainHead, Some(link_insts)) => (
+                    c,
+                    Some(a),
+                    Some(
+                        link_insts
+                            .iter()
+                            .map(|i| Into::<InstanceData>::into(*i))
+                            .collect::<Vec<_>>(),
+                    ),
                 ),
-            ),
-            (ObjectType::ColorNote, None) => (m, Some(a), None),
-            (ObjectType::BombNote, None) => (b, None, None),
-            (ObjectType::Obstacle, None) => (o, None, None),
-            // (ObjectType::ArcHead, None) => todo!(),
-            // (ObjectType::ArcTail, None) => todo!(),
-            (t, n) => {
-                unreachable!("Hit check encountered unexpected type-link combo: {t:?}, {n:?}")
-            }
-        };
-        calls.push(MeshDrawCall {
-            mesh: m,
-            instances: vec![
-                Into::<InstanceData>::into(*closest).highlight(Vec4::new(0.2, 1.0, 0.2, 1.0)),
-            ],
-            wireframe: false,
-            cull: true,
-            bloomfog: false,
-            solid: false,
-            bloom: false,
-            mirror: false,
-            obstacle: false,
-            highlight: true,
-        });
-        if let Some(arrow) = a {
+                (ObjectType::ColorNote, None) => (m, Some(a), None),
+                (ObjectType::BombNote, None) => (b, None, None),
+                (ObjectType::Obstacle, None) => (o, None, None),
+                // (ObjectType::ArcHead, None) => todo!(),
+                // (ObjectType::ArcTail, None) => todo!(),
+                (t, n) => {
+                    unreachable!("Hit check encountered unexpected type-link combo: {t:?}, {n:?}")
+                }
+            };
+            const HIGHLIGHT_COLOR: Vec4 = Vec4::new(0.01, 0.8, 0.01, 1.0);
             calls.push(MeshDrawCall {
-                mesh: arrow,
+                mesh: m,
                 instances: vec![
-                    Into::<InstanceData>::into(*closest).highlight(Vec4::new(0.2, 1.0, 0.2, 1.0)),
+                    Into::<InstanceData>::into(*closest).highlight(HIGHLIGHT_COLOR),
                 ],
                 wireframe: false,
                 cull: true,
@@ -1671,36 +1684,52 @@ fn draw_map_gl(
                 obstacle: false,
                 highlight: true,
             });
-        }
-        if let Some(instances) = m2 {
-            let instances: Vec<InstanceData> = instances
-                .into_iter()
-                .map(|i| i.highlight(Vec4::new(0.2, 1.0, 0.2, 1.0)))
-                .collect();
-            calls.push(MeshDrawCall {
-                mesh: cl,
-                instances: instances.clone(),
-                wireframe: false,
-                cull: true,
-                bloomfog: false,
-                solid: false,
-                bloom: false,
-                mirror: false,
-                obstacle: false,
-                highlight: true,
-            });
-            calls.push(MeshDrawCall {
-                mesh: cd,
-                instances,
-                wireframe: false,
-                cull: true,
-                bloomfog: false,
-                solid: false,
-                bloom: false,
-                mirror: false,
-                obstacle: false,
-                highlight: true,
-            });
+            if let Some(arrow) = a {
+                calls.push(MeshDrawCall {
+                    mesh: arrow,
+                    instances: vec![
+                        Into::<InstanceData>::into(*closest).highlight(HIGHLIGHT_COLOR),
+                    ],
+                    wireframe: false,
+                    cull: true,
+                    bloomfog: false,
+                    solid: false,
+                    bloom: false,
+                    mirror: false,
+                    obstacle: false,
+                    highlight: true,
+                });
+            }
+            if let Some(instances) = m2 {
+                let instances: Vec<InstanceData> = instances
+                    .into_iter()
+                    .map(|i| i.highlight(HIGHLIGHT_COLOR))
+                    .collect();
+                calls.push(MeshDrawCall {
+                    mesh: cl,
+                    instances: instances.clone(),
+                    wireframe: false,
+                    cull: true,
+                    bloomfog: false,
+                    solid: false,
+                    bloom: false,
+                    mirror: false,
+                    obstacle: false,
+                    highlight: true,
+                });
+                calls.push(MeshDrawCall {
+                    mesh: cd,
+                    instances,
+                    wireframe: false,
+                    cull: true,
+                    bloomfog: false,
+                    solid: false,
+                    bloom: false,
+                    mirror: false,
+                    obstacle: false,
+                    highlight: true,
+                });
+            }
         }
     }
 
