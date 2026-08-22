@@ -7,6 +7,7 @@ use std::ops::{Add, Div, Mul, Sub};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec3Swizzles, Vec4};
 use rand::{RngExt, rngs::ThreadRng};
 
+use crate::data::map_editing::ObjectSource;
 use crate::easing::Easing;
 use crate::render::GameObjectInstanceData;
 
@@ -521,12 +522,14 @@ pub struct ColorNote {
     pub beat: f32,
     pub color: NoteColor,
     pub cut_direction: CutDirection,
-    pub angle_offset: f32,
+    pub angle_offset_deg: f32,
     pub grid_pos: Vec2,
     pub lane_rotation_deg: f32,
 
     pub dissolve: f32,
     pub index: u32,
+
+    pub source: ObjectSource,
 }
 
 #[derive(Debug)]
@@ -538,6 +541,8 @@ pub struct BombNote {
 
     pub dissolve: f32,
     pub index: u32,
+
+    pub source: ObjectSource,
 }
 impl ColorableObject for BombNote {
     fn color(col: &ObjectColor<Self>, _cs: &ColorScheme) -> Vec4 {
@@ -559,6 +564,8 @@ pub struct Obstacle {
 
     pub dissolve: f32,
     pub index: u32,
+
+    pub source: ObjectSource,
 }
 impl ColorableObject for Obstacle {
     fn color(col: &ObjectColor<Self>, cs: &ColorScheme) -> Vec4 {
@@ -590,6 +597,8 @@ pub struct ChainNote {
 
     pub dissolve: f32,
     pub index: u32,
+
+    pub source: ObjectSource,
 }
 
 impl GameObject for ColorNote {
@@ -600,7 +609,7 @@ impl GameObject for ColorNote {
         self.grid_pos
     }
     fn get_orientation(&self) -> Quat {
-        self.cut_direction.to_quat() * Quat::from_rotation_z(self.angle_offset.to_radians())
+        self.cut_direction.to_quat() * Quat::from_rotation_z(self.angle_offset_deg.to_radians())
     }
     fn do_gravity(&self) -> bool {
         true
@@ -890,6 +899,7 @@ impl BeatmapController {
 }
 
 impl BeatmapFile {
+    #[deprecated = "switch to editor system"]
     fn to_controller(
         &self,
         info: &InfoFile,
@@ -944,11 +954,12 @@ impl BeatmapFile {
                                 beat,
                                 color,
                                 cut_direction: color_note.cut_direction,
-                                angle_offset: 0.,
+                                angle_offset_deg: 0.,
                                 grid_pos: Vec2::new(color_note.line_index, color_note.line_layer),
                                 lane_rotation_deg: lane_rotation_deg as f32,
                                 dissolve: 0.,
                                 index,
+                                source: ObjectSource::Json { index },
                             })
                         }
                         v2::V2Note::Bomb(bomb_note) => {
@@ -971,6 +982,7 @@ impl BeatmapFile {
                                 lane_rotation_deg: lane_rotation_deg as f32,
                                 dissolve: 0.,
                                 index,
+                                source: ObjectSource::Json { index },
                             })
                         }
                     }
@@ -1016,6 +1028,7 @@ impl BeatmapFile {
                         size,
                         dissolve: 0.,
                         index,
+                        source: ObjectSource::Json { index },
                     })
                 }
             }
@@ -1060,6 +1073,7 @@ impl BeatmapFile {
                         links,
                         dissolve: 0.,
                         index,
+                        source: ObjectSource::Json { index },
                     });
                 }
                 for note in v3.color_notes.iter() {
@@ -1090,11 +1104,12 @@ impl BeatmapFile {
                         beat,
                         color,
                         cut_direction: note.cut_direction,
-                        angle_offset: 0.,
+                        angle_offset_deg: 0.,
                         grid_pos,
                         lane_rotation_deg,
                         dissolve: 0.,
                         index,
+                        source: ObjectSource::Json { index },
                     });
                 }
                 for bomb in v3.bomb_notes.iter() {
@@ -1117,6 +1132,7 @@ impl BeatmapFile {
                         lane_rotation_deg,
                         dissolve: 0.,
                         index,
+                        source: ObjectSource::Json { index },
                     });
                 }
                 for obst in v3.obstacles.iter() {
@@ -1147,6 +1163,7 @@ impl BeatmapFile {
                         lane_rotation_deg,
                         dissolve: 0.,
                         index,
+                        source: ObjectSource::Json { index },
                     });
                 }
             }
@@ -1183,6 +1200,7 @@ impl BeatmapFile {
                         links,
                         dissolve: 0.,
                         index,
+                        source: ObjectSource::Json { index },
                     });
                 }
                 for note in v4.color_notes.iter() {
@@ -1203,11 +1221,12 @@ impl BeatmapFile {
                         beat: note.beat,
                         color,
                         cut_direction: data.cut_direction,
-                        angle_offset: data.angle_offset as f32,
+                        angle_offset_deg: data.angle_offset as f32,
                         grid_pos,
                         lane_rotation_deg: note.rotation_lane as f32,
                         dissolve: 0.,
                         index,
+                        source: ObjectSource::Json { index },
                     });
                 }
                 for bomb in v4.bomb_notes.iter() {
@@ -1222,6 +1241,7 @@ impl BeatmapFile {
                         lane_rotation_deg: bomb.rotation_lane as f32,
                         dissolve: 0.,
                         index,
+                        source: ObjectSource::Json { index },
                     });
                 }
                 for obst in v4.obstacles.iter() {
@@ -1244,6 +1264,7 @@ impl BeatmapFile {
                         lane_rotation_deg: obst.rotation_lane as f32,
                         dissolve: 0.,
                         index,
+                        source: ObjectSource::Json { index },
                     });
                 }
             }
@@ -1309,8 +1330,8 @@ impl BeatmapFile {
         let angle = -cross.to_angle().to_degrees() + 90.;
 
         if this_is_dot && other_is_dot {
-            a.angle_offset = angle;
-            b.angle_offset = angle;
+            a.angle_offset_deg = angle;
+            b.angle_offset_deg = angle;
             return;
         }
 
@@ -1322,8 +1343,8 @@ impl BeatmapFile {
         let between = degrees_between(degrees, angle);
 
         if between <= 40. {
-            a.angle_offset = angle - a.cut_direction.angle_degrees();
-            b.angle_offset = angle - b.cut_direction.angle_degrees();
+            a.angle_offset_deg = angle - a.cut_direction.angle_degrees();
+            b.angle_offset_deg = angle - b.cut_direction.angle_degrees();
         }
     }
 }

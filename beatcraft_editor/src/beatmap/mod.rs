@@ -1224,7 +1224,6 @@ fn draw_map_gl(
     };
     let mut hits = Vec::new();
 
-    // TODO: grid hit logic but bettern't
     const HITBOX: HitBox = HitBox::new(
         Vec3::new(-0.25, -0.25, 0.),
         Vec3::new(0.25, 0.25, 0.),
