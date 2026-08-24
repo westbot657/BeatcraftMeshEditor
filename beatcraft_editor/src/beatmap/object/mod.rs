@@ -19,21 +19,41 @@ use super::{BeatmapProjectDiff, HitBox};
 
 pub mod spline;
 
-pub trait Lerp<T>
+pub trait InvLerpTransformer<T=Self>
 where
-    T: Copy + Mul<Output = T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>,
+    Self: Sized
 {
-    fn lerp(a: T, b: T, t: T) -> T {
+    fn convert(v: Self) -> T;
+}
+
+pub trait Lerp<V, T=V>
+where
+    V: InvLerpTransformer<T> + Copy + Mul<T, Output = V> + Sub<Output = V> + Add<Output = V> + Div<Output = V>,
+{
+    fn lerp(a: V, b: V, t: T) -> V {
         a + (b - a) * t
     }
 
-    fn inv_lerp(a: T, b: T, x: T) -> T {
-        (x - a) / (b - a)
+    fn inv_lerp(a: V, b: V, x: V) -> T {
+        V::convert((x - a) / (b - a))
+    }
+}
+
+impl InvLerpTransformer for f32 {
+    fn convert(v: Self) -> f32 { v }
+}
+impl InvLerpTransformer for f64 {
+    fn convert(v: Self) -> f64 { v }
+}
+impl InvLerpTransformer<f32> for Vec3 {
+    fn convert(v: Self) -> f32 {
+        v.length()
     }
 }
 
 impl Lerp<f32> for f32 {}
 impl Lerp<f64> for f64 {}
+impl Lerp<Vec3, f32> for Vec3 {}
 
 pub struct BeatmapController {
     pub runtime_data: RuntimeData,

@@ -670,115 +670,7 @@ impl App {
                 match self2.map_editor.map.as_mut() {
                     None => {
                         // No map selected
-
-                        ui.allocate_ui_with_layout(
-                            [ui.available_width(), 100.].into(),
-                            egui::Layout::top_down(egui::Align::Center),
-                            |ui| {
-                                ui.add_space(5.);
-                                if ui
-                                    .button(self.data.locale.get("open-beatmap-folder"))
-                                    .clicked()
-                                {
-                                    self.await_beatmap_open();
-                                }
-                                ui.allocate_space(ui.available_size());
-                            },
-                        );
-
-                        let mut to_open = None;
-                        let mut to_remove = None;
-                        let scroll = ctx.input(|i| i.smooth_scroll_delta);
-                        egui::ScrollArea::horizontal()
-                            .max_width(ui.available_width())
-                            .id_salt("recent beatmap panel")
-                            .show(ui, |ui| {
-                                ui.scroll_with_delta((scroll.y * 2., 0.).into());
-                                ui.allocate_ui_with_layout(
-                                    [ui.available_width(), 200.].into(),
-                                    egui::Layout::left_to_right(egui::Align::Min),
-                                    |ui| {
-                                        for (i, modified, path, img) in
-                                            self.data.recents.iter().enumerate().filter_map(
-                                                |(i, p)| {
-                                                    if let ProjectType::Beatmap { img } = &p.kind {
-                                                        Some((i, p.modified, &p.path, img))
-                                                    } else {
-                                                        None
-                                                    }
-                                                },
-                                            )
-                                        {
-                                            let ext = path.with_extension("");
-                                            let Some(label) = ext.file_name() else {
-                                                continue;
-                                            };
-                                            let label = label.to_string_lossy();
-                                            let full_path = path.to_string_lossy();
-                                            ui.allocate_ui_with_layout(
-                                                [225., 400.].into(),
-                                                egui::Layout::top_down(egui::Align::Center),
-                                                |ui| {
-                                                    if let Some(img) = img {
-                                                        ui.image(format!(
-                                                            "file://{}",
-                                                            path.join(img).to_string_lossy()
-                                                        ));
-                                                    } else {
-                                                        ui.image(MISSING_EDITOR_ICON.clone());
-                                                    }
-                                                    ui.label(egui::RichText::new(label).strong())
-                                                        .on_hover_text(full_path);
-                                                    ui.label(modified.to_string());
-
-                                                    ui.allocate_ui_with_layout(
-                                                        [225., ui.available_height().max(1.)]
-                                                            .into(),
-                                                        egui::Layout::bottom_up(
-                                                            egui::Align::Center,
-                                                        ),
-                                                        |ui| {
-                                                            ui.add_space(20.);
-                                                            if ui
-                                                                .button(
-                                                                    self.data
-                                                                        .locale
-                                                                        .get("remove-from-list"),
-                                                                )
-                                                                .clicked()
-                                                            {
-                                                                to_remove = Some(i);
-                                                            }
-                                                            ui.add_space(10.);
-                                                            if ui
-                                                                .button(
-                                                                    self.data.locale.get("open"),
-                                                                )
-                                                                .clicked()
-                                                            {
-                                                                to_open = Some(path);
-                                                            }
-                                                        },
-                                                    );
-                                                },
-                                            );
-                                        }
-                                    },
-                                );
-                            });
-
-                        if let Some(path) = to_open {
-                            let _ = self2.load_beatmap(
-                                &mut self.audio_system,
-                                path.clone(),
-                                &self.state.gl,
-                                &mut self.render.renderer,
-                                self.data.audio_volume,
-                            );
-                        }
-                        if let Some(i) = to_remove {
-                            self.data.recents.remove(i);
-                        }
+                        self.draw_map_selection_screen(self2, ctx, ui);
                     }
                     Some(map) => match map.controller.as_ref() {
                         None => {
@@ -793,88 +685,217 @@ impl App {
                             );
                         }
                         Some(controller) => {
-                            let rect = ui.available_rect_before_wrap();
-                            self.state.vp_rect = rect;
-                            let w = rect.width();
-                            let h = rect.height();
-
-                            let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
-                            self.handle_3d_input(&resp, ctx, gl);
-                            let (click, shift) =
-                                ui.input(|i| (i.pointer.primary_clicked(), i.modifiers.shift));
-                            let raw_mouse = ui.input(|i| i.pointer.latest_pos());
-                            let mouse_pos =
-                                raw_mouse.map(|p| Vec2::new(p.x - rect.min.x, p.y - rect.min.y));
-
-                            let mut mouse_pos = mouse_pos.map(|mp| (mp.x, h - mp.y));
-
-                            if let Some(mp) = raw_mouse
-                                && !rect.contains(mp)
-                            {
-                                mouse_pos = None;
-                            }
-
-                            if let Some(audio) = map.audio.as_ref()
-                                && audio.is_playing()
-                            {
-                                let sec = audio.position_seconds();
-                                let beat = controller.runtime_data.seconds_to_beat(sec);
-                                self.render.renderer.beatmap.seek(beat);
-                            }
-
-                            let s = unsafe { UnsafeMutRef::new(self) };
-
-                            ui.painter().add(egui::PaintCallback {
-                                rect,
-                                callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
-                                    move |_info, painter| {
-                                        let gl = painter.gl();
-                                        unsafe {
-                                            let view = s.ref_mut().cam().view_mat();
-                                            let proj = s.ref_mut().cam().proj_mat(w, h);
-
-                                            match s.state.view_style {
-                                                editor::ViewStyle::Beatcraft {
-                                                    blackout_sky: true,
-                                                } => {
-                                                    gl.clear_color(0., 0., 0., 1.);
-                                                }
-                                                _ => {
-                                                    gl.clear_color(0.07, 0.08, 0.11, 1.);
-                                                    gl.bind_framebuffer(glow::FRAMEBUFFER, None);
-                                                }
-                                            }
-
-                                            gl.clear(
-                                                glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT,
-                                            );
-                                            gl.enable(glow::DEPTH_TEST);
-                                            gl.depth_mask(true);
-
-                                            draw_map_gl(
-                                                &s,
-                                                gl,
-                                                &view,
-                                                &proj,
-                                                (w as i32, h as i32),
-                                                mouse_pos,
-                                                click,
-                                                shift,
-                                            );
-
-                                            if s.state.show_grid
-                                                && s.state.view_style == ViewStyle::Edit
-                                            {
-                                                s.render.renderer.draw_map_grid(gl, &view, &proj);
-                                            }
-                                        }
-                                    },
-                                )),
-                            });
+                            self.draw_beatmap_scene(
+                                ctx, ui, gl, map, controller
+                            );
                         }
                     },
                 }
             });
+    }
+
+    pub fn draw_map_selection_screen(
+        &mut self,
+        self2: &mut Self,
+        ctx: &egui::Context,
+        ui: &mut egui::Ui,
+    ) {
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), 100.].into(),
+            egui::Layout::top_down(egui::Align::Center),
+            |ui| {
+                ui.add_space(5.);
+                if ui
+                    .button(self.data.locale.get("open-beatmap-folder"))
+                    .clicked()
+                {
+                    self.await_beatmap_open();
+                }
+                ui.allocate_space(ui.available_size());
+            },
+        );
+
+        let mut to_open = None;
+        let mut to_remove = None;
+        let scroll = ctx.input(|i| i.smooth_scroll_delta);
+        egui::ScrollArea::horizontal()
+            .max_width(ui.available_width())
+            .id_salt("recent beatmap panel")
+            .show(ui, |ui| {
+                ui.scroll_with_delta((scroll.y * 2., 0.).into());
+                ui.allocate_ui_with_layout(
+                    [ui.available_width(), 200.].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
+                        for (i, modified, path, img) in
+                            self.data.recents.iter().enumerate().filter_map(
+                                |(i, p)| {
+                                    if let ProjectType::Beatmap { img } = &p.kind {
+                                        Some((i, p.modified, &p.path, img))
+                                    } else {
+                                        None
+                                    }
+                                },
+                            )
+                        {
+                            let ext = path.with_extension("");
+                            let Some(label) = ext.file_name() else {
+                                continue;
+                            };
+                            let label = label.to_string_lossy();
+                            let full_path = path.to_string_lossy();
+                            ui.allocate_ui_with_layout(
+                                [225., 400.].into(),
+                                egui::Layout::top_down(egui::Align::Center),
+                                |ui| {
+                                    if let Some(img) = img {
+                                        ui.image(format!(
+                                            "file://{}",
+                                            path.join(img).to_string_lossy()
+                                        ));
+                                    } else {
+                                        ui.image(MISSING_EDITOR_ICON.clone());
+                                    }
+                                    ui.label(egui::RichText::new(label).strong())
+                                        .on_hover_text(full_path);
+                                    ui.label(modified.to_string());
+
+                                    ui.allocate_ui_with_layout(
+                                        [225., ui.available_height().max(1.)]
+                                            .into(),
+                                        egui::Layout::bottom_up(
+                                            egui::Align::Center,
+                                        ),
+                                        |ui| {
+                                            ui.add_space(20.);
+                                            if ui
+                                                .button(
+                                                    self.data
+                                                        .locale
+                                                        .get("remove-from-list"),
+                                                )
+                                                .clicked()
+                                            {
+                                                to_remove = Some(i);
+                                            }
+                                            ui.add_space(10.);
+                                            if ui
+                                                .button(
+                                                    self.data.locale.get("open"),
+                                                )
+                                                .clicked()
+                                            {
+                                                to_open = Some(path);
+                                            }
+                                        },
+                                    );
+                                },
+                            );
+                        }
+                    },
+                );
+            });
+
+        if let Some(path) = to_open {
+            let _ = self2.load_beatmap(
+                &mut self.audio_system,
+                path.clone(),
+                &self.state.gl,
+                &mut self.render.renderer,
+                self.data.audio_volume,
+            );
+        }
+        if let Some(i) = to_remove {
+            self.data.recents.remove(i);
+        }
+    }
+
+    fn draw_beatmap_scene(
+        &mut self,
+        ctx: &egui::Context,
+        ui: &mut egui::Ui,
+        gl: &glow::Context,
+        map: &BeatmapProject,
+        controller: &BeatmapController,
+    ) {
+        let rect = ui.available_rect_before_wrap();
+        self.state.vp_rect = rect;
+        let w = rect.width();
+        let h = rect.height();
+
+        let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
+        self.handle_3d_input(&resp, ctx, gl);
+        let (click, shift) =
+            ui.input(|i| (i.pointer.primary_clicked(), i.modifiers.shift));
+        let raw_mouse = ui.input(|i| i.pointer.latest_pos());
+        let mouse_pos =
+            raw_mouse.map(|p| Vec2::new(p.x - rect.min.x, p.y - rect.min.y));
+
+        let mut mouse_pos = mouse_pos.map(|mp| (mp.x, h - mp.y));
+
+        if let Some(mp) = raw_mouse
+            && !rect.contains(mp)
+        {
+            mouse_pos = None;
+        }
+
+        if let Some(audio) = map.audio.as_ref()
+            && audio.is_playing()
+        {
+            let sec = audio.position_seconds();
+            let beat = controller.runtime_data.seconds_to_beat(sec);
+            self.render.renderer.beatmap.seek(beat);
+        }
+
+        let s = unsafe { UnsafeMutRef::new(self) };
+
+        ui.painter().add(egui::PaintCallback {
+            rect,
+            callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
+                move |_info, painter| {
+                    let gl = painter.gl();
+                    unsafe {
+                        let view = s.ref_mut().cam().view_mat();
+                        let proj = s.ref_mut().cam().proj_mat(w, h);
+
+                        match s.state.view_style {
+                            editor::ViewStyle::Beatcraft {
+                                blackout_sky: true,
+                            } => {
+                                gl.clear_color(0., 0., 0., 1.);
+                            }
+                            _ => {
+                                gl.clear_color(0.07, 0.08, 0.11, 1.);
+                                gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+                            }
+                        }
+
+                        gl.clear(
+                            glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT,
+                        );
+                        gl.enable(glow::DEPTH_TEST);
+                        gl.depth_mask(true);
+
+                        draw_map_gl(
+                            &s,
+                            gl,
+                            &view,
+                            &proj,
+                            (w as i32, h as i32),
+                            mouse_pos,
+                            click,
+                            shift,
+                        );
+
+                        if s.state.show_grid
+                            && s.state.view_style == ViewStyle::Edit
+                        {
+                            s.render.renderer.draw_map_grid(gl, &view, &proj);
+                        }
+                    }
+                },
+            )),
+        });
     }
 
     pub fn load_beatmap(
