@@ -1,35 +1,7 @@
-use serde::{Deserialize, Serialize};
+use serde::{Serialize, Deserialize};
 
-use super::{
-    ArcDataV4, ArcV4, BombNoteDataV4, BombNoteV4, BpmRegion, ChainDataV4, ChainV4, ColorNoteDataV4,
-    ColorNoteV4, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion, NJSEventDataV4,
-    NJSEventV4, ObstacleDataV4, ObstacleV4, SpawnRotationEventDataV4, SpawnRotationEventV4,
-};
+use crate::{BpmRegion, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "camelCase")]
-pub struct BeatmapFileV4 {
-    pub version: MapVersion,
-    pub color_notes: Vec<ColorNoteV4>,
-    pub color_notes_data: Vec<ColorNoteDataV4>,
-    pub bomb_notes: Vec<BombNoteV4>,
-    pub bomb_notes_data: Vec<BombNoteDataV4>,
-    pub obstacles: Vec<ObstacleV4>,
-    pub obstacles_data: Vec<ObstacleDataV4>,
-    pub arcs: Vec<ArcV4>,
-    pub arcs_data: Vec<ArcDataV4>,
-    pub chains: Vec<ChainV4>,
-    pub chains_data: Vec<ChainDataV4>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub njs_events: Option<Vec<NJSEventV4>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub njs_event_data: Option<Vec<NJSEventDataV4>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub spawn_rotations: Option<Vec<SpawnRotationEventV4>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub spawn_rotations_data: Option<Vec<SpawnRotationEventDataV4>>,
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

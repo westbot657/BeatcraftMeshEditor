@@ -14,7 +14,7 @@ use tracing::Level;
 
 use crate::audio::AudioSystem;
 use crate::beatmap::BeatmapEditor;
-use crate::beatmap::data::{AudioDataFile, InfoFile};
+use bs_mapping_data::{AudioDataFile, InfoFile};
 use crate::beatmap::object::{BombNote, ChainNote, ColorNote, ObjectType, Obstacle, RuntimeData};
 use crate::config::{AppData, KeyMaps};
 use crate::data::mesh::{

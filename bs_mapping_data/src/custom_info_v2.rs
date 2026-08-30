@@ -1,8 +1,6 @@
-use super::beatcraft::{APP_NAME, BeatcraftEditorInfo, BeatmapDifficultyCustomData};
-use super::is_value_f;
-use super::settings_setter::CustomSettingsV2;
-use serde::ser::SerializeMap;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
+use crate::custom_data::{RequirementModName, SuggestionModName};
+use crate::is_value_f;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InfoCustomDataV2 {
@@ -24,71 +22,6 @@ pub struct InfoCustomDataV2 {
     pub extra: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-#[derive(Clone, Debug)]
-pub struct EditorInfoV2 {
-    pub last_edited_by: Option<String>,
-    pub beatcraft: BeatcraftEditorInfo,
-    pub editor_info: Option<serde_json::Map<String, serde_json::Value>>,
-}
-
-impl Serialize for EditorInfoV2 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut map = serializer.serialize_map(None)?;
-        if let Some(last_edited_by) = &self.last_edited_by {
-            map.serialize_entry("_lastEditedBy", last_edited_by)?;
-        }
-        map.serialize_entry(APP_NAME, &self.beatcraft)?;
-        if let Some(extra) = &self.editor_info {
-            for (k, v) in extra {
-                map.serialize_entry(k, v)?;
-            }
-        }
-        map.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for EditorInfoV2 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut map = serde_json::Map::deserialize(deserializer)?;
-
-        let last_edited_by = match map.remove("_lastEditedBy") {
-            Some(v) => serde_json::from_value(v).map_err(serde::de::Error::custom)?,
-            None => None,
-        };
-
-        let beatcraft = match map.remove(APP_NAME) {
-            Some(v) => serde_json::from_value(v).map_err(serde::de::Error::custom)?,
-            None => BeatcraftEditorInfo::default(),
-        };
-
-        let editor_info = if map.is_empty() { None } else { Some(map) };
-
-        Ok(EditorInfoV2 {
-            last_edited_by,
-            beatcraft,
-            editor_info,
-        })
-    }
-}
-
-impl Default for EditorInfoV2 {
-    fn default() -> Self {
-        Self {
-            last_edited_by: Some(String::from("BeatcraftEditor")),
-
-            beatcraft: Default::default(),
-
-            editor_info: None,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContributorV2 {
     #[serde(rename = "_role")]
@@ -97,63 +30,21 @@ pub struct ContributorV2 {
     pub name: String,
     #[serde(rename = "_iconPath")]
     pub icon_path: String,
+
+    #[serde(flatten)]
+    pub extra: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RGBCustomColorDataV2 {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SuggestionModName {
-    Chroma,
-
-    AudioLink,
-
-    #[serde(untagged)]
-    Custom(String),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RequirementModName {
-    Chroma,
-    #[serde(rename = "Noodle Extensions")]
-    Noodle,
-    Vivify,
-    //////,
-    #[serde(rename = "Mapping Extensions")]
-    MappingExtensions,
-
-    AudioLink,
-
-    #[serde(untagged)]
-    Custom(String),
-}
-
-impl SuggestionModName {
-    pub fn display_name(&self) -> &str {
-        match self {
-            Self::Chroma => "Chroma",
-            Self::AudioLink => "AudioLink",
-            Self::Custom(s) => s.as_str(),
-        }
-    }
-}
-
-impl RequirementModName {
-    pub fn display_name(&self) -> &str {
-        match self {
-            Self::Chroma => "Chroma",
-            Self::Noodle => "Noodle Extensions",
-            Self::Vivify => "Vivify",
-            //////////// => "////////",
-            Self::MappingExtensions => "Mapping Extensions",
-            Self::AudioLink => "AudioLink",
-            Self::Custom(s) => s.as_str(),
-        }
-    }
+pub struct EditorInfoV2 {
+    #[serde(rename = "_lastEditedBy")]
+    pub last_edited_by: Option<String>,
+    #[cfg(feature = "beatcraft")]
+    #[serde(rename = "Beatcraft")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beatcraft: Option<crate::beatcraft::BeatcraftEditorInfo>,
+    #[serde(flatten)]
+    pub editor_info: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -165,6 +56,13 @@ pub struct DifficultySetCustomDataV2 {
 
     #[serde(flatten)]
     pub extra: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RGBCustomColorDataV2 {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -217,12 +115,14 @@ pub struct DifficultyBeatmapCustomDataV2 {
     #[serde(rename = "_requirements")]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requirements: Vec<RequirementModName>,
+    #[cfg(feature = "settings_setter")]
     #[serde(rename = "_settings")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub settings: Option<CustomSettingsV2>,
+    pub settings: Option<crate::settings_v2::CustomSettingsV2>,
+    #[cfg(feature = "beatcraft")]
     #[serde(rename = "_beatcraftEditorData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub beatcraft_editor_data: Option<BeatmapDifficultyCustomData>,
+    pub beatcraft_editor_data: Option<crate::beatcraft::BeatmapDifficultyCustomData>,
 
     #[serde(flatten)]
     pub extra: Option<serde_json::Map<String, serde_json::Value>>,

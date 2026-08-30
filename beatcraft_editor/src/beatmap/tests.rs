@@ -4,12 +4,13 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow};
 use egui::TextBuffer;
 
-use crate::beatmap::data::v2::BeatmapFileV2;
-use crate::beatmap::data::v3::BeatmapFileV3;
-use crate::beatmap::data::v4::{BeatmapFileV4, InfoV4};
+use bs_mapping_data::v2::BeatmapFileV2;
+use bs_mapping_data::v3::BeatmapFileV3;
+use bs_mapping_data::v4::BeatmapFileV4;
+use bs_mapping_data::info_v4::InfoV4;
 
-use super::data::MapCharacteristic;
-use super::data::v2::InfoV2;
+use bs_mapping_data::MapCharacteristic;
+use bs_mapping_data::info_v2::InfoV2;
 
 type MapSelection = (&'static str, &'static str, &'static str);
 

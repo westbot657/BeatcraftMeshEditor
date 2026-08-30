@@ -8,12 +8,13 @@ use glam::{Mat4, Quat, Vec2, Vec3, Vec3Swizzles, Vec4};
 use rand::{RngExt, rngs::ThreadRng};
 
 use crate::data::map_editing::ObjectSource;
-use crate::easing::Easing;
+use bs_mapping_data::easing::Easing;
 use crate::render::GameObjectInstanceData;
 
 use self::spline::BezierCurve;
 
-use super::data::{BeatmapDataError, BeatmapFile, BpmRegion, Color, CutDirection, InfoFile, v2};
+use bs_mapping_data::{BeatmapDataError, BeatmapFile, BpmRegion, Color, CutDirection, InfoFile, v2};
+use super::data::CutDirectionExt;
 use super::render::BeatmapRenderer;
 use super::{BeatmapProjectDiff, HitBox};
 
@@ -918,8 +919,21 @@ impl BeatmapController {
     }
 }
 
-impl BeatmapFile {
+trait BeatmapFileExt {
     #[deprecated = "switch to editor system"]
+    fn to_controller(
+        &self,
+        info: &InfoFile,
+        diff_data: &BeatmapProjectDiff,
+        bpm_regions: Vec<BpmRegion>,
+        sample_count: usize,
+        sample_rate: u32,
+    ) -> Result<BeatmapController, BeatmapDataError>;
+    fn check_window_snaps(color_notes: &mut [ColorNote]);
+    fn check_window_snap(a: &mut ColorNote, b: &mut ColorNote);
+}
+
+impl BeatmapFileExt for BeatmapFile {
     fn to_controller(
         &self,
         info: &InfoFile,
@@ -1012,15 +1026,15 @@ impl BeatmapFile {
                     let local_bpm = runtime_data.bpm(TimeUnit::Beat(obst.beat));
                     let dist_beats_to_meters = runtime_data.njs * (60. / local_bpm);
                     let (grid_pos, size) = match obst.typ {
-                        super::data::ObstacleV2Type::FullHeight => (
+                        bs_mapping_data::v2::ObstacleV2Type::FullHeight => (
                             Vec2::new(obst.line_index, obst.line_layer),
                             Vec3::new(obst.width, 5., obst.duration * dist_beats_to_meters),
                         ),
-                        super::data::ObstacleV2Type::Crouch => (
+                        bs_mapping_data::v2::ObstacleV2Type::Crouch => (
                             Vec2::new(obst.line_index, obst.line_layer + 2.),
                             Vec3::new(obst.width, 3., obst.duration * dist_beats_to_meters),
                         ),
-                        super::data::ObstacleV2Type::Free => (
+                        bs_mapping_data::v2::ObstacleV2Type::Free => (
                             Vec2::new(obst.line_index, obst.line_layer),
                             Vec3::new(
                                 obst.width,

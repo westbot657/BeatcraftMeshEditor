@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use glam::{Quat, Vec4};
 use serde::{Deserialize, Serialize};
 
-use crate::beatmap::object::{BeatmapController, ColorNote, NoteColor, RawNoteColor, RuntimeData};
-use crate::{DB_DATA, beatmap};
-use crate::beatmap::data::v2::{self, V2Note};
-use crate::beatmap::data::{ArcMidAnchorMode, BeatmapFile, Color, CutDirection, ObstacleV2Type, Sentinel};
+use crate::beatmap::object::{BeatmapController, ColorNote, NoteColor, RuntimeData};
+use crate::DB_DATA;
+use bs_mapping_data::v2::{self, V2Note, ObstacleV2Type};
+use bs_mapping_data::{ArcMidAnchorMode, BeatmapFile, Color, CutDirection, Sentinel};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObjectSource {

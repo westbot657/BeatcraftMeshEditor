@@ -6,7 +6,7 @@ use egui::Ui;
 use glam::{Quat, Vec2, Vec3};
 
 use crate::data::mesh::VertexId;
-use crate::easing::Easing;
+use bs_mapping_data::easing::Easing;
 use crate::editor::{self, App, RotationDisplayMode};
 use crate::light_mesh::{self, ComputeVertex, Part};
 use crate::widgets::{MathDragValue, MathDragValueOpt, MultiMathValue};

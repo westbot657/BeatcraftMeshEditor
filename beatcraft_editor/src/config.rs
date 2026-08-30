@@ -13,7 +13,7 @@ use fluent_templates::{LanguageIdentifier, Loader, static_loader};
 use serde::{Deserialize, Serialize};
 
 use crate::DB_DATA;
-use crate::beatmap::data::InfoFile;
+use bs_mapping_data::InfoFile;
 
 static_loader! {
     static LOCALES = {

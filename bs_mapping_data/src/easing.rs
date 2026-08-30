@@ -2,8 +2,6 @@ use std::f32::consts::PI;
 
 use serde::{Deserialize, Serialize};
 
-use crate::beatmap;
-
 macro_rules! easing {
     (
         $x:tt
@@ -24,12 +22,14 @@ macro_rules! easing {
                 )*}
             }
 
+            #[cfg(feature = "beatcraft")]
             pub fn iter_all() -> impl Iterator<Item = (&'static str, Self)> {
                 [
                     $( ($display, Self::$name) ),*
                 ].into_iter()
             }
 
+            #[cfg(feature = "beatcraft")]
             pub fn display_name(&self) -> &'static str {
                 match self {$(
                     Self::$name => $display,
@@ -40,13 +40,13 @@ macro_rules! easing {
     };
 }
 
-static C1: f32 = 1.70158;
-static C2: f32 = C1 * 1.525;
-static C3: f32 = C1 + 1.;
-static C4: f32 = (2. * PI) / 3.;
-static C5: f32 = (2. * PI) / 4.5;
-static N1: f32 = 7.5625;
-static D1: f32 = 2.75;
+const C1: f32 = 1.70158;
+const C2: f32 = C1 * 1.525;
+const C3: f32 = C1 + 1.;
+const C4: f32 = (2. * PI) / 3.;
+const C5: f32 = (2. * PI) / 4.5;
+const N1: f32 = 7.5625;
+const D1: f32 = 2.75;
 
 easing! {x
     "Step           ":  -1 : easeStep => if x >= 1. { 1. } else { 0. }
@@ -94,12 +94,12 @@ impl Easing {
 }
 
 impl TryFrom<i8> for Easing {
-    type Error = beatmap::data::BeatmapDataError;
+    type Error = super::BeatmapDataError;
     fn try_from(value: i8) -> Result<Self, Self::Error> {
         Ok(match value {
             -1..=30 | 100..=102 => unsafe { std::mem::transmute::<i8, Easing>(value) },
             _ => {
-                return Err(beatmap::data::BeatmapDataError::ToEnum {
+                return Err(super::BeatmapDataError::ToEnum {
                     enum_name: "Easing",
                     val: value as i32,
                 });

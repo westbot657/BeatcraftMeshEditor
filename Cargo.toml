@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "beatcraft_editor"
+    "beatcraft_editor",
+    "bs_mapping_data"
 ]
 resolver = "3"
 

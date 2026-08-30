@@ -19,9 +19,9 @@ use crate::{
     get_data_folder,
 };
 
-use self::data::song_core::DifficultyBeatmapCustomDataV2;
-use self::data::v2::{CharacteristicSetV2, DifficultyBeatmapV2};
-use self::data::{AudioDataFile, BeatmapFile, InfoFile, MapCharacteristic, MapDifficulty};
+use bs_mapping_data::custom_info_v2::DifficultyBeatmapCustomDataV2;
+use bs_mapping_data::info_v2::{CharacteristicSetV2, DifficultyBeatmapV2};
+use bs_mapping_data::{AudioDataFile, BeatmapFile, InfoFile, MapCharacteristic, MapDifficulty};
 use self::object::{BeatmapController, GameObject, ObjectType};
 
 pub mod data;

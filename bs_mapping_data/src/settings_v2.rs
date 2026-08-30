@@ -1,5 +1,6 @@
-use super::{BeatmapDataError, convert_u8};
 use serde::{Deserialize, Serialize};
+
+use super::convert_u8;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CustomSettingsV2 {

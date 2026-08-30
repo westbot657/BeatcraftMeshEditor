@@ -1,0 +1,34 @@
+[package]
+name = "bs-mapping-data"
+version = "0.1.0"
+edition = "2024"
+description = "Beat Saber data formats defined as structs"
+authors = ["Westbot"]
+readme = "README.md"
+license = "MIT"
+
+[features]
+default = ["heck", "beatcraft", "all-versions"]
+all-versions = ["v2", "v3", "v4"]
+heck = ["noodle", "chroma", "settings_setter"]
+noodle = ["custom_data", "tracks"]
+chroma = ["custom_data", "tracks"]
+settings_setter = ["custom_data"]
+tracks = ["custom_data"]
+beatcraft = ["custom_data"]
+custom_data = []
+v2 = []
+v3 = []
+v4 = []
+
+[dependencies]
+bitflags = { version = "2.13.1", features = ["serde"] }
+glam = { version = "0.33.5", features = ["serde"] }
+num-traits = "0.2.19"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+
+
+
+

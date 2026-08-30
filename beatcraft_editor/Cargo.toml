@@ -3,6 +3,7 @@ name = "beatcraft-editor"
 version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/westbot657/BeatcraftMeshEditor"
+description = "A Mesh editor for Beatcraft and Beatmap editor for Beat Saber"
 
 [[bin]]
 name = "beatcraft_editor"
@@ -16,7 +17,7 @@ mapper = []
 [dependencies]
 eframe = { version = "0.33.3", features = ["glow", "persistence"] }
 egui = { version = "0.33.3", features = ["persistence", "serde"] }
-glam = { version = "0.32", features = ["bytemuck", "serde"] }
+glam = { version = "0.33.5", features = ["bytemuck", "serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 parking_lot = "0.12"
@@ -32,7 +33,7 @@ num-traits = "0.2.19"
 egui_extras = { version = "0.33.3", features = ["all_loaders"] }
 dirs = "6.0.0"
 chrono = "0.4.45"
-thiserror = "2.0.18"
+thiserror = "2"
 clap = { version = "4.6.2", features = ["derive"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
@@ -45,6 +46,7 @@ rand = "0.10.2"
 egui-keybind = { version = "0.8.0", features = ["serde"] }
 fluent-templates = "0.15.1"
 bincode-next = { version = "3.1.1", features = ["serde"] }
+bs-mapping-data = { path = "../bs_mapping_data" }
 
 [build-dependencies]
 bindgen = "0.72.1"

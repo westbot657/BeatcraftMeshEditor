@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 use crate::config::LocaleCache;
-use crate::easing::Easing;
+use bs_mapping_data::easing::Easing;
 use crate::editor::{ActionType, Camera, ViewPlacement};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]

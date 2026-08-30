@@ -40,7 +40,7 @@ use self::data::mesh::{
     BillboardData, LightGroup, LightMeshData, MaterialType, NormalId, ShaderSettingsData,
     ShaderStyle, SpectrogramData, UvId, VertexId,
 };
-use self::easing::Easing;
+use bs_mapping_data::easing::Easing;
 use self::editor::{
     ActionType, App, CreateEnv, MINECRAFT_F, RingType, RoutineAction, SOURCE_CODE_F, Selection,
     SettingsPage, SettingsScreen, SpinSide, UiState, ViewPlacement, ViewStyle, WorkingRenameKey,
@@ -59,7 +59,6 @@ pub mod audio;
 pub mod beatmap;
 pub mod config;
 pub mod data;
-pub mod easing;
 pub mod editor;
 pub mod light_mesh;
 pub mod math_interp;

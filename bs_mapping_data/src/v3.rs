@@ -1,19 +1,155 @@
+use serde::{Serialize, Deserialize};
 use bitflags::bitflags;
-use serde::{Deserialize, Serialize};
 
+use crate::v2_v3::*;
 use crate::easing::Easing;
+use crate::{easing_as_i8, bool_u8_serde};
+use crate::convert_u8;
+use crate::{
+    Color, CutDirection, Sentinel, ArcMidAnchorMode,
+    SpawnRotationAngle, SpawnRotationExecutionTime, MapVersion,
+};
+use crate::{is_value_f, is_value_u, default_u};
 
-use super::v2::{
-    ColorBoostValueV2, GagaSideV2, HydraulicsTypeV2, LightEventTypeV2, LightEventValueV2,
-    RingLightEventTypeV2, SpinningLaserSideV2,
-};
-use super::{
-    ArcV3, BeatmapDataError, BombNoteV3, ChainV3, ColorNoteV3, LegacyBPMEventV3,
-    LegacySpawnRotationEventV3, MapVersion, ObstacleV3, Sentinel, SpawnRotationExecutionTime,
-    convert_u8,
-};
-use super::{bool_u8_serde, easing_as_i8};
-use super::{default_u, is_value_f, is_value_u};
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ColorNoteV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "x")]
+    pub line_index: f32,
+    #[serde(rename = "y")]
+    pub line_layer: f32,
+    #[serde(rename = "c")]
+    pub color: Color,
+    #[serde(rename = "d")]
+    pub cut_direction: CutDirection,
+    #[serde(rename = "a")]
+    pub angle_offset: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BombNoteV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "x")]
+    pub line_index: f32,
+    #[serde(rename = "y")]
+    pub line_layer: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObstacleV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "d")]
+    pub duration: f32,
+    #[serde(rename = "x")]
+    pub line_index: f32,
+    #[serde(rename = "y")]
+    pub line_layer: f32,
+    #[serde(rename = "w")]
+    pub width: f32,
+    #[serde(rename = "h")]
+    pub height: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArcV3 {
+    #[serde(rename = "c")]
+    pub color: Color,
+    #[serde(rename = "b")]
+    pub head_beat: f32,
+    #[serde(rename = "x")]
+    pub head_line_index: f32,
+    #[serde(rename = "y")]
+    pub head_line_layer: f32,
+    #[serde(rename = "d")]
+    pub head_cut_direction: CutDirection,
+    #[serde(rename = "mu")]
+    pub head_ctrl_magnitude: f32,
+    #[serde(rename = "tb")]
+    pub tail_beat: f32,
+    #[serde(rename = "tx")]
+    pub tail_line_index: f32,
+    #[serde(rename = "ty")]
+    pub tail_line_layer: f32,
+    #[serde(rename = "tc")]
+    pub tail_cut_direction: CutDirection,
+    #[serde(rename = "tmu")]
+    pub tail_ctrl_magnitude: f32,
+    #[serde(rename = "m")]
+    pub mid_anchor_mode: ArcMidAnchorMode,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChainV3 {
+    #[serde(rename = "c")]
+    pub color: Color,
+    #[serde(rename = "b")]
+    pub head_beat: f32,
+    #[serde(rename = "x")]
+    pub head_line_index: f32,
+    #[serde(rename = "y")]
+    pub head_line_layer: f32,
+    #[serde(rename = "d")]
+    pub head_cut_direction: CutDirection,
+    #[serde(rename = "tb")]
+    pub tail_beat: f32,
+    #[serde(rename = "tx")]
+    pub tail_line_index: f32,
+    #[serde(rename = "ty")]
+    pub tail_line_layer: f32,
+    #[serde(rename = "sc")]
+    pub slice_count: u8,
+    #[serde(rename = "s")]
+    pub squish_factor: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacySpawnRotationEventV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "et")]
+    pub execution_time: SpawnRotationExecutionTime,
+    #[serde(rename = "i")]
+    pub rotation_angle: SpawnRotationAngle,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpawnRotationEventV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "e")]
+    pub execution_time: SpawnRotationExecutionTime,
+    #[serde(rename = "r")]
+    pub magnitude: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyBPMEventV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    et: Sentinel<100>,
+    #[serde(rename = "f")]
+    pub value: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BPMEventV3 {
+    #[serde(rename = "b")]
+    pub beat: f32,
+    #[serde(rename = "m")]
+    pub bpm: f32,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -253,6 +389,7 @@ pub enum DistributionType {
     Wave = 1,
     Step = 2,
 }
+convert_u8! { DistributionType : 1 | 2 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
@@ -262,6 +399,7 @@ pub enum EventAxis {
     Y = 1,
     Z = 2,
 }
+convert_u8! { EventAxis : 0..=2 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
@@ -270,6 +408,7 @@ pub enum TransitionType {
     Transition = 0,
     Extend = 1,
 }
+convert_u8! { TransitionType : 0 | 1 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
@@ -279,6 +418,7 @@ pub enum RotationDirection {
     Clockwise = 1,
     CounterClockwise = 2,
 }
+convert_u8! { RotationDirection : 0..=2 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -518,7 +658,16 @@ pub struct BeatmapFileV3 {
     pub custom_data: Option<serde_json::Value>,
 }
 
-convert_u8! { DistributionType : 1 | 2 }
-convert_u8! { EventAxis : 0..=2 }
-convert_u8! { TransitionType : 0 | 1 }
-convert_u8! { RotationDirection : 0..=2 }
+
+
+
+
+
+
+
+
+
+
+
+
+
