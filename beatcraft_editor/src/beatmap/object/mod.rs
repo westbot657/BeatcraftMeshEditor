@@ -62,6 +62,7 @@ pub struct BeatmapController {
     pub bomb_notes: Vec<BombNote>,
     pub obstacles: Vec<Obstacle>,
     pub chain_notes: Vec<ChainNote>,
+    pub arcs: Vec<Arc>,
 }
 
 #[derive(Debug, Clone)]
@@ -608,7 +609,8 @@ pub struct ChainNote {
     pub spawn_orientation: Quat,
     pub head_beat: f32,
     pub tail_beat: f32,
-    pub lane_rotation_deg: f32,
+    pub head_lane_rotation_deg: f32,
+    pub tail_lane_rotation_deg: f32,
     pub cut_direction: CutDirection,
     pub color: NoteColor,
     pub head_grid_pos: Vec2,
@@ -620,6 +622,12 @@ pub struct ChainNote {
     pub index: u32,
 
     pub source: ObjectSource,
+}
+
+#[derive(Debug)]
+pub struct Arc {
+    pub head_beat: f32,
+    pub tail_beat: f32,
 }
 
 impl GameObject for ColorNote {
@@ -799,7 +807,7 @@ impl GameObject for ChainNote {
         Some(self)
     }
     fn lane_rotation_degrees(&self) -> f32 {
-        self.lane_rotation_deg
+        self.head_lane_rotation_deg
     }
     fn get_instance(
         &self,
@@ -852,7 +860,7 @@ impl ChainNote {
                 beat: self.head_beat + (beat_span * (gap * i as f32)),
                 orientation,
                 spawn_orientation: data.spawn_orientation,
-                lane_rotation_deg: self.lane_rotation_deg,
+                lane_rotation_deg: self.head_lane_rotation_deg,
                 color: self.color,
                 index: self.index * 5 + i as u32 * 2,
                 dissolve: self.dissolve,
@@ -956,6 +964,7 @@ impl BeatmapFileExt for BeatmapFile {
         let mut bomb_notes = Vec::new();
         let mut obstacles = Vec::new();
         let mut chain_notes = Vec::new();
+        let arcs = Vec::new();
 
         match self {
             Self::V2(v2) => {
@@ -1098,7 +1107,8 @@ impl BeatmapFileExt for BeatmapFile {
                         spawn_orientation: get_random_spawn_quat(&mut rng),
                         head_beat: beat,
                         tail_beat: chain.tail_beat,
-                        lane_rotation_deg,
+                        head_lane_rotation_deg: lane_rotation_deg,
+                        tail_lane_rotation_deg: lane_rotation_deg,
                         cut_direction: chain.head_cut_direction,
                         color: chain.color.into(),
                         head_grid_pos: Vec2::new(chain.head_line_index, chain.head_line_layer),
@@ -1225,7 +1235,8 @@ impl BeatmapFileExt for BeatmapFile {
                         spawn_orientation: get_random_spawn_quat(&mut rng),
                         head_beat: chain.head_beat,
                         tail_beat: chain.tail_beat,
-                        lane_rotation_deg: chain.head_rotation_lane as f32,
+                        head_lane_rotation_deg: chain.head_rotation_lane as f32,
+                        tail_lane_rotation_deg: chain.tail_rotation_lane as f32,
                         cut_direction: head_data.cut_direction,
                         color: head_data.color.into(),
                         head_grid_pos: Vec2::new(head_data.line_index, head_data.line_layer),
@@ -1312,6 +1323,7 @@ impl BeatmapFileExt for BeatmapFile {
             bomb_notes,
             obstacles,
             chain_notes,
+            arcs,
         })
     }
 
