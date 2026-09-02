@@ -15,10 +15,10 @@ use crate::data::mesh::{
     MaterialFlags, MeshType, NormalId, PartData, PlacementData, ShaderSettingsData, StateSet,
     TriangleData, TriangleEntry, UvId, VertRefData, VertexId,
 };
-use bs_mapping_data::easing::Easing;
 use crate::editor::DataSwap;
 use crate::renaming::light_mesh::rehash;
 use crate::{DB_DATA, DB_MATH, RefDuper};
+use bs_mapping_data::easing::Easing;
 
 #[derive(Debug, Clone)]
 pub struct ComputeVertex {

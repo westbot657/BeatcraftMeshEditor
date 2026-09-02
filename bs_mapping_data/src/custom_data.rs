@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OptVec2(pub [Option<f32>; 2]);
@@ -56,4 +56,3 @@ impl RequirementModName {
         }
     }
 }
-

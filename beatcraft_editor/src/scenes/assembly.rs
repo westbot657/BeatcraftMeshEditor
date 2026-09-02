@@ -1,12 +1,11 @@
-
+use crate::data::mesh::{BillboardData, MaterialType, ShaderSettingsData, ShaderStyle};
+use crate::editor::{RoutineAction, WorkingRenameKey};
 use crate::light_mesh::{self, BloomfogStyle, Part};
 use crate::renaming::light_mesh::rehash;
 use crate::render::{GridType, HandleDrawCall, InstanceData, MeshDrawCall, PointDrawCall};
+use crate::ui_elements::*;
 use crate::widgets::TextInput;
 use crate::{App, D_ARROW, R_ARROW, RefDuper, SMALL_R_ARROW, SMALL_X, UnsafeMutRef, editor};
-use crate::data::mesh::{BillboardData, MaterialType, ShaderSettingsData, ShaderStyle};
-use crate::editor::{RoutineAction, WorkingRenameKey};
-use crate::ui_elements::*;
 use eframe::glow;
 use egui::Ui;
 use glam::{Mat4, Quat, Vec3, Vec4};

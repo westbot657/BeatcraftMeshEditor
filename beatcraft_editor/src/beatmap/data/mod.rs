@@ -27,4 +27,3 @@ impl CutDirectionExt for CutDirection {
         Quat::from_rotation_z(self.angle_degrees().to_radians())
     }
 }
-

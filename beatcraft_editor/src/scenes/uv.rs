@@ -6,12 +6,13 @@ use egui::Ui;
 use indexmap::IndexMap;
 
 use crate::data::mesh::UvId;
-use crate::widgets::MathDragValue;
-use crate::{RefDuper, UV_HIT_RADIUS, UV_VERT_COLORS, editor, get_or_load_texture, light_mesh, screen_to_uv, snap_uv, uv_to_screen};
 use crate::editor::{App, Selection};
 use crate::light_mesh::Triangle;
-
-
+use crate::widgets::MathDragValue;
+use crate::{
+    RefDuper, UV_HIT_RADIUS, UV_VERT_COLORS, editor, get_or_load_texture, light_mesh, screen_to_uv,
+    snap_uv, uv_to_screen,
+};
 
 pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Context) {
     let rd = RefDuper;

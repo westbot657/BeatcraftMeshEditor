@@ -9,8 +9,8 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 use crate::config::LocaleCache;
-use bs_mapping_data::easing::Easing;
 use crate::editor::{ActionType, Camera, ViewPlacement};
+use bs_mapping_data::easing::Easing;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
 #[serde(untagged)]
@@ -1206,7 +1206,8 @@ mod data_tests {
 
     #[test]
     fn test_deserialize() -> anyhow::Result<()> {
-        let _setup: Value = serde_json::from_str(include_str!("../../../local/old/test_mesh.json"))?;
+        let _setup: Value =
+            serde_json::from_str(include_str!("../../../local/old/test_mesh.json"))?;
 
         let data = serde_json::to_string(&_setup)?;
 

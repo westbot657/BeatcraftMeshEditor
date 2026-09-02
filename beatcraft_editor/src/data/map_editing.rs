@@ -3,18 +3,31 @@ use std::collections::HashMap;
 use glam::{Quat, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
 
-use crate::beatmap::object::{BeatmapController, BombNote, ChainNote, ChainNoteLinkData, ColorNote, NoteColor, ObjectColor, Obstacle, RuntimeData, TimeUnit};
 use crate::DB_DATA;
-use bs_mapping_data::v2::{self, V2Note, ObstacleV2Type};
+use crate::beatmap::object::{
+    BeatmapController, BombNote, ChainNote, ChainNoteLinkData, ColorNote, NoteColor, ObjectColor,
+    Obstacle, RuntimeData, TimeUnit,
+};
+use bs_mapping_data::v2::{self, ObstacleV2Type, V2Note};
 use bs_mapping_data::{ArcMidAnchorMode, BeatmapFile, Color, CutDirection, Sentinel};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObjectSource {
     #[deprecated = "re-route JSON through editor system."]
-    Json { index: u32 },
-    Element { index: usize },
-    TemplatePlacement { index_of_placement: usize, index_of_element: usize, },
-    TemplateDefinition { name: String, index: usize, },
+    Json {
+        index: u32,
+    },
+    Element {
+        index: usize,
+    },
+    TemplatePlacement {
+        index_of_placement: usize,
+        index_of_element: usize,
+    },
+    TemplateDefinition {
+        name: String,
+        index: usize,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -248,11 +261,19 @@ impl<'l> LoopTracker<'l> {
 }
 
 trait Resolver: Sized {
-    fn resolve<'l>(value: &'l Value, values: &HashMap<String, Value>, lt: LoopTracker<'l>) -> Result<Self, ResolveError>;
+    fn resolve<'l>(
+        value: &'l Value,
+        values: &HashMap<String, Value>,
+        lt: LoopTracker<'l>,
+    ) -> Result<Self, ResolveError>;
 }
 
 impl Resolver for f32 {
-    fn resolve<'l>(value: &'l Value, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<Self, ResolveError> {
+    fn resolve<'l>(
+        value: &'l Value,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<Self, ResolveError> {
         match value {
             Value::BaseValue(BaseValue::F32(f)) => Ok(*f),
             Value::BaseValue(BaseValue::I32(i)) => Ok(*i as f32),
@@ -262,14 +283,18 @@ impl Resolver for f32 {
                     None => Err(ResolveError::MissingValue(r.to_string())),
                     Some(v) => v.resolve(values, lt),
                 }
-            },
+            }
             _ => Err(ResolveError::WrongType(value.type_name())),
         }
     }
 }
 
 impl Resolver for Option<f32> {
-    fn resolve<'l>(value: &'l Value, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<Self, ResolveError> {
+    fn resolve<'l>(
+        value: &'l Value,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<Self, ResolveError> {
         match value {
             Value::BaseValue(BaseValue::F32(f)) => Ok(Some(*f)),
             Value::BaseValue(BaseValue::I32(i)) => Ok(Some(*i as f32)),
@@ -280,14 +305,18 @@ impl Resolver for Option<f32> {
                     None => Err(ResolveError::MissingValue(r.to_string())),
                     Some(v) => v.resolve(values, lt),
                 }
-            },
-            _ => Err(ResolveError::WrongType(value.type_name()))
+            }
+            _ => Err(ResolveError::WrongType(value.type_name())),
         }
     }
 }
 
 impl Resolver for i32 {
-    fn resolve<'l>(value: &'l Value, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<Self, ResolveError> {
+    fn resolve<'l>(
+        value: &'l Value,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<Self, ResolveError> {
         match value {
             Value::BaseValue(BaseValue::I32(i)) => Ok(*i),
             Value::BaseValue(BaseValue::Reference(r)) => {
@@ -296,24 +325,36 @@ impl Resolver for i32 {
                     None => Err(ResolveError::MissingValue(r.to_string())),
                     Some(v) => v.resolve(values, lt),
                 }
-            },
+            }
             _ => Err(ResolveError::WrongType(value.type_name())),
         }
     }
 }
 
 impl Resolver for u8 {
-    fn resolve<'l>(value: &'l Value, values: &HashMap<String, Value>, lt: LoopTracker<'l>) -> Result<Self, ResolveError> {
+    fn resolve<'l>(
+        value: &'l Value,
+        values: &HashMap<String, Value>,
+        lt: LoopTracker<'l>,
+    ) -> Result<Self, ResolveError> {
         let i: i32 = i32::resolve(value, values, lt)?;
         if !(0..=255).contains(&i) {
-            return Err(ResolveError::OutOfRange { got: i, low: 0, high: 255 });
+            return Err(ResolveError::OutOfRange {
+                got: i,
+                low: 0,
+                high: 255,
+            });
         }
         Ok(i as u8)
     }
 }
 
 impl Resolver for String {
-    fn resolve<'l>(value: &'l Value, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<Self, ResolveError> {
+    fn resolve<'l>(
+        value: &'l Value,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<Self, ResolveError> {
         match value {
             Value::BaseValue(BaseValue::String(s)) => Ok(s.clone()),
             Value::BaseValue(BaseValue::Reference(r)) => match values.get(r) {
@@ -321,7 +362,7 @@ impl Resolver for String {
                 Some(v) => {
                     lt.check(r)?;
                     v.resolve(values, lt)
-                },
+                }
             },
             _ => Err(ResolveError::WrongType(value.type_name())),
         }
@@ -329,7 +370,11 @@ impl Resolver for String {
 }
 
 impl Resolver for Option<Vec4> {
-    fn resolve<'l>(value: &'l Value, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<Self, ResolveError> {
+    fn resolve<'l>(
+        value: &'l Value,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<Self, ResolveError> {
         match value {
             Value::BaseValue(BaseValue::Reference(r)) => {
                 lt.check(r)?;
@@ -337,7 +382,7 @@ impl Resolver for Option<Vec4> {
                     None => Err(ResolveError::MissingValue(r.to_string())),
                     Some(v) => v.resolve(values, lt),
                 }
-            },
+            }
             Value::Vec3([r, g, b]) => {
                 let rlt = lt.clone();
                 let glt = lt.clone();
@@ -345,7 +390,7 @@ impl Resolver for Option<Vec4> {
                 let g: f32 = Value::BaseValue(g.clone()).resolve(values, glt)?;
                 let b: f32 = Value::BaseValue(b.clone()).resolve(values, lt)?;
                 Ok(Some(Vec4::new(r, g, b, 1.)))
-            },
+            }
             Value::Vec4([r, g, b, a]) => {
                 let rlt = lt.clone();
                 let glt = lt.clone();
@@ -355,37 +400,49 @@ impl Resolver for Option<Vec4> {
                 let b: f32 = Value::BaseValue(b.clone()).resolve(values, blt)?;
                 let a: f32 = Value::BaseValue(a.clone()).resolve(values, lt)?;
                 Ok(Some(Vec4::new(r, g, b, a)))
-            },
-            _ => Err(ResolveError::WrongType(value.type_name()))
+            }
+            _ => Err(ResolveError::WrongType(value.type_name())),
         }
     }
 }
 
 impl Resolver for CutDirection {
-    fn resolve<'l>(value: &'l Value, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<Self, ResolveError> {
+    fn resolve<'l>(
+        value: &'l Value,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<Self, ResolveError> {
         match value {
             Value::BaseValue(BaseValue::I32(i)) => {
                 if !(0..=8).contains(i) {
-                    return Err(ResolveError::OutOfRange { got: *i, low: 0, high: 8 })
+                    return Err(ResolveError::OutOfRange {
+                        got: *i,
+                        low: 0,
+                        high: 8,
+                    });
                 }
                 let u = *i as u8;
                 let cd = CutDirection::try_from(u).unwrap();
                 Ok(cd)
-            },
+            }
             Value::BaseValue(BaseValue::Reference(r)) => {
                 lt.check(r)?;
                 match values.get(r) {
                     None => Err(ResolveError::MissingValue(r.to_string())),
                     Some(v) => v.resolve(values, lt),
                 }
-            },
+            }
             _ => Err(ResolveError::WrongType(value.type_name())),
         }
     }
 }
 
 impl Resolver for NoteColor {
-    fn resolve<'l>(value: &'l Value, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<Self, ResolveError> {
+    fn resolve<'l>(
+        value: &'l Value,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<Self, ResolveError> {
         match value {
             Value::BaseValue(BaseValue::Reference(r)) => {
                 lt.check(r)?;
@@ -393,22 +450,30 @@ impl Resolver for NoteColor {
                     None => Err(ResolveError::MissingValue(r.to_string())),
                     Some(v) => v.resolve(values, lt),
                 }
-            },
+            }
             Value::BaseValue(BaseValue::I32(i)) => {
                 if !(0..=1).contains(i) {
-                    return Err(ResolveError::OutOfRange { got: *i, low: 0, high: 1 })
+                    return Err(ResolveError::OutOfRange {
+                        got: *i,
+                        low: 0,
+                        high: 1,
+                    });
                 }
                 let u = *i as u8;
                 let c = Color::try_from(u).unwrap();
                 Ok(c.into())
-            },
-            _ => Err(ResolveError::WrongType(value.type_name()))
+            }
+            _ => Err(ResolveError::WrongType(value.type_name())),
         }
     }
 }
 
 impl Value {
-    fn resolve<T: Resolver>(&self, values: &HashMap<String, Value>, lt: LoopTracker) -> Result<T, ResolveError> {
+    fn resolve<T: Resolver>(
+        &self,
+        values: &HashMap<String, Value>,
+        lt: LoopTracker,
+    ) -> Result<T, ResolveError> {
         T::resolve(self, values, lt)
     }
     pub fn type_name(&self) -> &'static str {
@@ -428,7 +493,11 @@ impl Value {
 }
 
 impl F32Value {
-    pub fn resolve<'l>(&'l self, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<f32, ResolveError> {
+    pub fn resolve<'l>(
+        &'l self,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<f32, ResolveError> {
         match self {
             Self::Reference(r) => {
                 lt.check(r)?;
@@ -436,14 +505,18 @@ impl F32Value {
                     None => Err(ResolveError::MissingValue(r.to_string())),
                     Some(v) => v.resolve(values, lt),
                 }
-            },
+            }
             Self::F32(f) => Ok(*f),
         }
     }
 }
 
 impl I32Value {
-    pub fn resolve<'l>(&'l self, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<i32, ResolveError> {
+    pub fn resolve<'l>(
+        &'l self,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<i32, ResolveError> {
         match self {
             Self::Reference(r) => {
                 lt.check(r)?;
@@ -451,14 +524,18 @@ impl I32Value {
                     None => Err(ResolveError::MissingValue(r.to_string())),
                     Some(v) => v.resolve(values, lt),
                 }
-            },
+            }
             Self::I32(i) => Ok(*i),
         }
     }
 }
 
 impl U8Value {
-    pub fn resolve<'l>(&'l self, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<u8, ResolveError> {
+    pub fn resolve<'l>(
+        &'l self,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<u8, ResolveError> {
         match self {
             U8Value::Reference(r) => {
                 lt.check(r)?;
@@ -466,14 +543,18 @@ impl U8Value {
                     None => Err(ResolveError::MissingValue(r.to_string())),
                     Some(v) => v.resolve(values, lt),
                 }
-            },
+            }
             U8Value::U8(u) => Ok(*u),
         }
     }
 }
 
 impl OptionalF32Value {
-    pub fn resolve<'l>(&'l self, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<Option<f32>, ResolveError> {
+    pub fn resolve<'l>(
+        &'l self,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<Option<f32>, ResolveError> {
         match self {
             Self::Reference(r) => {
                 lt.check(r)?;
@@ -481,7 +562,7 @@ impl OptionalF32Value {
                     None => Err(ResolveError::MissingValue(r.to_string())),
                     Some(v) => v.resolve(values, lt),
                 }
-            },
+            }
             Self::F32(f) => Ok(Some(*f)),
             Self::None => Ok(None),
         }
@@ -489,7 +570,11 @@ impl OptionalF32Value {
 }
 
 impl CutDirectionValue {
-    pub fn resolve<'l>(&'l self, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<CutDirection, ResolveError> {
+    pub fn resolve<'l>(
+        &'l self,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<CutDirection, ResolveError> {
         match self {
             Self::Reference(r) => {
                 lt.check(r)?;
@@ -497,14 +582,18 @@ impl CutDirectionValue {
                     None => Err(ResolveError::MissingValue(r.to_string())),
                     Some(v) => v.resolve(values, lt),
                 }
-            },
+            }
             Self::CutDir(cut_direction) => Ok(*cut_direction),
         }
     }
 }
 
 impl NoteTypeValue {
-    pub fn resolve<'l>(&'l self, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<NoteColor, ResolveError> {
+    pub fn resolve<'l>(
+        &'l self,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<NoteColor, ResolveError> {
         match self {
             NoteTypeValue::Reference(r) => {
                 lt.check(r)?;
@@ -512,22 +601,26 @@ impl NoteTypeValue {
                     None => Err(ResolveError::MissingValue(r.to_string())),
                     Some(v) => v.resolve(values, lt),
                 }
-            },
+            }
             NoteTypeValue::Color(color) => Ok((*color).into()),
         }
     }
 }
 
 impl OptionalColorValue {
-    pub fn resolve<'l>(&'l self, values: &HashMap<String, Value>, mut lt: LoopTracker<'l>) -> Result<Option<Vec4>, ResolveError> {
+    pub fn resolve<'l>(
+        &'l self,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<Option<Vec4>, ResolveError> {
         match self {
             Self::Reference(r) => {
                 lt.check(r)?;
                 match values.get(r) {
                     None => Err(ResolveError::MissingValue(r.to_string())),
-                    Some(v) => v.resolve(values, lt)
+                    Some(v) => v.resolve(values, lt),
                 }
-            },
+            }
             Self::Rgba([r, g, b, a]) => {
                 let rlt = lt.clone();
                 let glt = lt.clone();
@@ -537,7 +630,7 @@ impl OptionalColorValue {
                 let b: f32 = b.resolve(values, blt)?;
                 let a: f32 = a.resolve(values, lt)?;
                 Ok(Some(Vec4::new(r, g, b, a)))
-            },
+            }
             Self::Rgb([r, g, b]) => {
                 let rlt = lt.clone();
                 let glt = lt.clone();
@@ -545,7 +638,7 @@ impl OptionalColorValue {
                 let g: f32 = g.resolve(values, glt)?;
                 let b: f32 = b.resolve(values, lt)?;
                 Ok(Some(Vec4::new(r, g, b, 1.)))
-            },
+            }
             Self::None => Ok(None),
         }
     }
@@ -612,8 +705,7 @@ impl From<u8> for BaseValue {
     }
 }
 
-impl<T: Into<BaseValue>> From<T> for Value
-{
+impl<T: Into<BaseValue>> From<T> for Value {
     fn from(value: T) -> Self {
         Self::BaseValue(value.into())
     }
@@ -645,7 +737,6 @@ impl EditingData {
     }
 
     pub fn from_beatmap(diff: &BeatmapFile) -> Self {
-
         let mut elements = Vec::new();
 
         match diff {
@@ -673,20 +764,17 @@ impl EditingData {
                                     break 'rot;
                                 }
                             }
-                            elements.push(
-                                DataElement::Note(NoteData {
-                                    beat: beat.into(),
-                                    cut_direction: note.cut_direction.into(),
-                                    x: note.line_index.into(),
-                                    y: note.line_layer.into(),
-                                    lane_rotation_deg: rotation_lane_deg.into(),
-                                    note_type,
-                                    color: OptionalColorValue::None,
-                                    angle_offset_deg: 0f32.into(),
-                                })
-                            );
-
-                        },
+                            elements.push(DataElement::Note(NoteData {
+                                beat: beat.into(),
+                                cut_direction: note.cut_direction.into(),
+                                x: note.line_index.into(),
+                                y: note.line_layer.into(),
+                                lane_rotation_deg: rotation_lane_deg.into(),
+                                note_type,
+                                color: OptionalColorValue::None,
+                                angle_offset_deg: 0f32.into(),
+                            }));
+                        }
                         V2Note::Bomb(bomb) => {
                             let beat = bomb.beat;
                             let mut rotation_lane_deg = 0i32;
@@ -699,33 +787,27 @@ impl EditingData {
                                     break 'rot;
                                 }
                             }
-                            elements.push(
-                                DataElement::Bomb(BombData {
-                                    beat: beat.into(),
-                                    x: bomb.line_index.into(),
-                                    y: bomb.line_layer.into(),
-                                    lane_rotation_deg: rotation_lane_deg.into(),
-                                    color: OptionalColorValue::None,
-                                })
-                            );
-
-                        },
+                            elements.push(DataElement::Bomb(BombData {
+                                beat: beat.into(),
+                                x: bomb.line_index.into(),
+                                y: bomb.line_layer.into(),
+                                lane_rotation_deg: rotation_lane_deg.into(),
+                                color: OptionalColorValue::None,
+                            }));
+                        }
                     }
                 }
                 for obst in v2.obstacles.iter() {
                     let (x, y, width, height) = match obst.typ {
-                        ObstacleV2Type::FullHeight => (
-                            obst.line_index, obst.line_layer,
-                            obst.width, 5.,
-                        ),
-                        ObstacleV2Type::Crouch => (
-                            obst.line_index, obst.line_layer + 2.,
-                            obst.width, 3.,
-                        ),
-                        ObstacleV2Type::Free => (
-                            obst.line_index, obst.line_layer,
-                            obst.width, obst.height,
-                        ),
+                        ObstacleV2Type::FullHeight => {
+                            (obst.line_index, obst.line_layer, obst.width, 5.)
+                        }
+                        ObstacleV2Type::Crouch => {
+                            (obst.line_index, obst.line_layer + 2., obst.width, 3.)
+                        }
+                        ObstacleV2Type::Free => {
+                            (obst.line_index, obst.line_layer, obst.width, obst.height)
+                        }
                     };
                     let beat = obst.beat;
                     let mut lane_rotation_deg = 0;
@@ -737,21 +819,19 @@ impl EditingData {
                             break 'rot;
                         }
                     }
-                    elements.push(
-                        DataElement::Obstacle(ObstacleData {
-                            beat: beat.into(),
-                            x: x.into(),
-                            y: y.into(),
-                            duration: obst.duration.into(),
-                            lane_rotation_deg: lane_rotation_deg.into(),
-                            width: width.into(),
-                            height: height.into(),
-                            length: OptionalF32Value::None,
-                            color: OptionalColorValue::None,
-                        })
-                    );
+                    elements.push(DataElement::Obstacle(ObstacleData {
+                        beat: beat.into(),
+                        x: x.into(),
+                        y: y.into(),
+                        duration: obst.duration.into(),
+                        lane_rotation_deg: lane_rotation_deg.into(),
+                        width: width.into(),
+                        height: height.into(),
+                        length: OptionalF32Value::None,
+                        color: OptionalColorValue::None,
+                    }));
                 }
-            },
+            }
             BeatmapFile::V3(v3) => {
                 let mut rotations = Vec::new();
                 for event in v3.rotation_events.iter() {
@@ -774,40 +854,42 @@ impl EditingData {
                         {
                             lane_rotation_deg += rot.rotation;
                         }
-                        if (rot.beat < t_beat) || (rot.beat == t_beat && rot.execution_time.is_early())
+                        if (rot.beat < t_beat)
+                            || (rot.beat == t_beat && rot.execution_time.is_early())
                         {
                             tail_lane_rotation += rot.rotation;
                         }
-
                     }
                     chain_masks.push((
-                        chain.color, chain.head_beat,
-                        chain.head_line_index, chain.head_line_layer,
+                        chain.color,
+                        chain.head_beat,
+                        chain.head_line_index,
+                        chain.head_line_layer,
                         chain.head_cut_direction,
                     ));
-                    elements.push(
-                        DataElement::Chain(ChainData {
-                            beat: beat.into(),
-                            cut_direction: chain.head_cut_direction.into(),
-                            x: chain.head_line_index.into(),
-                            y: chain.head_line_layer.into(),
-                            head_lane_rotation_deg: lane_rotation_deg.into(),
-                            tail_beat: chain.tail_beat.into(),
-                            tx: chain.tail_line_index.into(),
-                            ty: chain.tail_line_layer.into(),
-                            tail_lane_rotation_deg: tail_lane_rotation.into(),
-                            squish_factor: chain.squish_factor.into(),
-                            link_count: chain.slice_count.into(),
-                            note_type,
-                            color: OptionalColorValue::None,
-                        })
-                    );
+                    elements.push(DataElement::Chain(ChainData {
+                        beat: beat.into(),
+                        cut_direction: chain.head_cut_direction.into(),
+                        x: chain.head_line_index.into(),
+                        y: chain.head_line_layer.into(),
+                        head_lane_rotation_deg: lane_rotation_deg.into(),
+                        tail_beat: chain.tail_beat.into(),
+                        tx: chain.tail_line_index.into(),
+                        ty: chain.tail_line_layer.into(),
+                        tail_lane_rotation_deg: tail_lane_rotation.into(),
+                        squish_factor: chain.squish_factor.into(),
+                        link_count: chain.slice_count.into(),
+                        note_type,
+                        color: OptionalColorValue::None,
+                    }));
                 }
                 for note in v3.color_notes.iter() {
                     if chain_masks.iter().any(|(color, beat, x, y, c)| {
-                        *color == note.color && *beat == note.beat
-                        && *x == note.line_index && *y == note.line_layer
-                        && *c == note.cut_direction
+                        *color == note.color
+                            && *beat == note.beat
+                            && *x == note.line_index
+                            && *y == note.line_layer
+                            && *c == note.cut_direction
                     }) {
                         continue;
                     }
@@ -823,18 +905,16 @@ impl EditingData {
                             lane_rotation_deg += rot.rotation;
                         }
                     }
-                    elements.push(
-                        DataElement::Note(NoteData {
-                            beat: beat.into(),
-                            cut_direction: note.cut_direction.into(),
-                            x: note.line_index.into(),
-                            y: note.line_layer.into(),
-                            lane_rotation_deg: lane_rotation_deg.into(),
-                            note_type,
-                            color: OptionalColorValue::None,
-                            angle_offset_deg: note.angle_offset.into(),
-                        })
-                    );
+                    elements.push(DataElement::Note(NoteData {
+                        beat: beat.into(),
+                        cut_direction: note.cut_direction.into(),
+                        x: note.line_index.into(),
+                        y: note.line_layer.into(),
+                        lane_rotation_deg: lane_rotation_deg.into(),
+                        note_type,
+                        color: OptionalColorValue::None,
+                        angle_offset_deg: note.angle_offset.into(),
+                    }));
                 }
                 for bomb in v3.bomb_notes.iter() {
                     let beat = bomb.beat;
@@ -848,15 +928,13 @@ impl EditingData {
                             lane_rotation_deg += rot.rotation;
                         }
                     }
-                    elements.push(
-                        DataElement::Bomb(BombData {
-                            beat: beat.into(),
-                            x: bomb.line_index.into(),
-                            y: bomb.line_layer.into(),
-                            lane_rotation_deg: lane_rotation_deg.into(),
-                            color: OptionalColorValue::None,
-                        })
-                    );
+                    elements.push(DataElement::Bomb(BombData {
+                        beat: beat.into(),
+                        x: bomb.line_index.into(),
+                        y: bomb.line_layer.into(),
+                        lane_rotation_deg: lane_rotation_deg.into(),
+                        color: OptionalColorValue::None,
+                    }));
                 }
                 for obst in v3.obstacles.iter() {
                     let beat = obst.beat;
@@ -870,22 +948,19 @@ impl EditingData {
                             lane_rotation_deg += rot.rotation;
                         }
                     }
-                    elements.push(
-                        DataElement::Obstacle(ObstacleData {
-                            beat: beat.into(),
-                            x: obst.line_index.into(),
-                            y: obst.line_layer.into(),
-                            duration: obst.duration.into(),
-                            lane_rotation_deg: lane_rotation_deg.into(),
-                            width: obst.width.into(),
-                            height: obst.height.into(),
-                            length: OptionalF32Value::None,
-                            color: OptionalColorValue::None,
-                        })
-                    );
+                    elements.push(DataElement::Obstacle(ObstacleData {
+                        beat: beat.into(),
+                        x: obst.line_index.into(),
+                        y: obst.line_layer.into(),
+                        duration: obst.duration.into(),
+                        lane_rotation_deg: lane_rotation_deg.into(),
+                        width: obst.width.into(),
+                        height: obst.height.into(),
+                        length: OptionalF32Value::None,
+                        color: OptionalColorValue::None,
+                    }));
                 }
-
-            },
+            }
             BeatmapFile::V4(v4) => {
                 let mut chain_masks = Vec::with_capacity(v4.chains.len());
                 for chain in v4.chains.iter() {
@@ -902,27 +977,27 @@ impl EditingData {
                     };
                     let note_type = head_data.color.into();
                     chain_masks.push((
-                        head_data.color, chain.head_beat,
-                        head_data.line_index, head_data.line_layer,
+                        head_data.color,
+                        chain.head_beat,
+                        head_data.line_index,
+                        head_data.line_layer,
                         head_data.cut_direction,
                     ));
-                    elements.push(
-                        DataElement::Chain(ChainData {
-                            beat: chain.head_beat.into(),
-                            cut_direction: head_data.cut_direction.into(),
-                            x: head_data.line_index.into(),
-                            y: head_data.line_layer.into(),
-                            head_lane_rotation_deg: chain.head_rotation_lane.into(),
-                            tail_beat: chain.tail_beat.into(),
-                            tx: data.tail_line_index.into(),
-                            ty: data.tail_line_layer.into(),
-                            tail_lane_rotation_deg: chain.tail_rotation_lane.into(),
-                            squish_factor: data.squish_factor.into(),
-                            link_count: data.slice_count.into(),
-                            note_type,
-                            color: OptionalColorValue::None,
-                        })
-                    );
+                    elements.push(DataElement::Chain(ChainData {
+                        beat: chain.head_beat.into(),
+                        cut_direction: head_data.cut_direction.into(),
+                        x: head_data.line_index.into(),
+                        y: head_data.line_layer.into(),
+                        head_lane_rotation_deg: chain.head_rotation_lane.into(),
+                        tail_beat: chain.tail_beat.into(),
+                        tx: data.tail_line_index.into(),
+                        ty: data.tail_line_layer.into(),
+                        tail_lane_rotation_deg: chain.tail_rotation_lane.into(),
+                        squish_factor: data.squish_factor.into(),
+                        link_count: data.slice_count.into(),
+                        note_type,
+                        color: OptionalColorValue::None,
+                    }));
                 }
                 for note in v4.color_notes.iter() {
                     let Some(data) = v4.color_notes_data.get(note.metadata_index as usize) else {
@@ -931,60 +1006,56 @@ impl EditingData {
                     };
 
                     if chain_masks.iter().any(|(color, beat, x, y, c)| {
-                        *color == data.color && *beat == note.beat
-                        && *x == data.line_index && *y == data.line_layer
-                        && *c == data.cut_direction
+                        *color == data.color
+                            && *beat == note.beat
+                            && *x == data.line_index
+                            && *y == data.line_layer
+                            && *c == data.cut_direction
                     }) {
                         continue;
                     }
-                    elements.push(
-                        DataElement::Note(NoteData {
-                            beat: note.beat.into(),
-                            cut_direction: data.cut_direction.into(),
-                            x: data.line_index.into(),
-                            y: data.line_layer.into(),
-                            lane_rotation_deg: note.rotation_lane.into(),
-                            note_type: data.color.into(),
-                            color: OptionalColorValue::None,
-                            angle_offset_deg: data.angle_offset.into(),
-                        })
-                    );
+                    elements.push(DataElement::Note(NoteData {
+                        beat: note.beat.into(),
+                        cut_direction: data.cut_direction.into(),
+                        x: data.line_index.into(),
+                        y: data.line_layer.into(),
+                        lane_rotation_deg: note.rotation_lane.into(),
+                        note_type: data.color.into(),
+                        color: OptionalColorValue::None,
+                        angle_offset_deg: data.angle_offset.into(),
+                    }));
                 }
                 for bomb in v4.bomb_notes.iter() {
                     let Some(data) = v4.bomb_notes_data.get(bomb.metadata_index as usize) else {
                         tracing::warn!(target: DB_DATA, "bomb note references invalid bomb data index: {}", bomb.metadata_index);
                         continue;
                     };
-                    elements.push(
-                        DataElement::Bomb(BombData {
-                            beat: bomb.beat.into(),
-                            x: data.line_index.into(),
-                            y: data.line_layer.into(),
-                            lane_rotation_deg: bomb.rotation_lane.into(),
-                            color: OptionalColorValue::None,
-                        })
-                    );
+                    elements.push(DataElement::Bomb(BombData {
+                        beat: bomb.beat.into(),
+                        x: data.line_index.into(),
+                        y: data.line_layer.into(),
+                        lane_rotation_deg: bomb.rotation_lane.into(),
+                        color: OptionalColorValue::None,
+                    }));
                 }
                 for obst in v4.obstacles.iter() {
                     let Some(data) = v4.obstacles_data.get(obst.metadata_index as usize) else {
                         tracing::warn!(target: DB_DATA, "obstacle references invalid obstcale data index: {}", obst.metadata_index);
                         continue;
                     };
-                    elements.push(
-                        DataElement::Obstacle(ObstacleData {
-                            beat: obst.beat.into(),
-                            x: data.line_index.into(),
-                            y: data.line_layer.into(),
-                            duration: data.duration.into(),
-                            lane_rotation_deg: obst.rotation_lane.into(),
-                            width: data.width.into(),
-                            height: data.height.into(),
-                            length: OptionalF32Value::None,
-                            color: OptionalColorValue::None,
-                        })
-                    );
+                    elements.push(DataElement::Obstacle(ObstacleData {
+                        beat: obst.beat.into(),
+                        x: data.line_index.into(),
+                        y: data.line_layer.into(),
+                        duration: data.duration.into(),
+                        lane_rotation_deg: obst.rotation_lane.into(),
+                        width: data.width.into(),
+                        height: data.height.into(),
+                        length: OptionalF32Value::None,
+                        color: OptionalColorValue::None,
+                    }));
                 }
-            },
+            }
         }
 
         // don't sort elements cuz it's lowkey pointless
@@ -997,7 +1068,6 @@ impl EditingData {
             values: Default::default(),
             templates: Default::default(),
         }
-
     }
 
     fn random_quat(rng: &mut rand::rngs::ThreadRng) -> Quat {
@@ -1016,7 +1086,6 @@ impl EditingData {
         runtime_data: RuntimeData,
         map_values: &HashMap<String, Value>,
     ) -> Result<BeatmapController, CanonicalizationError> {
-
         let mut color_notes = Vec::new();
         let mut bomb_notes = Vec::new();
         let mut obstacles = Vec::new();
@@ -1026,11 +1095,15 @@ impl EditingData {
         for (i, element) in self.elements.iter().enumerate() {
             match element {
                 DataElement::Note(note_data) => {
-                    let mut color = note_data.note_type.resolve(&self.values, Default::default())?;
+                    let mut color = note_data
+                        .note_type
+                        .resolve(&self.values, Default::default())?;
                     if let Some(rgba) = note_data.color.resolve(&self.values, Default::default())? {
                         color = match color {
                             NoteColor::Red | NoteColor::CustomRed(_) => NoteColor::CustomRed(rgba),
-                            NoteColor::Blue | NoteColor::CustomBlue(_) => NoteColor::CustomBlue(rgba),
+                            NoteColor::Blue | NoteColor::CustomBlue(_) => {
+                                NoteColor::CustomBlue(rgba)
+                            }
                         }
                     }
                     let index = color_notes.len() as u32;
@@ -1038,20 +1111,28 @@ impl EditingData {
                         spawn_orientation: Self::random_quat(rng),
                         beat: note_data.beat.resolve(&self.values, Default::default())?,
                         color,
-                        cut_direction: note_data.cut_direction.resolve(&self.values, Default::default())?,
-                        angle_offset_deg: note_data.angle_offset_deg.resolve(&self.values, Default::default())?,
+                        cut_direction: note_data
+                            .cut_direction
+                            .resolve(&self.values, Default::default())?,
+                        angle_offset_deg: note_data
+                            .angle_offset_deg
+                            .resolve(&self.values, Default::default())?,
                         grid_pos: Vec2::new(
                             note_data.x.resolve(&self.values, Default::default())?,
                             note_data.y.resolve(&self.values, Default::default())?,
                         ),
-                        lane_rotation_deg: note_data.lane_rotation_deg.resolve(&self.values, Default::default())?,
+                        lane_rotation_deg: note_data
+                            .lane_rotation_deg
+                            .resolve(&self.values, Default::default())?,
                         dissolve: 0.,
                         index,
                         source: ObjectSource::Element { index: i },
                     })
-                },
+                }
                 DataElement::Bomb(bomb_data) => {
-                    let color = if let Some(rgba) = bomb_data.color.resolve(&self.values, Default::default())? {
+                    let color = if let Some(rgba) =
+                        bomb_data.color.resolve(&self.values, Default::default())?
+                    {
                         ObjectColor::Custom(rgba)
                     } else {
                         ObjectColor::default()
@@ -1064,21 +1145,32 @@ impl EditingData {
                             bomb_data.x.resolve(&self.values, Default::default())?,
                             bomb_data.y.resolve(&self.values, Default::default())?,
                         ),
-                        lane_rotation_deg: bomb_data.lane_rotation_deg.resolve(&self.values, Default::default())?,
+                        lane_rotation_deg: bomb_data
+                            .lane_rotation_deg
+                            .resolve(&self.values, Default::default())?,
                         dissolve: 0.,
                         index,
                         source: ObjectSource::Element { index: i },
                     })
-                },
+                }
                 DataElement::Obstacle(obstacle_data) => {
-                    let color = if let Some(rgba) = obstacle_data.color.resolve(&self.values, Default::default())? {
+                    let color = if let Some(rgba) = obstacle_data
+                        .color
+                        .resolve(&self.values, Default::default())?
+                    {
                         ObjectColor::Custom(rgba)
                     } else {
                         ObjectColor::default()
                     };
-                    let beat = obstacle_data.beat.resolve(&self.values, Default::default())?;
-                    let duration = obstacle_data.duration.resolve(&self.values, Default::default())?;
-                    let length = obstacle_data.length.resolve(&self.values, Default::default())?
+                    let beat = obstacle_data
+                        .beat
+                        .resolve(&self.values, Default::default())?;
+                    let duration = obstacle_data
+                        .duration
+                        .resolve(&self.values, Default::default())?;
+                    let length = obstacle_data
+                        .length
+                        .resolve(&self.values, Default::default())?
                         .unwrap_or_else(|| {
                             let bpm = runtime_data.bpm(TimeUnit::Beat(beat));
                             runtime_data.njs * (60. / bpm)
@@ -1093,29 +1185,43 @@ impl EditingData {
                         ),
                         duration,
                         size: Vec3::new(
-                            obstacle_data.width.resolve(&self.values, Default::default())?,
-                            obstacle_data.height.resolve(&self.values, Default::default())?,
+                            obstacle_data
+                                .width
+                                .resolve(&self.values, Default::default())?,
+                            obstacle_data
+                                .height
+                                .resolve(&self.values, Default::default())?,
                             length,
                         ),
-                        lane_rotation_deg: obstacle_data.lane_rotation_deg.resolve(&self.values, Default::default())?,
+                        lane_rotation_deg: obstacle_data
+                            .lane_rotation_deg
+                            .resolve(&self.values, Default::default())?,
                         dissolve: 0.,
                         index,
                         noodle_logic: false,
                         source: ObjectSource::Element { index: i },
                     })
-                },
+                }
                 DataElement::Chain(chain_data) => {
-                    let mut color = chain_data.note_type.resolve(&self.values, Default::default())?;
-                    if let Some(rgba) = chain_data.color.resolve(&self.values, Default::default())? {
+                    let mut color = chain_data
+                        .note_type
+                        .resolve(&self.values, Default::default())?;
+                    if let Some(rgba) =
+                        chain_data.color.resolve(&self.values, Default::default())?
+                    {
                         color = match color {
                             NoteColor::Red | NoteColor::CustomRed(_) => NoteColor::CustomRed(rgba),
-                            NoteColor::Blue | NoteColor::CustomBlue(_) => NoteColor::CustomBlue(rgba),
+                            NoteColor::Blue | NoteColor::CustomBlue(_) => {
+                                NoteColor::CustomBlue(rgba)
+                            }
                         }
                     }
                     let index = chain_notes.len() as u32;
                     let spawn_orientation = Self::random_quat(rng);
                     let mut links = Vec::new();
-                    let slice_count = chain_data.link_count.resolve(&self.values, Default::default())?;
+                    let slice_count = chain_data
+                        .link_count
+                        .resolve(&self.values, Default::default())?;
                     for i in 0..slice_count {
                         links.push(ChainNoteLinkData {
                             spawn_orientation: Self::random_quat(rng),
@@ -1125,10 +1231,18 @@ impl EditingData {
                     chain_notes.push(ChainNote {
                         spawn_orientation,
                         head_beat: chain_data.beat.resolve(&self.values, Default::default())?,
-                        tail_beat: chain_data.tail_beat.resolve(&self.values, Default::default())?,
-                        head_lane_rotation_deg: chain_data.head_lane_rotation_deg.resolve(&self.values, Default::default())?,
-                        tail_lane_rotation_deg: chain_data.tail_lane_rotation_deg.resolve(&self.values, Default::default())?,
-                        cut_direction: chain_data.cut_direction.resolve(&self.values, Default::default())?,
+                        tail_beat: chain_data
+                            .tail_beat
+                            .resolve(&self.values, Default::default())?,
+                        head_lane_rotation_deg: chain_data
+                            .head_lane_rotation_deg
+                            .resolve(&self.values, Default::default())?,
+                        tail_lane_rotation_deg: chain_data
+                            .tail_lane_rotation_deg
+                            .resolve(&self.values, Default::default())?,
+                        cut_direction: chain_data
+                            .cut_direction
+                            .resolve(&self.values, Default::default())?,
                         color,
                         head_grid_pos: Vec2::new(
                             chain_data.x.resolve(&self.values, Default::default())?,
@@ -1138,13 +1252,15 @@ impl EditingData {
                             chain_data.tx.resolve(&self.values, Default::default())?,
                             chain_data.ty.resolve(&self.values, Default::default())?,
                         ),
-                        squish_factor: chain_data.squish_factor.resolve(&self.values, Default::default())?,
+                        squish_factor: chain_data
+                            .squish_factor
+                            .resolve(&self.values, Default::default())?,
                         links,
                         dissolve: 0.,
                         index,
                         source: ObjectSource::Element { index: i },
                     })
-                },
+                }
                 DataElement::Arc(arc_data) => todo!(),
                 DataElement::Template(template_placement) => todo!(),
                 DataElement::ObstacleText(obstacle_text_data) => todo!(),
@@ -1160,17 +1276,4 @@ impl EditingData {
             arcs,
         })
     }
-
-
-
 }
-
-
-
-
-
-
-
-
-
-

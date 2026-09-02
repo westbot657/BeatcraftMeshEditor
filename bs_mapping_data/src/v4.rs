@@ -1,13 +1,10 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::MapVersion;
 
 use super::easing::Easing;
-use super::{easing_as_i8, bool_u8_serde};
-use super::{
-    Color, CutDirection, ArcMidAnchorMode,
-    SpawnRotationExecutionTime
-};
+use super::{ArcMidAnchorMode, Color, CutDirection, SpawnRotationExecutionTime};
+use super::{bool_u8_serde, easing_as_i8};
 use super::{is_value_f, is_value_i, is_value_u};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -248,4 +245,3 @@ pub struct BeatmapFileV4 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spawn_rotations_data: Option<Vec<SpawnRotationEventDataV4>>,
 }
-

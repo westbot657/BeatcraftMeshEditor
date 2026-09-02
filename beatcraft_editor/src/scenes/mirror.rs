@@ -2,9 +2,9 @@ use eframe::glow;
 use egui::{Pos2, Ui};
 use glam::Vec2;
 
-use crate::{RefDuper, editor};
 use crate::editor::App;
 use crate::ui_elements::vec2_row;
+use crate::{RefDuper, editor};
 
 pub fn draw_mirror_view(
     s: &mut App,

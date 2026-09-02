@@ -14,7 +14,6 @@ use tracing::Level;
 
 use crate::audio::AudioSystem;
 use crate::beatmap::BeatmapEditor;
-use bs_mapping_data::{AudioDataFile, InfoFile};
 use crate::beatmap::object::{BombNote, ChainNote, ColorNote, ObjectType, Obstacle, RuntimeData};
 use crate::config::{AppData, KeyMaps};
 use crate::data::mesh::{
@@ -27,6 +26,7 @@ use crate::light_mesh::{
 };
 use crate::render::{GpuMesh, InstanceData, LIGHT_COLORS, Renderer};
 use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
+use bs_mapping_data::{AudioDataFile, InfoFile};
 
 #[derive(Copy, Clone)]
 pub struct Camera {

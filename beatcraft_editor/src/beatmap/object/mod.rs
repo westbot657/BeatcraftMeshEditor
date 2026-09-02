@@ -8,28 +8,35 @@ use glam::{Mat4, Quat, Vec2, Vec3, Vec3Swizzles, Vec4};
 use rand::{RngExt, rngs::ThreadRng};
 
 use crate::data::map_editing::ObjectSource;
-use bs_mapping_data::easing::Easing;
 use crate::render::GameObjectInstanceData;
+use bs_mapping_data::easing::Easing;
 
 use self::spline::BezierCurve;
 
-use bs_mapping_data::{BeatmapDataError, BeatmapFile, BpmRegion, Color, CutDirection, InfoFile, v2};
 use super::data::CutDirectionExt;
 use super::render::BeatmapRenderer;
 use super::{BeatmapProjectDiff, HitBox};
+use bs_mapping_data::{
+    BeatmapDataError, BeatmapFile, BpmRegion, Color, CutDirection, InfoFile, v2,
+};
 
 pub mod spline;
 
-pub trait InvLerpTransformer<T=Self>
+pub trait InvLerpTransformer<T = Self>
 where
-    Self: Sized
+    Self: Sized,
 {
     fn convert(v: Self) -> T;
 }
 
-pub trait Lerp<V, T=V>
+pub trait Lerp<V, T = V>
 where
-    V: InvLerpTransformer<T> + Copy + Mul<T, Output = V> + Sub<Output = V> + Add<Output = V> + Div<Output = V>,
+    V: InvLerpTransformer<T>
+        + Copy
+        + Mul<T, Output = V>
+        + Sub<Output = V>
+        + Add<Output = V>
+        + Div<Output = V>,
 {
     fn lerp(a: V, b: V, t: T) -> V {
         a + (b - a) * t
@@ -41,10 +48,14 @@ where
 }
 
 impl InvLerpTransformer for f32 {
-    fn convert(v: Self) -> f32 { v }
+    fn convert(v: Self) -> f32 {
+        v
+    }
 }
 impl InvLerpTransformer for f64 {
-    fn convert(v: Self) -> f64 { v }
+    fn convert(v: Self) -> f64 {
+        v
+    }
 }
 impl InvLerpTransformer<f32> for Vec3 {
     fn convert(v: Self) -> f32 {
@@ -776,7 +787,9 @@ impl GameObject for Obstacle {
         )
     }
     fn editor_hitbox(&self, beat_spacing: Option<f32>) -> HitBox {
-        let z = if let Some(bs) = beat_spacing && !self.noodle_logic {
+        let z = if let Some(bs) = beat_spacing
+            && !self.noodle_logic
+        {
             self.duration * bs
         } else {
             self.size.z
@@ -933,9 +946,13 @@ impl GameObject for ChainNoteLink {
 }
 
 impl GameObject for Arc {
-    fn beat(&self) -> f32 { self.head_beat }
+    fn beat(&self) -> f32 {
+        self.head_beat
+    }
 
-    fn grid_pos(&self) -> Vec2 { self.head_grid_pos }
+    fn grid_pos(&self) -> Vec2 {
+        self.head_grid_pos
+    }
 
     fn get_orientation(&self) -> Quat {
         Quat::IDENTITY
@@ -947,11 +964,7 @@ impl GameObject for Arc {
         model: Mat4,
         cs: &ColorScheme,
     ) -> GameObjectInstanceData {
-        GameObjectInstanceData::arc(
-            clipping_plane,
-            model,
-            self.color.color(cs),
-        )
+        GameObjectInstanceData::arc(clipping_plane, model, self.color.color(cs))
     }
 }
 

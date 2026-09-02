@@ -1,14 +1,13 @@
-use serde::{Serialize, Deserialize};
 use num_traits::Zero;
+use serde::{Deserialize, Serialize};
 
-use crate::MapVersion;
-use crate::v2_v3::*;
+use super::convert_u8;
 use super::{
-    Color, CutDirection, Sentinel, ArcMidAnchorMode,
-    SpawnRotationAngle, SpawnRotationExecutionTime
+    ArcMidAnchorMode, Color, CutDirection, Sentinel, SpawnRotationAngle, SpawnRotationExecutionTime,
 };
 use super::{default_f, is_value_f};
-use super::convert_u8;
+use crate::MapVersion;
+use crate::v2_v3::*;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -289,15 +288,3 @@ pub struct BeatmapFileV2 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     special_events: Option<serde_json::Value>,
 }
-
-
-
-
-
-
-
-
-
-
-
-

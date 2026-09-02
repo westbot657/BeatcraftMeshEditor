@@ -1,9 +1,9 @@
-use std::fmt::{Display, Debug};
-use std::hint::unreachable_unchecked;
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
-use serde::de::Error as _;
 use glam::Vec4;
 use num_traits::Num;
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt::{Debug, Display};
+use std::hint::unreachable_unchecked;
 
 use crate::easing::Easing;
 
@@ -32,10 +32,10 @@ pub mod info_v4;
 
 #[cfg(feature = "custom_data")]
 pub mod custom_data;
-#[cfg(all(feature = "v2", feature = "custom_data"))]
-pub mod custom_v2;
 #[cfg(all(any(feature = "v2", feature = "v3"), feature = "custom_data"))]
 pub mod custom_info_v2;
+#[cfg(all(feature = "v2", feature = "custom_data"))]
+pub mod custom_v2;
 #[cfg(all(feature = "v3", feature = "custom_data"))]
 pub mod custom_v3;
 
@@ -381,10 +381,12 @@ impl MapVersion {
             | MapVersion::V2_5_0
             | MapVersion::V2_6_0 => VersionClass::V2,
             #[cfg(feature = "v3")]
-            MapVersion::V3_0_0 | MapVersion::V3_1_0 | MapVersion::V3_2_0 | MapVersion::V3_3_0 => VersionClass::V3,
+            MapVersion::V3_0_0 | MapVersion::V3_1_0 | MapVersion::V3_2_0 | MapVersion::V3_3_0 => {
+                VersionClass::V3
+            }
             #[cfg(feature = "v4")]
             MapVersion::V4_0_0 | MapVersion::V4_1_0 => VersionClass::V4,
-            _ => unreachable!("MapVersion classifier should match")
+            _ => unreachable!("MapVersion classifier should match"),
         }
     }
 }
@@ -515,7 +517,7 @@ impl AudioDataFile {
             AudioDataFile::V2(v2) => v2.bpm_regions.iter().map(Into::into).collect(),
             #[cfg(feature = "v4")]
             AudioDataFile::V4(v4) => v4.bpm_data.iter().map(Into::into).collect(),
-            _ => unsafe { unreachable_unchecked() }
+            _ => unsafe { unreachable_unchecked() },
         }
     }
 }
@@ -567,7 +569,6 @@ pub enum BeatmapDataError {
     #[error("{val} is not a valid value for {enum_name}")]
     ToEnum { enum_name: &'static str, val: i32 },
 }
-
 
 impl<const N: u8> Serialize for Sentinel<N> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

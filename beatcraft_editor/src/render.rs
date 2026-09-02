@@ -172,11 +172,7 @@ impl GameObjectInstanceData {
         )
     }
 
-    pub fn arc(
-        clipping_plane: Vec4,
-        model: Mat4,
-        color: Vec4,
-    ) -> Self {
+    pub fn arc(clipping_plane: Vec4, model: Mat4, color: Vec4) -> Self {
         Self {
             clipping_plane,
             model,

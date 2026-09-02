@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
 use crate::convert_u8;
+use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
@@ -83,4 +83,3 @@ pub enum ColorBoostValueV2 {
     Enable = 1,
 }
 convert_u8! { ColorBoostValueV2 : 0 | 1 }
-

@@ -17,14 +17,11 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use self::config::{AppData, KeyMaps, LocaleCache, RawAppData, RecentProject};
 use self::data::mesh::{
-    BillboardData, MaterialType, NormalId, ShaderSettingsData,
-    ShaderStyle, UvId, VertexId,
+    BillboardData, MaterialType, NormalId, ShaderSettingsData, ShaderStyle, UvId, VertexId,
 };
-use bs_mapping_data::easing::Easing;
 use self::editor::{
-    App, CreateEnv, MINECRAFT_F, RoutineAction, SOURCE_CODE_F, Selection,
-    SettingsPage, SettingsScreen, UiState, ViewStyle, WorkingRenameKey,
-    setup_fonts,
+    App, CreateEnv, MINECRAFT_F, RoutineAction, SOURCE_CODE_F, Selection, SettingsPage,
+    SettingsScreen, UiState, ViewStyle, WorkingRenameKey, setup_fonts,
 };
 use self::light_mesh::{BloomfogStyle, ComputeNormal, ComputeVertex, Part, Triangle};
 use self::renaming::light_mesh::rehash;
@@ -33,6 +30,7 @@ use self::render::{
 };
 use self::ui_elements::*;
 use self::widgets::{MathDragValue, TextInput};
+use bs_mapping_data::easing::Easing;
 use fluent_templates::fluent_bundle::FluentValue;
 
 pub mod audio;
@@ -44,9 +42,9 @@ pub mod light_mesh;
 pub mod math_interp;
 pub mod renaming;
 pub mod render;
+pub mod scenes;
 pub mod ui_elements;
 pub mod widgets;
-pub mod scenes;
 
 // Logging targets
 pub const DB_LOGIC: &str = "logic";
@@ -227,7 +225,12 @@ impl eframe::App for App {
         }
 
         if let Some(settings_page) = self.state.settings_screen.as_mut() {
-            if !Self::draw_settings_page(&mut self.data.locale, ctx, &mut self.data.keymaps, settings_page) {
+            if !Self::draw_settings_page(
+                &mut self.data.locale,
+                ctx,
+                &mut self.data.keymaps,
+                settings_page,
+            ) {
                 self.state.settings_screen = None;
             }
         } else {
@@ -296,36 +299,45 @@ impl App {
                     egui::Layout::top_down(egui::Align::Center),
                     |ui| {
                         ui.add_space(10.);
-                        if ui.add_sized(
-                            [280., 30.],
-                            egui::Button::new(lang.get("back-button"))
-                        ).clicked() {
+                        if ui
+                            .add_sized([280., 30.], egui::Button::new(lang.get("back-button")))
+                            .clicked()
+                        {
                             return false;
                         }
                         ui.add_space(10.);
                         ui.separator();
                         ui.add_space(10.);
-                        if ui.add_sized(
-                            [280., 30.],
-                            egui::Button::new(lang.get("keybinds-label"))
-                                .selected(settings.page == SettingsPage::Keymaps)
-                        ).clicked() {
+                        if ui
+                            .add_sized(
+                                [280., 30.],
+                                egui::Button::new(lang.get("keybinds-label"))
+                                    .selected(settings.page == SettingsPage::Keymaps),
+                            )
+                            .clicked()
+                        {
                             settings.page = SettingsPage::Keymaps;
                             settings.cached_binds = Some(keymaps.clone());
                         }
-                        if ui.add_sized(
-                            [280., 30.],
-                            egui::Button::new(lang.get("language-label"))
-                                .selected(settings.page == SettingsPage::Language)
-                        ).clicked() {
+                        if ui
+                            .add_sized(
+                                [280., 30.],
+                                egui::Button::new(lang.get("language-label"))
+                                    .selected(settings.page == SettingsPage::Language),
+                            )
+                            .clicked()
+                        {
                             settings.page = SettingsPage::Language;
                         }
                         true
-                    }
-                ).inner
-            }).inner {
-                return false
-            }
+                    },
+                )
+                .inner
+            })
+            .inner
+        {
+            return false;
+        }
 
         egui::CentralPanel::default().show(ctx, |ui| match settings.page {
             SettingsPage::Keymaps => {
@@ -344,8 +356,9 @@ impl App {
                                             [ui.available_width(), 30.],
                                             egui::Label::new(
                                                 egui::RichText::new(lang.get($name))
-                                                    .strong().size(22.)
-                                            )
+                                                    .strong()
+                                                    .size(22.),
+                                            ),
                                         );
                                     };
                                 }
@@ -358,23 +371,26 @@ impl App {
                                             |ui| {
                                                 ui.allocate_ui_with_layout(
                                                     [ui.available_width() / 2. - 10., 15.].into(),
-                                                    egui::Layout::right_to_left(egui::Align::Center),
+                                                    egui::Layout::right_to_left(
+                                                        egui::Align::Center,
+                                                    ),
                                                     |ui| {
-                                                        ui.add(egui::Label::new(
-                                                            lang.get($id)
-                                                        ));
-                                                    }
+                                                        ui.add(egui::Label::new(lang.get($id)));
+                                                    },
                                                 );
                                                 ui.allocate_ui_with_layout(
                                                     [ui.available_width() / 2. - 10., 15.].into(),
-                                                    egui::Layout::left_to_right(egui::Align::Center),
+                                                    egui::Layout::left_to_right(
+                                                        egui::Align::Center,
+                                                    ),
                                                     |ui| {
-                                                        ui.add(
-                                                            egui_keybind::Keybind::new(&mut keymaps.$attr, $id)
-                                                        )
-                                                    }
+                                                        ui.add(egui_keybind::Keybind::new(
+                                                            &mut keymaps.$attr,
+                                                            $id,
+                                                        ))
+                                                    },
                                                 );
-                                            }
+                                            },
                                         );
                                     };
                                 }
@@ -422,20 +438,24 @@ impl App {
                         ui.separator();
                         ui.add_space(20.);
 
-                        if ui.add_sized(
-                            [200., 20.],
-                            egui::Button::new(lang.get("revert-keys-label"))
-                        ).clicked() && let Some(cached) = settings.cached_binds.clone() {
+                        if ui
+                            .add_sized(
+                                [200., 20.],
+                                egui::Button::new(lang.get("revert-keys-label")),
+                            )
+                            .clicked()
+                            && let Some(cached) = settings.cached_binds.clone()
+                        {
                             *keymaps = cached;
                         }
                         ui.add_space(10.);
-                        if ui.add_sized(
-                            [200., 20.],
-                            egui::Button::new(lang.get("reset-keys-label"))
-                        ).clicked() {
+                        if ui
+                            .add_sized([200., 20.], egui::Button::new(lang.get("reset-keys-label")))
+                            .clicked()
+                        {
                             *keymaps = KeyMaps::default();
                         }
-                    }
+                    },
                 );
             }
             SettingsPage::Language => {
@@ -453,25 +473,33 @@ impl App {
                             .max_height(ui.available_height() - 60.)
                             .max_width(ui.available_width())
                             .show(ui, |ui| {
-                                if ui.add_sized(
-                                    [300., 50.],
-                                    egui::Button::new("English")
-                                    .selected(lang.locale.matches(&"en-US".parse::<LanguageIdentifier>().unwrap(), false, false))
-                                ).clicked() {
+                                if ui
+                                    .add_sized(
+                                        [300., 50.],
+                                        egui::Button::new("English").selected(lang.locale.matches(
+                                            &"en-US".parse::<LanguageIdentifier>().unwrap(),
+                                            false,
+                                            false,
+                                        )),
+                                    )
+                                    .clicked()
+                                {
                                     lang.locale = "en-US".parse().unwrap();
                                 }
-
                             });
 
                         ui.add_space(ui.available_height() - 60.);
-                        ui.label(lang.get_with_args(
-                            "language-help",
-                            &[
-                                ("url".into(), REPOSITORY.into()),
-                                ("discord".into(), "@westbot".into())
-                            ].into()
-                        ));
-                    }
+                        ui.label(
+                            lang.get_with_args(
+                                "language-help",
+                                &[
+                                    ("url".into(), REPOSITORY.into()),
+                                    ("discord".into(), "@westbot".into()),
+                                ]
+                                .into(),
+                            ),
+                        );
+                    },
                 );
             }
         });
@@ -1231,7 +1259,13 @@ impl App {
 
                                 match s.mode {
                                     editor::EditorMode::View => {
-                                        scenes::view::draw_view_gl(&s, gl, &view, &proj, (w as i32, h as i32));
+                                        scenes::view::draw_view_gl(
+                                            &s,
+                                            gl,
+                                            &view,
+                                            &proj,
+                                            (w as i32, h as i32),
+                                        );
                                     }
                                     editor::EditorMode::Assembly => {
                                         scenes::assembly::draw_assembly_gl(
@@ -1243,7 +1277,13 @@ impl App {
                                         );
                                     }
                                     editor::EditorMode::Edit => {
-                                        scenes::edit::draw_edit_gl(&s, gl, &view, &proj, (w as i32, h as i32));
+                                        scenes::edit::draw_edit_gl(
+                                            &s,
+                                            gl,
+                                            &view,
+                                            &proj,
+                                            (w as i32, h as i32),
+                                        );
                                     }
                                 }
 

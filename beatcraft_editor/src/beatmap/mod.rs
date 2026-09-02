@@ -11,7 +11,10 @@ use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
 use crate::config::ProjectType;
 use crate::data::map_editing::GlobalEditingData;
 use crate::data::mesh::LightMeshData;
-use crate::editor::{App, EditorContext, MINECRAFT_F, RoutineAction, SOURCE_CODE_F, Selection, ViewStyle, setup_fonts};
+use crate::editor::{
+    App, EditorContext, MINECRAFT_F, RoutineAction, SOURCE_CODE_F, Selection, ViewStyle,
+    setup_fonts,
+};
 use crate::light_mesh::LightMesh;
 use crate::render::{GpuMesh, GridType, InstanceData, MeshDrawCall, Renderer};
 use crate::{
@@ -19,10 +22,10 @@ use crate::{
     get_data_folder,
 };
 
+use self::object::{BeatmapController, GameObject, ObjectType};
 use bs_mapping_data::custom_info_v2::DifficultyBeatmapCustomDataV2;
 use bs_mapping_data::info_v2::{CharacteristicSetV2, DifficultyBeatmapV2};
 use bs_mapping_data::{AudioDataFile, BeatmapFile, InfoFile, MapCharacteristic, MapDifficulty};
-use self::object::{BeatmapController, GameObject, ObjectType};
 
 pub mod data;
 pub mod event;
@@ -685,9 +688,7 @@ impl App {
                             );
                         }
                         Some(controller) => {
-                            self.draw_beatmap_scene(
-                                ctx, ui, gl, map, controller
-                            );
+                            self.draw_beatmap_scene(ctx, ui, gl, map, controller);
                         }
                     },
                 }
@@ -728,15 +729,13 @@ impl App {
                     egui::Layout::left_to_right(egui::Align::Min),
                     |ui| {
                         for (i, modified, path, img) in
-                            self.data.recents.iter().enumerate().filter_map(
-                                |(i, p)| {
-                                    if let ProjectType::Beatmap { img } = &p.kind {
-                                        Some((i, p.modified, &p.path, img))
-                                    } else {
-                                        None
-                                    }
-                                },
-                            )
+                            self.data.recents.iter().enumerate().filter_map(|(i, p)| {
+                                if let ProjectType::Beatmap { img } = &p.kind {
+                                    Some((i, p.modified, &p.path, img))
+                                } else {
+                                    None
+                                }
+                            })
                         {
                             let ext = path.with_extension("");
                             let Some(label) = ext.file_name() else {
@@ -761,30 +760,18 @@ impl App {
                                     ui.label(modified.to_string());
 
                                     ui.allocate_ui_with_layout(
-                                        [225., ui.available_height().max(1.)]
-                                            .into(),
-                                        egui::Layout::bottom_up(
-                                            egui::Align::Center,
-                                        ),
+                                        [225., ui.available_height().max(1.)].into(),
+                                        egui::Layout::bottom_up(egui::Align::Center),
                                         |ui| {
                                             ui.add_space(20.);
                                             if ui
-                                                .button(
-                                                    self.data
-                                                        .locale
-                                                        .get("remove-from-list"),
-                                                )
+                                                .button(self.data.locale.get("remove-from-list"))
                                                 .clicked()
                                             {
                                                 to_remove = Some(i);
                                             }
                                             ui.add_space(10.);
-                                            if ui
-                                                .button(
-                                                    self.data.locale.get("open"),
-                                                )
-                                                .clicked()
-                                            {
+                                            if ui.button(self.data.locale.get("open")).clicked() {
                                                 to_open = Some(path);
                                             }
                                         },
@@ -825,11 +812,9 @@ impl App {
 
         let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
         self.handle_3d_input(&resp, ctx, gl);
-        let (click, shift) =
-            ui.input(|i| (i.pointer.primary_clicked(), i.modifiers.shift));
+        let (click, shift) = ui.input(|i| (i.pointer.primary_clicked(), i.modifiers.shift));
         let raw_mouse = ui.input(|i| i.pointer.latest_pos());
-        let mouse_pos =
-            raw_mouse.map(|p| Vec2::new(p.x - rect.min.x, p.y - rect.min.y));
+        let mouse_pos = raw_mouse.map(|p| Vec2::new(p.x - rect.min.x, p.y - rect.min.y));
 
         let mut mouse_pos = mouse_pos.map(|mp| (mp.x, h - mp.y));
 
@@ -859,9 +844,7 @@ impl App {
                         let proj = s.ref_mut().cam().proj_mat(w, h);
 
                         match s.state.view_style {
-                            editor::ViewStyle::Beatcraft {
-                                blackout_sky: true,
-                            } => {
+                            editor::ViewStyle::Beatcraft { blackout_sky: true } => {
                                 gl.clear_color(0., 0., 0., 1.);
                             }
                             _ => {
@@ -870,9 +853,7 @@ impl App {
                             }
                         }
 
-                        gl.clear(
-                            glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT,
-                        );
+                        gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
                         gl.enable(glow::DEPTH_TEST);
                         gl.depth_mask(true);
 
@@ -887,9 +868,7 @@ impl App {
                             shift,
                         );
 
-                        if s.state.show_grid
-                            && s.state.view_style == ViewStyle::Edit
-                        {
+                        if s.state.show_grid && s.state.view_style == ViewStyle::Edit {
                             s.render.renderer.draw_map_grid(gl, &view, &proj);
                         }
                     }
@@ -1107,7 +1086,11 @@ impl HitBox {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum HitTargetType {
     Object(ObjectType),
-    Grid { row: isize, column: isize, index: usize, },
+    Grid {
+        row: isize,
+        column: isize,
+        index: usize,
+    },
 }
 
 impl From<ObjectType> for HitTargetType {
@@ -1245,10 +1228,7 @@ fn draw_map_gl(
     };
     let mut hits = Vec::new();
 
-    const HITBOX: HitBox = HitBox::new(
-        Vec3::new(-0.25, -0.25, 0.),
-        Vec3::new(0.25, 0.25, 0.),
-    );
+    const HITBOX: HitBox = HitBox::new(Vec3::new(-0.25, -0.25, 0.), Vec3::new(0.25, 0.25, 0.));
     s.ref_mut().render.renderer.beatmap.hovered_placement_cell = u32::MAX;
     let mut base = Mat4::from_quat(Quat::from_rotation_y(beatmap.placement_r));
     base *= Mat4::from_translation(Vec3::new(0., 0., beatmap.placement_z));
@@ -1258,9 +1238,16 @@ fn draw_map_gl(
         for (x, col) in [(0.9, 0), (0.3, 1), (-0.3, 2), (-0.9, 3)] {
             let pos = base * Mat4::from_translation(Vec3::new(x, y, 0.));
             if let Some(hit) = check_collision(
-                pos, HITBOX, orig, dir,
-                HitTargetType::Grid { row, column: col, index: i },
-                i
+                pos,
+                HITBOX,
+                orig,
+                dir,
+                HitTargetType::Grid {
+                    row,
+                    column: col,
+                    index: i,
+                },
+                i,
             ) {
                 hits.push((hit, None));
             }
@@ -1328,7 +1315,8 @@ fn draw_map_gl(
             };
             if mouse.is_some()
                 && object.upcast_chain_head().is_none()
-                && let Some(hit) = check_collision(mat, object.editor_hitbox(beat_spacing), orig, dir, t, i)
+                && let Some(hit) =
+                    check_collision(mat, object.editor_hitbox(beat_spacing), orig, dir, t, i)
             {
                 hits.push((hit, Some((t, inst, None))));
             }
@@ -1371,8 +1359,14 @@ fn draw_map_gl(
                     let mut insts = Vec::with_capacity(links.len() + 1);
                     let sel = chain_sel_filter.contains(&i);
                     if mouse.is_some()
-                        && let Some(hit) =
-                            check_collision(mat, object.editor_hitbox(beat_spacing), orig, dir, t, i)
+                        && let Some(hit) = check_collision(
+                            mat,
+                            object.editor_hitbox(beat_spacing),
+                            orig,
+                            dir,
+                            t,
+                            i,
+                        )
                     {
                         hit0 = Some(hit);
                     }
@@ -1387,8 +1381,14 @@ fn draw_map_gl(
                         } {
                             if mouse.is_some()
                                 && hit0.is_none()
-                                && let Some(hit) =
-                                    check_collision(mat, link.editor_hitbox(beat_spacing), orig, dir, t, i)
+                                && let Some(hit) = check_collision(
+                                    mat,
+                                    link.editor_hitbox(beat_spacing),
+                                    orig,
+                                    dir,
+                                    t,
+                                    i,
+                                )
                             {
                                 hit0 = Some(hit);
                             }
@@ -1651,11 +1651,7 @@ fn draw_map_gl(
         },
     ];
 
-
-
-    hits.sort_by(|(hit0, _), (hit1, _)| {
-        hit0.distance.partial_cmp(&hit1.distance).unwrap()
-    });
+    hits.sort_by(|(hit0, _), (hit1, _)| hit0.distance.partial_cmp(&hit1.distance).unwrap());
     if let Some((
         Hit {
             distance: _,
@@ -1704,9 +1700,7 @@ fn draw_map_gl(
             const HIGHLIGHT_COLOR: Vec4 = Vec4::new(0.01, 0.8, 0.01, 1.0);
             calls.push(MeshDrawCall {
                 mesh: m,
-                instances: vec![
-                    Into::<InstanceData>::into(*closest).highlight(HIGHLIGHT_COLOR),
-                ],
+                instances: vec![Into::<InstanceData>::into(*closest).highlight(HIGHLIGHT_COLOR)],
                 wireframe: false,
                 cull: true,
                 bloomfog: false,

@@ -1,10 +1,10 @@
 use std::ops::{Deref, DerefMut};
 
-use serde::{Serialize, Deserialize};
 use glam::Vec4;
+use serde::{Deserialize, Serialize};
 
-use crate::custom_data::*;
 use super::vec4_array_opt;
+use crate::custom_data::*;
 
 #[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
 #[derive(Clone, Debug, Serialize, Deserialize)]

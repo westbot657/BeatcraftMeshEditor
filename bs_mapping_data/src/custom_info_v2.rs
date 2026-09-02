@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use crate::custom_data::{RequirementModName, SuggestionModName};
 use crate::is_value_f;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InfoCustomDataV2 {

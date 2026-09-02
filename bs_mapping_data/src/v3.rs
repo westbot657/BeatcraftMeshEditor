@@ -1,15 +1,15 @@
-use serde::{Serialize, Deserialize};
 use bitflags::bitflags;
+use serde::{Deserialize, Serialize};
 
-use crate::v2_v3::*;
-use crate::easing::Easing;
-use crate::{easing_as_i8, bool_u8_serde};
 use crate::convert_u8;
+use crate::easing::Easing;
+use crate::v2_v3::*;
 use crate::{
-    Color, CutDirection, Sentinel, ArcMidAnchorMode,
-    SpawnRotationAngle, SpawnRotationExecutionTime, MapVersion,
+    ArcMidAnchorMode, Color, CutDirection, MapVersion, Sentinel, SpawnRotationAngle,
+    SpawnRotationExecutionTime,
 };
-use crate::{is_value_f, is_value_u, default_u};
+use crate::{bool_u8_serde, easing_as_i8};
+use crate::{default_u, is_value_f, is_value_u};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -657,17 +657,3 @@ pub struct BeatmapFileV3 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-

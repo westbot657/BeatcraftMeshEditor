@@ -1,22 +1,23 @@
-
+use crate::data::mesh::{LightGroup, LightMeshData, SpectrogramData};
+use crate::editor::{ActionType, RingType, RoutineAction, SpinSide, ViewPlacement};
 use crate::light_mesh::BloomfogStyle;
 use crate::renaming::light_mesh::rehash;
 use crate::render::{GridType, InstanceData, LIGHT_COLORS, MeshDrawCall};
-use crate::widgets::TextInput;
-use crate::{App, D_ARROW, R_ARROW, RefDuper, SMALL_X, UnsafeMutRef, close_environment, data, editor};
-use crate::data::mesh::{LightGroup, LightMeshData, SpectrogramData};
-use crate::editor::{ActionType, RingType, RoutineAction, SpinSide, ViewPlacement};
 use crate::ui_elements::*;
-use fluent_templates::fluent_bundle::FluentValue;
+use crate::widgets::TextInput;
+use crate::{
+    App, D_ARROW, R_ARROW, RefDuper, SMALL_X, UnsafeMutRef, close_environment, data, editor,
+};
 use bs_mapping_data::easing::Easing;
 use eframe::glow;
-use egui::{Ui, Layout};
+use egui::{Layout, Ui};
+use fluent_templates::fluent_bundle::FluentValue;
 use glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 use indexmap::map::MutableKeys;
 use std::borrow::Cow;
-use std::sync::mpsc;
 use std::fs;
+use std::sync::mpsc;
 
 pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let mut to_remove = None;
@@ -1532,4 +1533,3 @@ pub fn draw_view_gl(
         }
     }
 }
-

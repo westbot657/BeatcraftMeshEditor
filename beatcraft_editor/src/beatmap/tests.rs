@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow};
 use egui::TextBuffer;
 
+use bs_mapping_data::info_v4::InfoV4;
 use bs_mapping_data::v2::BeatmapFileV2;
 use bs_mapping_data::v3::BeatmapFileV3;
 use bs_mapping_data::v4::BeatmapFileV4;
-use bs_mapping_data::info_v4::InfoV4;
 
 use bs_mapping_data::MapCharacteristic;
 use bs_mapping_data::info_v2::InfoV2;

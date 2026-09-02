@@ -1,9 +1,6 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use super::{
-    InfoVersion, RGBAColor, MapVersion, MapDifficulty,
-    MapCharacteristic, BpmRegion,
-};
+use super::{BpmRegion, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion, RGBAColor};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
