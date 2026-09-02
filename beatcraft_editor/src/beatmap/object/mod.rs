@@ -270,7 +270,7 @@ pub trait GameObject: Debug {
         None
     }
 
-    fn editor_hitbox(&self) -> HitBox {
+    fn editor_hitbox(&self, beat_spacing: Option<f32>) -> HitBox {
         NOTE_HITBOX
     }
 
@@ -587,6 +587,8 @@ pub struct Obstacle {
     pub dissolve: f32,
     pub index: u32,
 
+    pub noodle_logic: bool,
+
     pub source: ObjectSource,
 }
 impl ColorableObject for Obstacle {
@@ -628,6 +630,17 @@ pub struct ChainNote {
 pub struct Arc {
     pub head_beat: f32,
     pub tail_beat: f32,
+    pub head_cut_direction: CutDirection,
+    pub tail_cut_direction: CutDirection,
+    pub color: NoteColor,
+    pub head_grid_pos: Vec2,
+    pub tail_grid_pos: Vec2,
+    pub head_magnitude: f32,
+    pub tail_magnitude: f32,
+    pub has_head_note: bool,
+    pub has_tail_note: bool,
+
+    pub source: ObjectSource,
 }
 
 impl GameObject for ColorNote {
@@ -762,10 +775,15 @@ impl GameObject for Obstacle {
             Vec3::new(self.size.x, self.size.y, self.duration * beat_distance),
         )
     }
-    fn editor_hitbox(&self) -> HitBox {
+    fn editor_hitbox(&self, beat_spacing: Option<f32>) -> HitBox {
+        let z = if let Some(bs) = beat_spacing && !self.noodle_logic {
+            self.duration * bs
+        } else {
+            self.size.z
+        };
         HitBox::new(
             Vec3::new(-self.size.x / 2. * 0.6, 0., 0.),
-            Vec3::new(self.size.x / 2. * 0.6, self.size.y * 0.6, self.size.z),
+            Vec3::new(self.size.x / 2. * 0.6, self.size.y * 0.6, z),
         )
     }
 }
@@ -824,7 +842,7 @@ impl GameObject for ChainNote {
             Vec4::ZERO,
         )
     }
-    fn editor_hitbox(&self) -> HitBox {
+    fn editor_hitbox(&self, _bs: Option<f32>) -> HitBox {
         CHAIN_HEAD_HITBOX
     }
 }
@@ -909,8 +927,31 @@ impl GameObject for ChainNoteLink {
             Vec4::ZERO,
         )
     }
-    fn editor_hitbox(&self) -> HitBox {
+    fn editor_hitbox(&self, _bs: Option<f32>) -> HitBox {
         CHAIN_LINK_HITBOX
+    }
+}
+
+impl GameObject for Arc {
+    fn beat(&self) -> f32 { self.head_beat }
+
+    fn grid_pos(&self) -> Vec2 { self.head_grid_pos }
+
+    fn get_orientation(&self) -> Quat {
+        Quat::IDENTITY
+    }
+
+    fn get_instance(
+        &self,
+        clipping_plane: Vec4,
+        model: Mat4,
+        cs: &ColorScheme,
+    ) -> GameObjectInstanceData {
+        GameObjectInstanceData::arc(
+            clipping_plane,
+            model,
+            self.color.color(cs),
+        )
     }
 }
 
@@ -1071,6 +1112,7 @@ impl BeatmapFileExt for BeatmapFile {
                         size,
                         dissolve: 0.,
                         index,
+                        noodle_logic: false,
                         source: ObjectSource::Json { index },
                     })
                 }
@@ -1207,6 +1249,7 @@ impl BeatmapFileExt for BeatmapFile {
                         lane_rotation_deg,
                         dissolve: 0.,
                         index,
+                        noodle_logic: false,
                         source: ObjectSource::Json { index },
                     });
                 }
@@ -1309,6 +1352,7 @@ impl BeatmapFileExt for BeatmapFile {
                         lane_rotation_deg: obst.rotation_lane as f32,
                         dissolve: 0.,
                         index,
+                        noodle_logic: false,
                         source: ObjectSource::Json { index },
                     });
                 }

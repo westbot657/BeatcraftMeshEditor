@@ -1268,6 +1268,11 @@ fn draw_map_gl(
         }
     }
 
+    let beat_spacing = match s.state.view_style {
+        ViewStyle::Edit => Some(s.render.renderer.beatmap.beat_spacing),
+        ViewStyle::Beatcraft { .. } => None,
+    };
+
     for (i, t, object) in controller
         .color_notes
         .iter()
@@ -1294,6 +1299,13 @@ fn draw_map_gl(
                 .enumerate()
                 .map(|(i, x)| (i, ObjectType::ChainHead, x as &dyn GameObject)),
         )
+        .chain(
+            controller
+                .arcs
+                .iter()
+                .enumerate()
+                .map(|(i, x)| (i, ObjectType::ArcHead, x as &dyn GameObject)),
+        )
     {
         let wp = Mat4::IDENTITY;
 
@@ -1316,7 +1328,7 @@ fn draw_map_gl(
             };
             if mouse.is_some()
                 && object.upcast_chain_head().is_none()
-                && let Some(hit) = check_collision(mat, object.editor_hitbox(), orig, dir, t, i)
+                && let Some(hit) = check_collision(mat, object.editor_hitbox(beat_spacing), orig, dir, t, i)
             {
                 hits.push((hit, Some((t, inst, None))));
             }
@@ -1360,7 +1372,7 @@ fn draw_map_gl(
                     let sel = chain_sel_filter.contains(&i);
                     if mouse.is_some()
                         && let Some(hit) =
-                            check_collision(mat, object.editor_hitbox(), orig, dir, t, i)
+                            check_collision(mat, object.editor_hitbox(beat_spacing), orig, dir, t, i)
                     {
                         hit0 = Some(hit);
                     }
@@ -1376,7 +1388,7 @@ fn draw_map_gl(
                             if mouse.is_some()
                                 && hit0.is_none()
                                 && let Some(hit) =
-                                    check_collision(mat, link.editor_hitbox(), orig, dir, t, i)
+                                    check_collision(mat, link.editor_hitbox(beat_spacing), orig, dir, t, i)
                             {
                                 hit0 = Some(hit);
                             }

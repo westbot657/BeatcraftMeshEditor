@@ -172,6 +172,25 @@ impl GameObjectInstanceData {
         )
     }
 
+    pub fn arc(
+        clipping_plane: Vec4,
+        model: Mat4,
+        color: Vec4,
+    ) -> Self {
+        Self {
+            clipping_plane,
+            model,
+            color,
+            _r0: [Vec4::ZERO; 4],
+            wall_size: Vec3::ZERO,
+            _r1: 0.,
+            dissolve: 0.,
+            index: 0,
+            _r2: [0., 0.],
+            cut_plane: Vec4::ZERO,
+        }
+    }
+
     pub fn into_data(self) -> InstanceData {
         self.into()
     }
@@ -850,43 +869,32 @@ impl data::mesh::SpectrogramData {
             self.rotation * Vec3::new(0.5, self.base_height, -0.5),
         ];
 
+        #[rustfmt::skip]
         let tris = [
-            v[7], v[5], v[6], v[7], v[4], v[5], v[1], v[2], v[6], v[1], v[6], v[5], v[3], v[0],
-            v[4], v[3], v[4], v[7], v[0], v[1], v[5], v[0], v[5], v[4], v[2], v[3], v[7], v[2],
-            v[7], v[6],
+            v[7], v[5], v[6],
+            v[7], v[4], v[5],
+            v[1], v[2], v[6],
+            v[1], v[6], v[5],
+            v[3], v[0], v[4],
+            v[3], v[4], v[7],
+            v[0], v[1], v[5],
+            v[0], v[5], v[4],
+            v[2], v[3], v[7],
+            v[2], v[7], v[6],
         ];
 
+        #[rustfmt::skip]
         let normals = [
-            Vec3::Y,
-            Vec3::Y,
-            Vec3::Y,
-            Vec3::Y,
-            Vec3::Y,
-            Vec3::Y,
-            Vec3::Z,
-            Vec3::Z,
-            Vec3::Z,
-            Vec3::Z,
-            Vec3::Z,
-            Vec3::Z,
-            Vec3::NEG_Z,
-            Vec3::NEG_Z,
-            Vec3::NEG_Z,
-            Vec3::NEG_Z,
-            Vec3::NEG_Z,
-            Vec3::NEG_Z,
-            Vec3::NEG_X,
-            Vec3::NEG_X,
-            Vec3::NEG_X,
-            Vec3::NEG_X,
-            Vec3::NEG_X,
-            Vec3::NEG_X,
-            Vec3::X,
-            Vec3::X,
-            Vec3::X,
-            Vec3::X,
-            Vec3::X,
-            Vec3::X,
+            Vec3::Y, Vec3::Y, Vec3::Y,
+            Vec3::Y, Vec3::Y, Vec3::Y,
+            Vec3::Z, Vec3::Z, Vec3::Z,
+            Vec3::Z, Vec3::Z, Vec3::Z,
+            Vec3::NEG_Z, Vec3::NEG_Z, Vec3::NEG_Z,
+            Vec3::NEG_Z, Vec3::NEG_Z, Vec3::NEG_Z,
+            Vec3::NEG_X, Vec3::NEG_X, Vec3::NEG_X,
+            Vec3::NEG_X, Vec3::NEG_X, Vec3::NEG_X,
+            Vec3::X, Vec3::X, Vec3::X,
+            Vec3::X, Vec3::X, Vec3::X,
         ]
         .map(|n| self.rotation * n);
 
@@ -910,11 +918,20 @@ impl data::mesh::SpectrogramData {
 
             let mirror = |point: Vec3| -> Vec3 { point - 2. * (mn.dot(point) + d) * mn };
 
+            #[rustfmt::skip]
             let mut mirror_tris = [
-                v[6], v[5], v[7], v[5], v[4], v[7], v[2], v[1], v[6], v[6], v[1], v[5], v[0], v[3],
-                v[4], v[4], v[3], v[7], v[1], v[0], v[5], v[5], v[0], v[4], v[3], v[2], v[7], v[7],
-                v[2], v[6],
+                v[6], v[5], v[7],
+                v[5], v[4], v[7],
+                v[2], v[1], v[6],
+                v[6], v[1], v[5],
+                v[0], v[3], v[4],
+                v[4], v[3], v[7],
+                v[1], v[0], v[5],
+                v[5], v[0], v[4],
+                v[3], v[2], v[7],
+                v[7], v[2], v[6],
             ];
+
             let mirror_normals: Vec<Vec3> =
                 normals.iter().map(|v| v - 2. * mn.dot(*v) * mn).collect();
             mirror_tris.iter_mut().for_each(|v| *v = mirror(*v));

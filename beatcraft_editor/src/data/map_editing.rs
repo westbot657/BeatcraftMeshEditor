@@ -1021,7 +1021,7 @@ impl EditingData {
         let mut bomb_notes = Vec::new();
         let mut obstacles = Vec::new();
         let mut chain_notes = Vec::new();
-        // let mut arcs = Vec::new();
+        let arcs = Vec::new();
 
         for (i, element) in self.elements.iter().enumerate() {
             match element {
@@ -1100,6 +1100,7 @@ impl EditingData {
                         lane_rotation_deg: obstacle_data.lane_rotation_deg.resolve(&self.values, Default::default())?,
                         dissolve: 0.,
                         index,
+                        noodle_logic: false,
                         source: ObjectSource::Element { index: i },
                     })
                 },
@@ -1125,7 +1126,8 @@ impl EditingData {
                         spawn_orientation,
                         head_beat: chain_data.beat.resolve(&self.values, Default::default())?,
                         tail_beat: chain_data.tail_beat.resolve(&self.values, Default::default())?,
-                        lane_rotation_deg: chain_data.head_lane_rotation_deg.resolve(&self.values, Default::default())?,
+                        head_lane_rotation_deg: chain_data.head_lane_rotation_deg.resolve(&self.values, Default::default())?,
+                        tail_lane_rotation_deg: chain_data.tail_lane_rotation_deg.resolve(&self.values, Default::default())?,
                         cut_direction: chain_data.cut_direction.resolve(&self.values, Default::default())?,
                         color,
                         head_grid_pos: Vec2::new(
@@ -1154,7 +1156,8 @@ impl EditingData {
             color_notes,
             bomb_notes,
             obstacles,
-            chain_notes
+            chain_notes,
+            arcs,
         })
     }
 
