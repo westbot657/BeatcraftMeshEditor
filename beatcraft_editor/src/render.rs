@@ -6,7 +6,7 @@ use std::time::Instant;
 use eframe::glow::{self, HasContext, NativeProgram, SHADER_STORAGE_BUFFER};
 use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
-
+use beatcraft_editor_proc::hex;
 use crate::beatmap::render::BeatmapRenderer;
 use crate::data::mesh::{MaterialData, MaterialFlags, MaterialType, ShaderSettingsData};
 use crate::light_mesh::{LightMesh, Part, Triangle, Vertex};
@@ -15,14 +15,14 @@ use crate::{DB_RENDER, RefDuper, data};
 static MISSING_TEXTURE_BYTES: &[u8] = include_bytes!("./assets/textures/missing.png");
 
 pub static LIGHT_COLORS: [Vec4; 8] = [
-    Vec4::new(0.55, 0.70, 1.00, 1.),
-    Vec4::new(1.00, 0.25, 0.35, 1.),
-    Vec4::new(0.15, 0.95, 0.45, 1.),
-    Vec4::new(1.00, 0.90, 0.10, 1.),
-    Vec4::new(0.20, 0.50, 1.00, 1.),
-    Vec4::new(0.90, 0.20, 1.00, 1.),
-    Vec4::new(0.10, 0.95, 0.95, 1.),
-    Vec4::new(1.00, 0.55, 0.10, 1.),
+    hex!(#8cb3ff),
+    hex!(#FF4059),
+    hex!(#26F273),
+    hex!(#FFE61A),
+    hex!(#3380FF),
+    hex!(#E633FF),
+    hex!(#1AF2F2),
+    hex!(#FF8C1A),
 ];
 
 #[repr(C)]
@@ -49,9 +49,8 @@ pub struct GameObjectInstanceData {
 }
 
 const _: () =
-    assert!(std::mem::size_of::<GameObjectInstanceData>() == std::mem::size_of::<InstanceData>());
-const _: () =
-    assert!(std::mem::align_of::<GameObjectInstanceData>() == std::mem::align_of::<InstanceData>());
+    assert!(std::mem::size_of::<GameObjectInstanceData>() == std::mem::size_of::<InstanceData>()
+        && std::mem::align_of::<GameObjectInstanceData>() == std::mem::align_of::<InstanceData>());
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(i32)]

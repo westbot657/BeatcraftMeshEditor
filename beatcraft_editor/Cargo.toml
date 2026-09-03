@@ -47,6 +47,7 @@ egui-keybind = { version = "0.8.0", features = ["serde"] }
 fluent-templates = "0.15.1"
 bincode-next = { version = "3.1.1", features = ["serde"] }
 bs-mapping-data = { path = "../bs_mapping_data" }
+beatcraft_editor_proc = { path = "../beatcraft_editor_proc" }
 
 [build-dependencies]
 bindgen = "0.72.1"

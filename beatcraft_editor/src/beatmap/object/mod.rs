@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Div, Mul, Sub};
 
+use beatcraft_editor_proc::hex;
 use glam::{Mat4, Quat, Vec2, Vec3, Vec3Swizzles, Vec4};
 use rand::{RngExt, rngs::ThreadRng};
 
@@ -461,18 +462,18 @@ pub struct ColorScheme {
 impl Default for ColorScheme {
     fn default() -> Self {
         Self {
-            left_note: Vec4::new(0.749, 0.184, 0.184, 1.),
-            right_note: Vec4::new(0.122, 0.388, 0.655, 1.),
-            obstacle: Vec4::new(1., 0.184, 0.184, 1.),
+            left_note: hex!(#BF2F2F),
+            right_note: hex!(#1F63A7),
+            obstacle: hex!(#FF2F2F),
             lights: LightColors {
-                primary: Vec4::new(0.749, 0.184, 0.184, 1.),
-                secondary: Vec4::new(0.122, 0.388, 0.655, 1.),
-                white: Vec4::splat(1.),
+                primary: hex!(#BF2F2F),
+                secondary: hex!(#1F63A7),
+                white: hex!(#FFFFFF),
             },
             boost: LightColors {
-                primary: Vec4::new(0.749, 0.184, 0.184, 1.),
-                secondary: Vec4::new(0.122, 0.388, 0.655, 1.),
-                white: Vec4::splat(1.),
+                primary: hex!(#BF2F2F),
+                secondary: hex!(#1F63A7),
+                white: hex!(#FFFFFF),
             },
         }
     }
@@ -580,7 +581,7 @@ pub struct BombNote {
 impl ColorableObject for BombNote {
     fn color(col: &ObjectColor<Self>, _cs: &ColorScheme) -> Vec4 {
         match col {
-            ObjectColor::Default(_) => Vec4::new(0.2, 0.2, 0.2, 1.),
+            ObjectColor::Default(_) => hex!(#333333),
             ObjectColor::Custom(vec4) => *vec4,
         }
     }
