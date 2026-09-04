@@ -30,43 +30,25 @@ where
     fn convert(v: Self) -> T;
 }
 
-pub trait Lerp<V, T = V>
+pub trait Lerp<V>
 where
-    V: InvLerpTransformer<T>
-        + Copy
-        + Mul<T, Output = V>
+    V: Copy
+        + Mul<Output = V>
         + Sub<Output = V>
         + Add<Output = V>
         + Div<Output = V>,
 {
-    fn lerp(a: V, b: V, t: T) -> V {
+    fn lerp(a: V, b: V, t: V) -> V {
         a + (b - a) * t
     }
 
-    fn inv_lerp(a: V, b: V, x: V) -> T {
-        V::convert((x - a) / (b - a))
-    }
-}
-
-impl InvLerpTransformer for f32 {
-    fn convert(v: Self) -> f32 {
-        v
-    }
-}
-impl InvLerpTransformer for f64 {
-    fn convert(v: Self) -> f64 {
-        v
-    }
-}
-impl InvLerpTransformer<f32> for Vec3 {
-    fn convert(v: Self) -> f32 {
-        v.length()
+    fn inv_lerp(a: V, b: V, x: V) -> V {
+        (x - a) / (b - a)
     }
 }
 
 impl Lerp<f32> for f32 {}
 impl Lerp<f64> for f64 {}
-impl Lerp<Vec3, f32> for Vec3 {}
 
 pub struct BeatmapController {
     pub runtime_data: RuntimeData,
@@ -282,7 +264,7 @@ pub trait GameObject: Debug {
         None
     }
 
-    fn editor_hitbox(&self, beat_spacing: Option<f32>) -> HitBox {
+    fn editor_hitbox(&self, _beat_spacing: Option<f32>) -> HitBox {
         NOTE_HITBOX
     }
 
