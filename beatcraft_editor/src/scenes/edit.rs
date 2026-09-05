@@ -935,7 +935,7 @@ pub fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-pub fn draw_edit_gl(
+pub(crate) fn draw_edit_gl(
     s: &UnsafeMutRef<App>,
     gl: &glow::Context,
     view: &Mat4,

@@ -126,7 +126,7 @@ pub fn save_app_data(data: &AppData) -> Result<(), AppDataError> {
 }
 
 #[derive(Copy, Clone)]
-struct UnsafeMutRef<T: 'static> {
+pub(crate) struct UnsafeMutRef<T: 'static> {
     t: *mut T,
 }
 

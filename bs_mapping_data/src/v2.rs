@@ -41,7 +41,7 @@ pub struct BombNoteV2 {
     #[serde(rename = "_lineLayer")]
     #[serde(default, skip_serializing_if = "Zero::is_zero")]
     pub line_layer: f32,
-    _type: Sentinel<3>,
+    pub _type: Sentinel<3>,
     #[serde(rename = "_cutDirection")]
     pub cut_direction: CutDirection,
     #[cfg(feature = "custom_data")]
@@ -259,7 +259,7 @@ pub struct BeatmapFileV2 {
     pub stats: Option<serde_json::Value>,
     #[serde(rename = "_BPMChanges")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    bpm_changes: Option<serde_json::Value>,
+    pub bpm_changes: Option<serde_json::Value>,
     #[serde(rename = "_version")]
     pub version: MapVersion,
     #[serde(rename = "_notes")]
@@ -277,14 +277,14 @@ pub struct BeatmapFileV2 {
 
     #[serde(rename = "_bookmarks")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    bookmarks: Option<serde_json::Value>,
+    pub bookmarks: Option<serde_json::Value>,
 
     // private as I don't care to implement these
     // but it still needs to be preserved from loading
     #[serde(rename = "_waypoints")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    waypoints: Option<serde_json::Value>,
+    pub waypoints: Option<serde_json::Value>,
     #[serde(rename = "_specialEventsKeywordFilters")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    special_events: Option<serde_json::Value>,
+    pub special_events: Option<serde_json::Value>,
 }

@@ -751,7 +751,7 @@ pub fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-pub fn draw_assembly_gl(
+pub(crate) fn draw_assembly_gl(
     s: &UnsafeMutRef<App>,
     gl: &glow::Context,
     view: &Mat4,

@@ -1451,7 +1451,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     }
 }
 
-pub fn draw_view_gl(
+pub(crate) fn draw_view_gl(
     s: &UnsafeMutRef<App>,
     gl: &glow::Context,
     view: &Mat4,

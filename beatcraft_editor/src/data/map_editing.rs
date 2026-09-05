@@ -58,7 +58,7 @@ pub enum BaseValue {
     F32(f32),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Value {
     BaseValue(BaseValue),
@@ -108,6 +108,14 @@ pub enum CutDirectionValue {
     Reference(String),
     #[serde(untagged)]
     CutDir(CutDirection),
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum ArcMidAnchorModeValue {
+    #[serde(rename = "ref")]
+    Reference(String),
+    #[serde(untagged)]
+    Mode(ArcMidAnchorMode),
 }
 
 /// Data specific to a single beatmap
@@ -240,13 +248,15 @@ pub struct ArcData {
     pub cut_direction: CutDirectionValue,
     pub x: F32Value,
     pub y: F32Value,
+    pub head_ctrl_magnitude: F32Value,
     pub lane_rotation_deg: F32Value,
     pub tail_beat: F32Value,
+    pub tail_cut_direction: CutDirectionValue,
     pub tx: F32Value,
     pub ty: F32Value,
-    pub mid_anchor_mode: ArcMidAnchorMode,
+    pub tail_ctrl_magnitude: F32Value,
+    pub mid_anchor_mode: ArcMidAnchorModeValue,
     pub note_type: NoteTypeValue,
-    pub color: OptionalColorValue,
 }
 
 impl<'l> LoopTracker<'l> {
@@ -437,6 +447,37 @@ impl Resolver for CutDirection {
     }
 }
 
+impl Resolver for ArcMidAnchorMode {
+    fn resolve<'l>(
+        value: &'l Value,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<Self, ResolveError>
+    {
+        match value {
+            Value::BaseValue(BaseValue::Reference(r)) => {
+                lt.check(r)?;
+                match values.get(r) {
+                    None => Err(ResolveError::MissingValue(r.to_string())),
+                    Some(v) => v.resolve(values, lt),
+                }
+            },
+            Value::BaseValue(BaseValue::I32(i)) => {
+                if !(0..=2).contains(i) {
+                    return Err(ResolveError::OutOfRange {
+                        got: *i,
+                        low: 0,
+                        high: 2
+                    });
+                }
+                let mode = ArcMidAnchorMode::try_from(*i as u8).unwrap();
+                Ok(mode)
+            },
+            _ => Err(ResolveError::WrongType(value.type_name()))
+        }
+    }
+}
+
 impl Resolver for NoteColor {
     fn resolve<'l>(
         value: &'l Value,
@@ -584,6 +625,25 @@ impl CutDirectionValue {
                 }
             }
             Self::CutDir(cut_direction) => Ok(*cut_direction),
+        }
+    }
+}
+
+impl ArcMidAnchorModeValue {
+    pub fn resolve<'l>(
+        &'l self,
+        values: &HashMap<String, Value>,
+        mut lt: LoopTracker<'l>,
+    ) -> Result<ArcMidAnchorMode, ResolveError> {
+        match self {
+            ArcMidAnchorModeValue::Reference(r) => {
+                lt.check(r)?;
+                match values.get(r) {
+                    None => Err(ResolveError::MissingValue(r.to_string())),
+                    Some(v) => v.resolve(values, lt),
+                }
+            },
+            ArcMidAnchorModeValue::Mode(arc_mid_anchor_mode) => Ok(*arc_mid_anchor_mode),
         }
     }
 }
@@ -1084,7 +1144,7 @@ impl EditingData {
         &self,
         rng: &mut rand::rngs::ThreadRng,
         runtime_data: RuntimeData,
-        map_values: &HashMap<String, Value>,
+        mut values: HashMap<String, Value>,
     ) -> Result<BeatmapController, CanonicalizationError> {
         let mut color_notes = Vec::new();
         let mut bomb_notes = Vec::new();
@@ -1092,13 +1152,17 @@ impl EditingData {
         let mut chain_notes = Vec::new();
         let arcs = Vec::new();
 
+        for (k, v) in self.values.iter() {
+            values.insert(k.clone(), v.clone());
+        }
+
         for (i, element) in self.elements.iter().enumerate() {
             match element {
                 DataElement::Note(note_data) => {
                     let mut color = note_data
                         .note_type
-                        .resolve(&self.values, Default::default())?;
-                    if let Some(rgba) = note_data.color.resolve(&self.values, Default::default())? {
+                        .resolve(&values, Default::default())?;
+                    if let Some(rgba) = note_data.color.resolve(&values, Default::default())? {
                         color = match color {
                             NoteColor::Red | NoteColor::CustomRed(_) => NoteColor::CustomRed(rgba),
                             NoteColor::Blue | NoteColor::CustomBlue(_) => {
@@ -1109,21 +1173,21 @@ impl EditingData {
                     let index = color_notes.len() as u32;
                     color_notes.push(ColorNote {
                         spawn_orientation: Self::random_quat(rng),
-                        beat: note_data.beat.resolve(&self.values, Default::default())?,
+                        beat: note_data.beat.resolve(&values, Default::default())?,
                         color,
                         cut_direction: note_data
                             .cut_direction
-                            .resolve(&self.values, Default::default())?,
+                            .resolve(&values, Default::default())?,
                         angle_offset_deg: note_data
                             .angle_offset_deg
-                            .resolve(&self.values, Default::default())?,
+                            .resolve(&values, Default::default())?,
                         grid_pos: Vec2::new(
-                            note_data.x.resolve(&self.values, Default::default())?,
-                            note_data.y.resolve(&self.values, Default::default())?,
+                            note_data.x.resolve(&values, Default::default())?,
+                            note_data.y.resolve(&values, Default::default())?,
                         ),
                         lane_rotation_deg: note_data
                             .lane_rotation_deg
-                            .resolve(&self.values, Default::default())?,
+                            .resolve(&values, Default::default())?,
                         dissolve: 0.,
                         index,
                         source: ObjectSource::Element { index: i },
@@ -1131,7 +1195,7 @@ impl EditingData {
                 }
                 DataElement::Bomb(bomb_data) => {
                     let color = if let Some(rgba) =
-                        bomb_data.color.resolve(&self.values, Default::default())?
+                        bomb_data.color.resolve(&values, Default::default())?
                     {
                         ObjectColor::Custom(rgba)
                     } else {
@@ -1139,15 +1203,15 @@ impl EditingData {
                     };
                     let index = bomb_notes.len() as u32;
                     bomb_notes.push(BombNote {
-                        beat: bomb_data.beat.resolve(&self.values, Default::default())?,
+                        beat: bomb_data.beat.resolve(&values, Default::default())?,
                         color,
                         grid_pos: Vec2::new(
-                            bomb_data.x.resolve(&self.values, Default::default())?,
-                            bomb_data.y.resolve(&self.values, Default::default())?,
+                            bomb_data.x.resolve(&values, Default::default())?,
+                            bomb_data.y.resolve(&values, Default::default())?,
                         ),
                         lane_rotation_deg: bomb_data
                             .lane_rotation_deg
-                            .resolve(&self.values, Default::default())?,
+                            .resolve(&values, Default::default())?,
                         dissolve: 0.,
                         index,
                         source: ObjectSource::Element { index: i },
@@ -1156,7 +1220,7 @@ impl EditingData {
                 DataElement::Obstacle(obstacle_data) => {
                     let color = if let Some(rgba) = obstacle_data
                         .color
-                        .resolve(&self.values, Default::default())?
+                        .resolve(&values, Default::default())?
                     {
                         ObjectColor::Custom(rgba)
                     } else {
@@ -1164,13 +1228,13 @@ impl EditingData {
                     };
                     let beat = obstacle_data
                         .beat
-                        .resolve(&self.values, Default::default())?;
+                        .resolve(&values, Default::default())?;
                     let duration = obstacle_data
                         .duration
-                        .resolve(&self.values, Default::default())?;
+                        .resolve(&values, Default::default())?;
                     let length = obstacle_data
                         .length
-                        .resolve(&self.values, Default::default())?
+                        .resolve(&values, Default::default())?
                         .unwrap_or_else(|| {
                             let bpm = runtime_data.bpm(TimeUnit::Beat(beat));
                             runtime_data.njs * (60. / bpm)
@@ -1180,22 +1244,22 @@ impl EditingData {
                         beat,
                         color,
                         grid_pos: Vec2::new(
-                            obstacle_data.x.resolve(&self.values, Default::default())?,
-                            obstacle_data.y.resolve(&self.values, Default::default())?,
+                            obstacle_data.x.resolve(&values, Default::default())?,
+                            obstacle_data.y.resolve(&values, Default::default())?,
                         ),
                         duration,
                         size: Vec3::new(
                             obstacle_data
                                 .width
-                                .resolve(&self.values, Default::default())?,
+                                .resolve(&values, Default::default())?,
                             obstacle_data
                                 .height
-                                .resolve(&self.values, Default::default())?,
+                                .resolve(&values, Default::default())?,
                             length,
                         ),
                         lane_rotation_deg: obstacle_data
                             .lane_rotation_deg
-                            .resolve(&self.values, Default::default())?,
+                            .resolve(&values, Default::default())?,
                         dissolve: 0.,
                         index,
                         noodle_logic: false,
@@ -1205,9 +1269,9 @@ impl EditingData {
                 DataElement::Chain(chain_data) => {
                     let mut color = chain_data
                         .note_type
-                        .resolve(&self.values, Default::default())?;
+                        .resolve(&values, Default::default())?;
                     if let Some(rgba) =
-                        chain_data.color.resolve(&self.values, Default::default())?
+                        chain_data.color.resolve(&values, Default::default())?
                     {
                         color = match color {
                             NoteColor::Red | NoteColor::CustomRed(_) => NoteColor::CustomRed(rgba),
@@ -1221,7 +1285,7 @@ impl EditingData {
                     let mut links = Vec::new();
                     let slice_count = chain_data
                         .link_count
-                        .resolve(&self.values, Default::default())?;
+                        .resolve(&values, Default::default())?;
                     for i in 0..slice_count {
                         links.push(ChainNoteLinkData {
                             spawn_orientation: Self::random_quat(rng),
@@ -1230,31 +1294,31 @@ impl EditingData {
                     }
                     chain_notes.push(ChainNote {
                         spawn_orientation,
-                        head_beat: chain_data.beat.resolve(&self.values, Default::default())?,
+                        head_beat: chain_data.beat.resolve(&values, Default::default())?,
                         tail_beat: chain_data
                             .tail_beat
-                            .resolve(&self.values, Default::default())?,
+                            .resolve(&values, Default::default())?,
                         head_lane_rotation_deg: chain_data
                             .head_lane_rotation_deg
-                            .resolve(&self.values, Default::default())?,
+                            .resolve(&values, Default::default())?,
                         tail_lane_rotation_deg: chain_data
                             .tail_lane_rotation_deg
-                            .resolve(&self.values, Default::default())?,
+                            .resolve(&values, Default::default())?,
                         cut_direction: chain_data
                             .cut_direction
-                            .resolve(&self.values, Default::default())?,
+                            .resolve(&values, Default::default())?,
                         color,
                         head_grid_pos: Vec2::new(
-                            chain_data.x.resolve(&self.values, Default::default())?,
-                            chain_data.y.resolve(&self.values, Default::default())?,
+                            chain_data.x.resolve(&values, Default::default())?,
+                            chain_data.y.resolve(&values, Default::default())?,
                         ),
                         tail_grid_pos: Vec2::new(
-                            chain_data.tx.resolve(&self.values, Default::default())?,
-                            chain_data.ty.resolve(&self.values, Default::default())?,
+                            chain_data.tx.resolve(&values, Default::default())?,
+                            chain_data.ty.resolve(&values, Default::default())?,
                         ),
                         squish_factor: chain_data
                             .squish_factor
-                            .resolve(&self.values, Default::default())?,
+                            .resolve(&values, Default::default())?,
                         links,
                         dissolve: 0.,
                         index,
