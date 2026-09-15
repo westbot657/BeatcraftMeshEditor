@@ -39,9 +39,9 @@ void main() {
         vec4(-2.0, -2.0, -1.0, -1.0)
     );
 
-    if (n % 4 != 0) {
-        return;
-    }
+    // if (n % 4 != 0) {
+    //     return;
+    // }
 
     uint digits[5];
     int count = 0;

@@ -39,7 +39,11 @@ pub enum ExportWarning {
     NJSChange {
         beat: f32,
         value: f32,
-    }
+    },
+    /// Odd beat alignment
+    BeatAlignment {
+        beat: f32,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]

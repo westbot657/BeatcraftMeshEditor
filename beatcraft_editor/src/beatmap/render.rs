@@ -1,7 +1,7 @@
 use eframe::glow::{self, HasContext};
 use glam::{FloatExt, Mat4, Vec2};
 
-use crate::DB_RENDER;
+use crate::{DB_LOGIC, DB_RENDER};
 use crate::audio::Audio;
 use crate::render::Renderer;
 
@@ -230,8 +230,12 @@ impl BeatmapRenderer {
         }
     }
 
-    pub fn scroll(&mut self, step: f32) {
+    /// `direction`: -1. or 1. (or 0.)
+    /// `step`: 0.0+
+    pub fn scroll(&mut self, direction: f32, step: f32, snap: bool) {
         let (b, o) = &mut self.beat_offset;
+
+        let step = step * direction;
 
         let total = (*b as f64 + *o as f64 + step as f64).max(0.0);
 
@@ -245,6 +249,21 @@ impl BeatmapRenderer {
 
         *b = new_b.min(u16::MAX as f64) as u16;
         *o = new_f;
+        if snap {
+            self.snap_to_grid(step);
+        }
+    }
+
+    pub fn snap_to_grid(&mut self, step: f32) {
+        let (b, o) = &mut self.beat_offset;
+
+        let clamped = (*o / step).round() * step;
+
+        if clamped > 0.999 {
+            *b += 1;
+        } else {
+            *o = clamped;
+        }
     }
 
     pub fn spectrogram_center(&mut self, cursor: f32) {

@@ -11,6 +11,8 @@ use super::{ExportResult, Exportable};
 
 impl Exportable for BeatmapFileV2 {
     fn export(data: &EditingData, mods: &[super::Mod], mut values: HashMap<String, Value>) -> super::ExportResult<Self> {
+        let span = tracing::debug_span!("export-map-v2");
+        let _guard = span.enter();
         let mut warnings = Vec::new();
         let mut errors = Vec::new();
 
@@ -28,6 +30,8 @@ impl Exportable for BeatmapFileV2 {
             match (|| {
                 match element {
                     DataElement::Note(note_data) => {
+                        let span = tracing::debug_span!("note");
+                        let _guard = span.enter();
                         let time = note_data.beat.resolve(&values, Default::default())?;
                         // TODO: time granularity warning
                         let line_index = note_data.x.resolve(&values, Default::default())?;
@@ -56,6 +60,8 @@ impl Exportable for BeatmapFileV2 {
                         ))
                     },
                     DataElement::Bomb(bomb_data) => {
+                        let span = tracing::debug_span!("bomb");
+                        let _guard = span.enter();
                         let beat = bomb_data.beat.resolve(&values, Default::default())?;
                         // TODO: time granularity warning
                         let line_index = bomb_data.x.resolve(&values, Default::default())?;
@@ -74,6 +80,8 @@ impl Exportable for BeatmapFileV2 {
                         ));
                     },
                     DataElement::Obstacle(obstacle_data) => {
+                        let span = tracing::debug_span!("obstacle");
+                        let _guard = span.enter();
                         let beat = obstacle_data.beat.resolve(&values, Default::default())?;
                         // TODO: time granularity warning
                         let duration = obstacle_data.duration.resolve(&values, Default::default())?;
@@ -101,9 +109,13 @@ impl Exportable for BeatmapFileV2 {
                         );
                     },
                     DataElement::Chain(chain_data) => {
+                        let span = tracing::debug_span!("chain");
+                        let _guard = span.enter();
                         // TODO: warning + export normal note
                     },
                     DataElement::Arc(arc_data) => {
+                        let span = tracing::debug_span!("arc");
+                        let _guard = span.enter();
                         let color = arc_data.note_type.resolve(&values, Default::default())?;
                         let (color, custom_color) = match color {
                             NoteColor::Red => (Color::Red, None),
@@ -141,8 +153,16 @@ impl Exportable for BeatmapFileV2 {
                             }
                         );
                     },
-                    DataElement::Template(template_placement) => todo!(),
-                    DataElement::ObstacleText(obstacle_text_data) => todo!(),
+                    DataElement::Template(template_placement) => {
+                        let span = tracing::debug_span!("template");
+                        let _guard = span.enter();
+
+                    },
+                    DataElement::ObstacleText(obstacle_text_data) => {
+                        let span = tracing::debug_span!("obstacle-text");
+                        let _guard = span.enter();
+
+                    },
                 };
                 Ok(())
             })() {

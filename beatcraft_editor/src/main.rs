@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -7,30 +7,18 @@ use std::sync::{Arc, mpsc};
 
 use clap::Parser;
 use eframe::glow::{self, HasContext};
-use egui::{Align2, Color32, Frame, ImageSource, Layout, Pos2, Sense, Ui};
+use egui::{Align2, Color32, Frame, ImageSource, Layout, Sense, Ui};
 use fluent_templates::LanguageIdentifier;
-use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
-use indexmap::map::MutableKeys;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use self::config::{AppData, KeyMaps, LocaleCache, RawAppData, RecentProject};
-use self::data::mesh::{
-    BillboardData, MaterialType, NormalId, ShaderSettingsData, ShaderStyle, UvId, VertexId,
-};
 use self::editor::{
     App, CreateEnv, MINECRAFT_F, RoutineAction, SOURCE_CODE_F, Selection, SettingsPage,
-    SettingsScreen, UiState, ViewStyle, WorkingRenameKey, setup_fonts,
+    SettingsScreen, UiState, ViewStyle, setup_fonts,
 };
-use self::light_mesh::{BloomfogStyle, ComputeNormal, ComputeVertex, Part, Triangle};
-use self::renaming::light_mesh::rehash;
-use self::render::{
-    GridType, HandleDrawCall, InstanceData, LIGHT_COLORS, MeshDrawCall, PointDrawCall,
-};
-use self::ui_elements::*;
-use self::widgets::{MathDragValue, TextInput};
-use bs_mapping_data::easing::Easing;
+use self::widgets::MathDragValue;
 use fluent_templates::fluent_bundle::FluentValue;
 
 pub mod audio;

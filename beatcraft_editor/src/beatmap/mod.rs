@@ -474,7 +474,7 @@ impl App {
                             self.render
                                 .renderer
                                 .beatmap
-                                .scroll(scroll.signum() * self.map_editor.scroll_step);
+                                .scroll(scroll.signum(), self.map_editor.scroll_step, self.map_editor.grid_snap);
                         }
                     }
                 }

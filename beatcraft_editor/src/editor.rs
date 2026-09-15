@@ -1653,6 +1653,9 @@ impl App {
                     {
                         if audio.is_playing() {
                             audio.pause();
+                            if self.map_editor.grid_snap {
+                                self.render.renderer.beatmap.snap_to_grid(self.map_editor.scroll_step);
+                            }
                         } else {
                             tracing::debug!(target: DB_AUDIO, "seeking to map");
                             let beat = self.render.renderer.beatmap.beat();
@@ -1726,7 +1729,7 @@ impl App {
                     self.render
                         .renderer
                         .beatmap
-                        .scroll(scroll.signum() * self.map_editor.scroll_step);
+                        .scroll(scroll.signum(), self.map_editor.scroll_step, self.map_editor.grid_snap);
                 } else {
                     let factor = if scroll > 0. {
                         if shift { 0.44 } else { 0.88 }
