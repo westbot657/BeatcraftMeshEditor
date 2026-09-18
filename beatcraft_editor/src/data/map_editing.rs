@@ -4,7 +4,7 @@ use glam::{Quat, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
 
 use crate::DB_DATA;
-use crate::beatmap::object::{
+use beatmap_core::{
     BeatmapController, BombNote, ChainNote, ChainNoteLinkData, ColorNote, NoteColor, ObjectColor,
     Obstacle, RuntimeData, TimeUnit,
 };
@@ -1145,7 +1145,7 @@ impl EditingData {
         rng: &mut rand::rngs::ThreadRng,
         runtime_data: RuntimeData,
         mut values: HashMap<String, Value>,
-    ) -> Result<BeatmapController, CanonicalizationError> {
+    ) -> Result<BeatmapController<ObjectSource>, CanonicalizationError> {
         let mut color_notes = Vec::new();
         let mut bomb_notes = Vec::new();
         let mut obstacles = Vec::new();

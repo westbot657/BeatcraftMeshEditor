@@ -2,7 +2,8 @@
 members = [
     "beatcraft_editor_proc",
     "beatcraft_editor",
-    "bs_mapping_data"
+    "bs_mapping_data",
+    "beatmap_core"
 ]
 resolver = "3"
 

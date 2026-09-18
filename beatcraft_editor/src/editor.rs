@@ -14,7 +14,8 @@ use tracing::Level;
 
 use crate::audio::AudioSystem;
 use crate::beatmap::BeatmapEditor;
-use crate::beatmap::object::{BombNote, ChainNote, ColorNote, ObjectType, Obstacle, RuntimeData};
+use crate::data::map_editing::ObjectSource;
+use beatmap_core::{BombNote, ChainNote, ColorNote, ObjectType, Obstacle, RuntimeData};
 use crate::config::{AppData, KeyMaps};
 use crate::data::mesh::{
     EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData,
@@ -46,10 +47,10 @@ impl Camera {
         self.target + self.dist * Vec3::new(cp * sy, sp, cp * cy)
     }
     pub fn view_mat(&self) -> Mat4 {
-        Mat4::look_at_rh(self.eye(), self.target, Vec3::Y)
+        glam::camera::rh::view::look_at_mat4(self.eye(), self.target, Vec3::Y)
     }
     pub fn proj_mat(&self, w: f32, h: f32) -> Mat4 {
-        Mat4::perspective_rh(self.fov, (w / h).max(0.001), 0.1, 5000.0)
+        glam::camera::rh::proj::opengl::perspective(self.fov, (w / h).max(0.001), 0.1, 5000.0)
     }
     pub fn vp(&self, w: f32, h: f32) -> Mat4 {
         self.proj_mat(w, h) * self.view_mat()
@@ -838,10 +839,11 @@ pub enum HistoryEntry {
 
     BeatmapInfo(Box<Option<InfoFile>>),
     BeatmapAudioData(Box<Option<AudioDataFile>>),
-    BeatmapNotes(Vec<ColorNote>),
-    BeatmapBombs(Vec<BombNote>),
-    BeatmapObstacles(Vec<Obstacle>),
-    BeatmapChains(Vec<ChainNote>),
+    BeatmapNotes(Vec<ColorNote<ObjectSource>>),
+    BeatmapBombs(Vec<BombNote<ObjectSource>>),
+    BeatmapObstacles(Vec<Obstacle<ObjectSource>>),
+    BeatmapChains(Vec<ChainNote<ObjectSource>>),
+    BeatmapArcs(Vec<beatmap_core::Arc<ObjectSource>>),
     BeatmapRuntimeData(RuntimeData),
 }
 
@@ -1077,6 +1079,16 @@ impl History {
                     HistoryEntry::BeatmapChains(chain_notes)
                 } else {
                     panic!("History is meant to be cleared after closing/changing active map");
+                }
+            }
+            HistoryEntry::BeatmapArcs(mut arcs) => {
+                if let Some(map) = editor.map_editor.map.as_mut()
+                    && let Some(controller) = map.controller.as_mut()
+                {
+                    std::mem::swap(&mut arcs, &mut controller.arcs);
+                    HistoryEntry::BeatmapArcs(arcs)
+                } else {
+                    panic!("History is meant to be cleared after closing/chainging active map");
                 }
             }
             HistoryEntry::BeatmapRuntimeData(mut runtime_data) => {
@@ -1953,7 +1965,7 @@ impl App {
                 egui::Rect::from_two_pos(egui::pos2(sx0, sy0), egui::pos2(sx1, sy1)),
                 0.0,
                 egui::Stroke::new(
-                    1.0,
+                    1.0f32,
                     egui::Color32::from_rgba_premultiplied(120, 180, 255, 200),
                 ),
                 egui::StrokeKind::Middle,

@@ -1,0 +1,22 @@
+[package]
+name = "beatmap-core"
+version = "0.1.0"
+edition = "2024"
+resolver = "3"
+
+[features]
+default = ["tracing", "beatcraft_worldspace"]
+tracing = ["dep:tracing", "dep:tracing-subscriber", "dep:tracing-appender"]
+beatcraft_worldspace = []
+
+[dependencies]
+beatcraft_editor_proc = { path = "../beatcraft_editor_proc" }
+bs-mapping-data = { path = "../bs_mapping_data" }
+glam = { version = "0.33.5" }
+
+tracing = { version = "0.1.44", optional = true }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"], optional = true }
+tracing-appender = { version = "0.2.5", optional = true }
+
+#tracks-rs
+

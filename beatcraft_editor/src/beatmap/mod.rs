@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 
 use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
 use crate::config::ProjectType;
-use crate::data::map_editing::GlobalEditingData;
+use crate::data::map_editing::{GlobalEditingData, ObjectSource};
 use crate::data::mesh::LightMeshData;
 use crate::editor::{
     App, EditorContext, MINECRAFT_F, RoutineAction, SOURCE_CODE_F, Selection, ViewStyle,
@@ -22,11 +22,13 @@ use crate::{
     get_data_folder,
 };
 
-use self::data::obstacle_font::{ObstacleFont, ObstacleFontData};
-use self::object::{BeatmapController, GameObject, NoteColor, ObjectType};
+use self::object::{BeatmapControllerExt, GameObjectExt};
+use self::data::obstacle_font::ObstacleFontData;
 use bs_mapping_data::custom_info_v2::DifficultyBeatmapCustomDataV2;
 use bs_mapping_data::info_v2::{CharacteristicSetV2, DifficultyBeatmapV2};
 use bs_mapping_data::{ArcMidAnchorMode, AudioDataFile, BeatmapFile, Color, CutDirection, InfoFile, MapCharacteristic, MapDifficulty};
+
+use beatmap_core::{ArrowType, BeatmapController, GameObject, HitBox, ObjectType};
 
 pub mod data;
 pub mod event;
@@ -87,7 +89,7 @@ pub struct BeatmapProject {
     pub audio: Option<std::sync::Arc<Audio>>,
     pub cover_image: Option<PathBuf>,
     pub sets: Vec<BeatmapProjectSet>,
-    pub controller: Option<BeatmapController>,
+    pub controller: Option<BeatmapController<ObjectSource>>,
 
     pub editor_data_path: Option<PathBuf>,
     pub editor_data: GlobalEditingData,
@@ -852,7 +854,7 @@ impl App {
         ui: &mut egui::Ui,
         gl: &glow::Context,
         map: &BeatmapProject,
-        controller: &BeatmapController,
+        controller: &BeatmapController<ObjectSource>,
     ) {
         let rect = ui.available_rect_before_wrap();
         self.state.vp_rect = rect;
@@ -1120,18 +1122,6 @@ fn draw_map_diff(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct HitBox {
-    min: Vec3,
-    max: Vec3,
-}
-
-impl HitBox {
-    pub const fn new(min: Vec3, max: Vec3) -> Self {
-        Self { min, max }
-    }
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum HitTargetType {
     Object(ObjectType),
@@ -1313,40 +1303,40 @@ fn draw_map_gl(
         .color_notes
         .iter()
         .enumerate()
-        .map(|(i, x)| (i, ObjectType::ColorNote, x as &dyn GameObject))
+        .map(|(i, x)| (i, ObjectType::ColorNote, x as &dyn GameObjectExt))
         .chain(
             controller
                 .bomb_notes
                 .iter()
                 .enumerate()
-                .map(|(i, x)| (i, ObjectType::BombNote, x as &dyn GameObject)),
+                .map(|(i, x)| (i, ObjectType::BombNote, x as &dyn GameObjectExt)),
         )
         .chain(
             controller
                 .obstacles
                 .iter()
                 .enumerate()
-                .map(|(i, x)| (i, ObjectType::Obstacle, x as &dyn GameObject)),
+                .map(|(i, x)| (i, ObjectType::Obstacle, x as &dyn GameObjectExt)),
         )
         .chain(
             controller
                 .chain_notes
                 .iter()
                 .enumerate()
-                .map(|(i, x)| (i, ObjectType::ChainHead, x as &dyn GameObject)),
+                .map(|(i, x)| (i, ObjectType::ChainHead, x as &dyn GameObjectExt)),
         )
         .chain(
             controller
                 .arcs
                 .iter()
                 .enumerate()
-                .map(|(i, x)| (i, ObjectType::ArcHead, x as &dyn GameObject)),
+                .map(|(i, x)| (i, ObjectType::ArcHead, x as &dyn GameObjectExt)),
         )
     {
         let wp = Mat4::IDENTITY;
 
         if let Some(mat) = match s.state.view_style {
-            ViewStyle::Edit => object.animate_simple(wp, beat, &controller.runtime_data, beatmap),
+            ViewStyle::Edit => object.animate_simple(wp, beat, &controller.runtime_data, beatmap.beats_before, beatmap.visible_beat_count, beatmap.beat_spacing),
             ViewStyle::Beatcraft { .. } => {
                 object.animate_complex(wp, beat, &controller.runtime_data)
             }
@@ -1422,7 +1412,7 @@ fn draw_map_gl(
                     for link in links {
                         if let Some(mat) = match s.state.view_style {
                             ViewStyle::Edit => {
-                                link.animate_simple(wp, beat, &controller.runtime_data, beatmap)
+                                link.animate_simple(wp, beat, &controller.runtime_data, beatmap.beats_before, beatmap.visible_beat_count, beatmap.beat_spacing)
                             }
                             ViewStyle::Beatcraft { .. } => {
                                 link.animate_complex(wp, beat, &controller.runtime_data)
@@ -1477,20 +1467,20 @@ fn draw_map_gl(
                 _ => false,
             };
             match object.arrow_type() {
-                object::ArrowType::None => {}
-                object::ArrowType::Arrow => {
+                ArrowType::None => {}
+                ArrowType::Arrow => {
                     arrow_instances.push(inst.into());
                     if is_highlighted {
                         arrow_highlights.push(inst.into_data().highlight(Vec4::splat(1.)));
                     }
                 }
-                object::ArrowType::Dot => {
+                ArrowType::Dot => {
                     dot_instances.push(inst.into());
                     if is_highlighted {
                         dot_highlights.push(inst.into_data().highlight(Vec4::splat(1.)));
                     }
                 }
-                object::ArrowType::ChainDot => chain_dot_instances.push(inst.into()),
+                ArrowType::ChainDot => chain_dot_instances.push(inst.into()),
             }
         }
     }
