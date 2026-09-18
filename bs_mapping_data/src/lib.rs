@@ -404,6 +404,7 @@ impl PartialEq<MapVersion> for VersionClass {
 
 impl InfoVersion {
     pub fn classifier(&self) -> VersionClass {
+        #[allow(clippy::single_match, unreachable_patterns)]
         match self {
             #[cfg(any(feature = "v2", feature = "v3"))]
             InfoVersion::V2_0_0 | InfoVersion::V2_1_0 => VersionClass::V2,

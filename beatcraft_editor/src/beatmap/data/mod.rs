@@ -1,6 +1,8 @@
 use bs_mapping_data::CutDirection;
 use glam::Quat;
 
+pub mod obstacle_font;
+
 pub trait CutDirectionExt {
     fn angle_degrees(&self) -> f32;
     fn world_angle_radians(&self) -> f32;

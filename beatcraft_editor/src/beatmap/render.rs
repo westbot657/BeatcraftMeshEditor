@@ -261,6 +261,7 @@ impl BeatmapRenderer {
 
         if clamped > 0.999 {
             *b += 1;
+            *o = 0.;
         } else {
             *o = clamped;
         }

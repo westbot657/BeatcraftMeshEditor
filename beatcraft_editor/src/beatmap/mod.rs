@@ -22,10 +22,11 @@ use crate::{
     get_data_folder,
 };
 
-use self::object::{BeatmapController, GameObject, ObjectType};
+use self::data::obstacle_font::{ObstacleFont, ObstacleFontData};
+use self::object::{BeatmapController, GameObject, NoteColor, ObjectType};
 use bs_mapping_data::custom_info_v2::DifficultyBeatmapCustomDataV2;
 use bs_mapping_data::info_v2::{CharacteristicSetV2, DifficultyBeatmapV2};
-use bs_mapping_data::{AudioDataFile, BeatmapFile, InfoFile, MapCharacteristic, MapDifficulty};
+use bs_mapping_data::{ArcMidAnchorMode, AudioDataFile, BeatmapFile, Color, CutDirection, InfoFile, MapCharacteristic, MapDifficulty};
 
 pub mod data;
 pub mod event;
@@ -104,6 +105,54 @@ pub struct BeatmapMeshSet {
     pub dot_mesh: GpuMesh,
     pub chain_dot_mesh: GpuMesh,
     obstacle_mesh: GpuMesh,
+}
+
+pub enum PlacementObjectType {
+    ColorNote,
+    BombNote,
+    Obstacle,
+    Chain,
+    Arc,
+    Text,
+}
+
+pub struct ColorNotePlacementData {
+    pub note_type: Color,
+    pub cut_direction: CutDirection,
+    pub color: Option<Vec4>,
+}
+
+pub struct BombPlacementData {
+    pub color: Option<Vec4>,
+}
+
+pub struct ObstaclePlacementData {
+    pub width: f32,
+    pub height: f32,
+    pub duration: f32,
+    pub length: Option<f32>,
+    pub color: Option<Vec4>,
+}
+
+pub struct ChainPlacementData {
+    pub note_type: Color,
+    pub cut_direction: CutDirection,
+    pub link_count: u8,
+    pub color: Option<Vec4>,
+}
+
+pub struct ArcPlacementData {
+    pub note_type: Color,
+    pub mid_anchor_mode: ArcMidAnchorMode,
+    pub color: Option<Vec4>,
+}
+
+pub struct TextPlacementData {
+    pub text: String,
+    pub scale: f32,
+    pub duration: f32,
+    pub length: Option<f32>,
+    pub font: ObstacleFontData,
 }
 
 pub struct BeatmapEditor {
