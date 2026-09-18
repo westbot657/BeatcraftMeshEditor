@@ -1,7 +1,7 @@
 use eframe::glow::{self, HasContext};
 use glam::{FloatExt, Mat4, Vec2};
 
-use crate::{DB_LOGIC, DB_RENDER};
+use crate::DB_RENDER;
 use crate::audio::Audio;
 use crate::render::Renderer;
 

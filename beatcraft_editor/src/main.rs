@@ -806,7 +806,7 @@ impl App {
                 6.0,
                 Color32::TRANSPARENT,
                 egui::Stroke::new(
-                    1.,
+                    1.0f32,
                     if is_hovered {
                         Color32::from_white_alpha(127)
                     } else {

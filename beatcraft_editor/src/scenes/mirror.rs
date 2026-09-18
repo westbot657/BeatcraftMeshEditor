@@ -169,14 +169,14 @@ pub fn draw_mirror_view(
                     fill,
                     egui::Stroke::NONE,
                 ));
-                painter.line_segment([pts[0], pts[1]], egui::Stroke::new(1.0, stroke_color));
-                painter.line_segment([pts[1], pts[2]], egui::Stroke::new(1.0, stroke_color));
-                painter.line_segment([pts[2], pts[0]], egui::Stroke::new(1.0, stroke_color));
+                painter.line_segment([pts[0], pts[1]], egui::Stroke::new(1.0f32, stroke_color));
+                painter.line_segment([pts[1], pts[2]], egui::Stroke::new(1.0f32, stroke_color));
+                painter.line_segment([pts[2], pts[0]], egui::Stroke::new(1.0f32, stroke_color));
             } else {
                 for i in 0..verts.len().saturating_sub(1) {
                     painter.line_segment(
                         [to_screen(verts[i]), to_screen(verts[i + 1])],
-                        egui::Stroke::new(1.0, stroke_color),
+                        egui::Stroke::new(1.0f32, stroke_color),
                     );
                 }
             }

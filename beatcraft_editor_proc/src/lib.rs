@@ -11,9 +11,9 @@ struct RawHexValue {
 }
 
 enum HexValue {
-    Vec4Rgba(RawHexValue),
-    TupleRgba(RawHexValue),
-    ArrayRgba(RawHexValue),
+    Vec4(RawHexValue),
+    Tuple(RawHexValue),
+    Array(RawHexValue),
 }
 
 impl Parse for RawHexValue {
@@ -71,15 +71,15 @@ impl Parse for HexValue {
             let content;
             parenthesized!(content in input);
             let val: RawHexValue = content.parse()?;
-            Ok(Self::TupleRgba(val))
+            Ok(Self::Tuple(val))
         } else if input.peek(syn::token::Bracket) {
             let content;
             bracketed!(content in input);
             let val: RawHexValue = content.parse()?;
-            Ok(Self::ArrayRgba(val))
+            Ok(Self::Array(val))
         } else {
             let val: RawHexValue = input.parse()?;
-            Ok(Self::Vec4Rgba(val))
+            Ok(Self::Vec4(val))
         }
     }
 }
@@ -88,8 +88,8 @@ impl Parse for HexValue {
 pub fn hex(ts: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let hex = parse_macro_input!(ts as HexValue);
     match hex {
-        HexValue::Vec4Rgba(RawHexValue { r, g, b, a }) => quote! { glam::Vec4::new(#r, #g, #b, #a) },
-        HexValue::TupleRgba(RawHexValue { r, g, b, a }) => quote! { (#r, #g, #b, #a) },
-        HexValue::ArrayRgba(RawHexValue { r, g, b, a }) => quote! { [#r, #g, #b, #a] },
+        HexValue::Vec4(RawHexValue { r, g, b, a }) => quote! { glam::Vec4::new(#r, #g, #b, #a) },
+        HexValue::Tuple(RawHexValue { r, g, b, a }) => quote! { (#r, #g, #b, #a) },
+        HexValue::Array(RawHexValue { r, g, b, a }) => quote! { [#r, #g, #b, #a] },
     }.into()
 }

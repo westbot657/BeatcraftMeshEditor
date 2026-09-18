@@ -312,7 +312,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                 } else {
                     egui::Color32::from_rgba_unmultiplied(80, 110, 180, 80)
                 };
-                let stroke = egui::Stroke::new(1.0, stroke_color);
+                let stroke = egui::Stroke::new(1.0f32, stroke_color);
                 for i in 0..3 {
                     painter.line_segment([screen_verts[i], screen_verts[(i + 1) % 3]], stroke);
                 }
@@ -338,7 +338,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                             screen_verts[vi],
                             radius,
                             inner,
-                            egui::Stroke::new(1.5, col),
+                            egui::Stroke::new(1.5f32, col),
                         );
                     }
                 }
@@ -356,7 +356,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                 let col_w = (canvas_rect.width() / 3.0) - 20.0;
                 for (vi, col) in UV_VERT_COLORS.iter().enumerate() {
                     egui::Frame::NONE
-                        .stroke(egui::Stroke::new(1.5, *col))
+                        .stroke(egui::Stroke::new(1.5f32, *col))
                         .inner_margin(egui::Margin::same(5))
                         .show(ui, |ui| {
                             ui.set_width(col_w);
