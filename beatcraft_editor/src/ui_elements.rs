@@ -835,6 +835,7 @@ pub fn quat_row<T: 'static + Clone + Send + Sync>(
     }
 }*/
 
+#[cfg(feature = "mesh-editor")]
 pub fn compute_vertex_row(
     ui: &mut Ui,
     w: (f32, f32),

@@ -7,6 +7,7 @@ use eframe::glow::{self, HasContext, NativeProgram, SHADER_STORAGE_BUFFER};
 use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
 use beatcraft_editor_proc::hex;
+#[cfg(feature = "mapper")]
 use crate::beatmap::render::BeatmapRenderer;
 use crate::data::mesh::{MaterialData, MaterialFlags, MaterialType, ShaderSettingsData};
 use crate::light_mesh::{LightMesh, Part, Triangle, Vertex};
@@ -991,6 +992,7 @@ pub struct Renderer {
     /// maps a path to its UV rect (x0, y0, x1, y1) within the atlas
     pub atlas_map: HashMap<PathBuf, Vec4>,
     pub bloomfog: BloomfogRenderer,
+    #[cfg(feature = "mapper")]
     pub beatmap: BeatmapRenderer,
 }
 
@@ -998,6 +1000,7 @@ pub struct Renderer {
 pub enum GridType {
     None,
     WorldGrid,
+    #[cfg(feature = "mapper")]
     BeatGrid,
 }
 
@@ -1201,6 +1204,7 @@ impl Renderer {
                 atlas: None,
                 atlas_map: HashMap::new(),
                 bloomfog: BloomfogRenderer::new(gl)?,
+                #[cfg(feature = "mapper")]
                 beatmap: BeatmapRenderer::new(gl)?,
             })
         }
@@ -1343,6 +1347,7 @@ impl Renderer {
         }
     }
 
+    #[cfg(feature = "mapper")]
     pub fn draw_map_grid(&self, gl: &glow::Context, view: &Mat4, proj: &Mat4) {
         self.beatmap.render_grid(self, gl, view, proj);
     }
@@ -2164,6 +2169,7 @@ impl BloomfogRenderer {
             match draw_grid {
                 GridType::None => {}
                 GridType::WorldGrid => renderer.draw_grid(gl, view, proj),
+                #[cfg(feature = "mapper")]
                 GridType::BeatGrid => renderer.draw_map_grid(gl, view, proj),
             }
 

@@ -36,6 +36,7 @@ impl LightMesh {
     }
 }
 
+#[cfg(feature = "mesh-editor")]
 impl Part {
     pub fn rename_vertex(&mut self, swap: &DataSwap<VertexId>) -> Result<()> {
         // if !self.contains_vertex(&swap.from) {

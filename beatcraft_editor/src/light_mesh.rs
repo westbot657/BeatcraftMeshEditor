@@ -1,4 +1,5 @@
 use core::f32;
+#[cfg(feature = "mesh-editor")]
 use std::collections::{HashMap, HashSet, hash_map};
 use std::fs;
 use std::hash::Hash;
@@ -7,6 +8,7 @@ use std::path::Path;
 use anyhow::{Result, anyhow};
 use glam::{FloatExt, Mat4, Quat, Vec2, Vec3};
 use indexmap::IndexMap;
+#[cfg(feature = "mesh-editor")]
 use indexmap::map::MutableKeys;
 
 use crate::config::LocaleCache;
@@ -15,9 +17,14 @@ use crate::data::mesh::{
     MaterialFlags, MeshType, NormalId, PartData, PlacementData, ShaderSettingsData, StateSet,
     TriangleData, TriangleEntry, UvId, VertRefData, VertexId,
 };
+
+#[cfg(feature = "mesh-editor")]
 use crate::editor::DataSwap;
+#[cfg(feature = "mesh-editor")]
 use crate::renaming::light_mesh::rehash;
-use crate::{DB_DATA, DB_MATH, RefDuper};
+use crate::{DB_DATA, DB_MATH};
+#[cfg(feature = "mesh-editor")]
+use crate::RefDuper;
 use bs_mapping_data::easing::Easing;
 
 #[derive(Debug, Clone)]
@@ -677,6 +684,7 @@ impl Part {
         }
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub fn rename_data(&mut self, swap: &DataSwap<String>) {
         for tri in self.triangles.0.iter_mut() {
             if let Some(mat) = tri.material.as_mut()
@@ -687,8 +695,9 @@ impl Part {
         }
     }
 
-    /// if any deltas are negative, than ids > threshold are shifted down
+    /// if any deltas are negative, then ids > threshold are shifted down
     /// otherwise ids <= threshold are shifted up.
+    #[cfg(feature = "mesh-editor")]
     pub fn cascade_ids(&mut self, threshold: usize, deltas: (i64, i64, i64)) {
         let negative = deltas.0 < 0 || deltas.1 < 0 || deltas.2 < 0;
 
@@ -731,6 +740,7 @@ impl Part {
         }
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub fn contains_vertex(&self, id: &VertexId) -> bool {
         match id {
             VertexId::Index(i) => *i < self.vertices.indexed.len(),
@@ -740,6 +750,7 @@ impl Part {
         }
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub fn contains_uv(&self, id: &UvId) -> bool {
         match id {
             UvId::Index(i) => *i < self.uvs.indexed.len(),
@@ -747,6 +758,7 @@ impl Part {
         }
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub fn contains_normal(&self, id: &NormalId) -> bool {
         match id {
             NormalId::Index(i) => *i < self.normals.indexed.len(),
@@ -756,6 +768,7 @@ impl Part {
         }
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub(crate) unsafe fn get_detached_vertex_refs<'a>(
         &mut self,
         lifeline: &'a mut RefDuper,
@@ -787,6 +800,7 @@ impl Part {
         refs
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub(crate) unsafe fn get_detached_uv_refs<'a>(
         &mut self,
         lifeline: &'a mut RefDuper,
@@ -804,6 +818,7 @@ impl Part {
         refs
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub(crate) unsafe fn get_detached_normal_refs<'a>(
         &mut self,
         lifeline: &'a mut RefDuper,
@@ -821,6 +836,7 @@ impl Part {
         refs
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub fn dedupe_data(&mut self) {
         let span = tracing::debug_span!("dedupe-mesh-data");
         let _guard = span.enter();
@@ -1003,6 +1019,7 @@ impl Part {
     }
 
     /// Iterates over triangles where all 3 vertices of the triangle are in `ids`
+    #[cfg(feature = "mesh-editor")]
     pub fn filter_triangles(
         &mut self,
         ids: &[impl AsRef<VertexId>],
@@ -1016,6 +1033,7 @@ impl Part {
     }
 
     /// Filters the input `ids` to only contain ids that are part of triangles.
+    #[cfg(feature = "mesh-editor")]
     pub fn filter_triangle_vertices<'a>(
         &mut self,
         ids: &'a [VertexId],
@@ -1041,6 +1059,7 @@ impl Part {
     }
 
     /// Iterates over Vec3 positions for indexed/named vertices in `ids`
+    #[cfg(feature = "mesh-editor")]
     pub fn filter_non_compute_vertices(
         &mut self,
         ids: &[&VertexId],
@@ -1065,6 +1084,7 @@ impl Part {
             }))
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub fn get_valid_vertex_ids(&self) -> impl Iterator<Item = VertexId> {
         (0..self.vertices.indexed.len())
             .map(VertexId::Index)
@@ -1082,12 +1102,14 @@ impl Part {
             )
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub fn get_valid_uv_ids(&self) -> impl Iterator<Item = UvId> {
         (0..self.uvs.indexed.len())
             .map(UvId::Index)
             .chain(self.uvs.named.keys().map(|n| UvId::Named(n.clone())))
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub fn get_valid_normal_ids(&self) -> impl Iterator<Item = NormalId> {
         (0..self.normals.indexed.len())
             .map(NormalId::Index)
@@ -1107,6 +1129,7 @@ impl Part {
 
     /// Deletes all listed vertices, and deletes all triangles that contain
     /// a deleted vertex, iteratively deletes compute vertices that reference deleted vertices
+    #[cfg(feature = "mesh-editor")]
     pub fn delete_vertices<L, V>(&mut self, ids: L)
     where
         L: AsRef<[V]>,
@@ -1167,6 +1190,7 @@ impl Part {
     }
 
     /// Deletes all listed uvs, and sets references to Index(0)
+    #[cfg(feature = "mesh-editor")]
     pub fn delete_uvs<L, U>(&mut self, ids: L)
     where
         L: AsRef<[U]>,
@@ -1196,6 +1220,7 @@ impl Part {
     }
 
     /// Deletes all listed normals, and sets references to Index(0)
+    #[cfg(feature = "mesh-editor")]
     pub fn delete_normals<L, N>(&mut self, ids: L)
     where
         L: AsRef<[N]>,
@@ -1226,6 +1251,7 @@ impl Part {
         }
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub fn delete_triangles_with_all_vertices<L, V>(&mut self, vertices: L)
     where
         L: AsRef<[V]>,
@@ -1239,6 +1265,7 @@ impl Part {
 
     /// If the given vertices make up any triangles, the triangles are deleted,
     /// otherwise a triangle strip is created
+    #[cfg(feature = "mesh-editor")]
     pub fn toggle_triangles(&mut self, vertices: &[VertexId], eye: Vec3) {
         if vertices.len() < 3 {
             return;
@@ -1290,6 +1317,7 @@ impl Part {
         }
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub fn flip_triangles(&mut self, vertices: &[VertexId]) {
         for tri in self.filter_triangles(vertices) {
             let [a, _, c] = &mut tri.vertices;
@@ -1298,6 +1326,7 @@ impl Part {
     }
 }
 
+#[cfg(feature = "mesh-editor")]
 impl Triangle {
     #[allow(clippy::too_many_arguments)]
     fn remap(
@@ -1462,12 +1491,13 @@ pub struct LightMesh {
 }
 
 impl LightMesh {
-    pub fn load(path: &Path) -> anyhow::Result<Self> {
+    pub fn load(path: &Path) -> Result<Self> {
         let raw = fs::read_to_string(path)?;
         let raw: LightMeshData = serde_json::from_str(&raw)?;
         Ok(raw.into())
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub fn rename_data(&mut self, swap: &DataSwap<String>) {
         for (key, _) in self.data.iter_mut2() {
             if *key == swap.from {
@@ -1486,6 +1516,7 @@ impl LightMesh {
         self.data.get(id.unwrap_or(&"default".to_string()))
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub fn rename_part(&mut self, swap: &DataSwap<String>) {
         for (name, _) in self.parts.iter_mut2() {
             if *name == swap.from {
@@ -1511,6 +1542,7 @@ impl LightMesh {
         self.part_names = part_names;
     }
 
+    #[cfg(feature = "mesh-editor")]
     pub fn snapshot_mesh_meta(&self, id: String) -> LightMeshMetaSnapshot {
         LightMeshMetaSnapshot {
             id,
@@ -1522,8 +1554,8 @@ impl LightMesh {
     }
 }
 
-impl From<crate::data::mesh::LightMeshData> for LightMesh {
-    fn from(value: crate::data::mesh::LightMeshData) -> Self {
+impl From<LightMeshData> for LightMesh {
+    fn from(value: LightMeshData) -> Self {
         let parts: IndexMap<String, Part> = value
             .parts
             .into_iter()
@@ -1547,7 +1579,7 @@ impl From<crate::data::mesh::LightMeshData> for LightMesh {
     }
 }
 
-impl From<LightMesh> for crate::data::mesh::LightMeshData {
+impl From<LightMesh> for LightMeshData {
     fn from(value: LightMesh) -> Self {
         Self {
             mesh_format: Default::default(),
@@ -1570,12 +1602,14 @@ impl From<LightMesh> for crate::data::mesh::LightMeshData {
     }
 }
 
+#[cfg(feature = "mesh-editor")]
 #[derive(Clone, Debug)]
 pub struct LightMeshSnapshot {
     pub id: String,
     pub mesh: Box<LightMesh>,
 }
 
+#[cfg(feature = "mesh-editor")]
 #[derive(Clone, Debug)]
 pub struct LightMeshPartSnapshot {
     pub id: String,
@@ -1583,12 +1617,14 @@ pub struct LightMeshPartSnapshot {
     pub part: Box<Part>,
 }
 
+#[cfg(feature = "mesh-editor")]
 #[derive(Clone, Debug)]
 pub struct LightMeshPlacementSnapshot {
     pub view_id: String,
     pub placements: Vec<Placement>,
 }
 
+#[cfg(feature = "mesh-editor")]
 #[derive(Clone, Debug)]
 pub struct LightMeshMetaSnapshot {
     pub id: String,

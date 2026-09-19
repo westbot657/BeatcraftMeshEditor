@@ -3,25 +3,37 @@ use std::collections::HashMap;
 use std::fs;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, mpsc};
+use std::sync::Arc;
+#[cfg(feature = "mesh-editor")]
+use std::sync::mpsc;
 
 use clap::Parser;
+#[cfg(feature = "mesh-editor")]
 use eframe::glow::{self, HasContext};
-use egui::{Align2, Color32, Frame, ImageSource, Layout, Sense, Ui};
+use egui::{Align2, Color32, ImageSource, Layout, Ui};
+#[cfg(feature = "mesh-editor")]
+use egui::{Frame, Sense};
 use fluent_templates::LanguageIdentifier;
+#[cfg(feature = "mesh-editor")]
 use indexmap::IndexMap;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use self::config::{AppData, KeyMaps, LocaleCache, RawAppData, RecentProject};
 use self::editor::{
-    App, CreateEnv, MINECRAFT_F, RoutineAction, SOURCE_CODE_F, Selection, SettingsPage,
-    SettingsScreen, UiState, ViewStyle, setup_fonts,
+    App, MINECRAFT_F, SOURCE_CODE_F, Selection, SettingsPage,
+    SettingsScreen, UiState, setup_fonts,
 };
+#[cfg(feature = "mesh-editor")]
+use self::editor::{CreateEnv, RoutineAction, ViewStyle};
+#[cfg(feature = "mesh-editor")]
 use self::widgets::MathDragValue;
 use fluent_templates::fluent_bundle::FluentValue;
+use crate::config::ProjectKind;
 
+#[cfg(feature = "mapper")]
 pub mod audio;
+#[cfg(feature = "mapper")]
 pub mod beatmap;
 pub mod config;
 pub mod data;
@@ -30,6 +42,7 @@ pub mod light_mesh;
 pub mod math_interp;
 pub mod renaming;
 pub mod render;
+#[cfg(feature = "mesh-editor")]
 pub mod scenes;
 pub mod ui_elements;
 pub mod widgets;
@@ -191,6 +204,7 @@ impl eframe::App for App {
 
         self.update_routines(gl);
 
+        #[cfg(feature = "mapper")]
         self.audio_system.update();
 
         let rd = RefDuper;
@@ -223,6 +237,7 @@ impl eframe::App for App {
             }
         } else {
             match self.context {
+                #[cfg(feature = "mesh-editor")]
                 editor::EditorContext::Model(model_editor_context) => match model_editor_context {
                     editor::ModelEditorContext::Environment => {
                         self.draw_environment_editor(ctx, frame, shift, ctrl)
@@ -230,6 +245,7 @@ impl eframe::App for App {
                     editor::ModelEditorContext::Saber => todo!(),
                     editor::ModelEditorContext::Notes => todo!(),
                 },
+                #[cfg(feature = "mapper")]
                 editor::EditorContext::Map(map_editor_context) => match map_editor_context {
                     editor::MapEditorContext::Beatmap => {
                         self.draw_beatmap_editor(ctx, frame, shift, ctrl, alt)
@@ -250,9 +266,11 @@ impl App {
         let gl = Arc::clone(&self.state.gl);
 
         self.click_cycle.reset();
+        #[cfg(feature = "mapper")]
         self.audio_system.remove_dead_audio();
         self.state.ui = UiState::default();
-        self.map_editor.map = None;
+        #[cfg(feature = "mapper")]
+        { self.map_editor.map = None; }
         self.editor.hovered = None;
         self.editor.mesh = None;
         self.editor.part = None;
@@ -267,7 +285,8 @@ impl App {
         self.assembly.hovered = None;
         self.assembly.handles.clear();
         self.selection = Selection::None;
-        self.mode = editor::EditorMode::View;
+        #[cfg(feature = "mesh-editor")]
+        { self.mode = editor::EditorMode::View; }
         self.context = editor::EditorContext::None;
         self.history.clear();
         self.rebuild_meshes(&gl);
@@ -394,30 +413,36 @@ impl App {
 
                                 ui.add_space(20.);
 
-                                key_label!("keygroup-mesh");
-                                key_row!(toggle_vertices, "key-toggle-vertices");
-                                key_row!(toggle_mesh_part_back, "key-toggle-mesh-part-back");
-                                key_row!(toggle_mesh_part_forward, "key-toggle-mesh-part-forward");
-                                key_row!(toggle_edit_component, "key-toggle-edit-component");
-                                key_row!(toggle_assembly_view, "key-toggle-assembly-view");
-                                key_row!(create_or_remove_triangles, "key-toggle-triangles");
-                                key_row!(flip_triangles, "key-flip-triangles");
-                                key_row!(create_vertex, "key-create-vertex");
+                                #[cfg(feature = "mesh-editor")]
+                                {
+                                    key_label!("keygroup-mesh");
+                                    key_row!(toggle_vertices, "key-toggle-vertices");
+                                    key_row!(toggle_mesh_part_back, "key-toggle-mesh-part-back");
+                                    key_row!(toggle_mesh_part_forward, "key-toggle-mesh-part-forward");
+                                    key_row!(toggle_edit_component, "key-toggle-edit-component");
+                                    key_row!(toggle_assembly_view, "key-toggle-assembly-view");
+                                    key_row!(create_or_remove_triangles, "key-toggle-triangles");
+                                    key_row!(flip_triangles, "key-flip-triangles");
+                                    key_row!(create_vertex, "key-create-vertex");
 
-                                ui.add_space(20.);
+                                    ui.add_space(20.);
+                                }
 
-                                key_label!("keygroup-beatmap");
-                                key_row!(toggle_map_playback, "key-toggle-map-playback");
-                                key_row!(rotate_map_grid_left, "key-rotate-grid-left");
-                                key_row!(rotate_map_grid_right, "key-rotate-grid-right");
-                                key_row!(map_fly_forward, "key-fly-forward");
-                                key_row!(map_fly_backward, "key-fly-backward");
-                                key_row!(map_fly_left, "key-fly-left");
-                                key_row!(map_fly_right, "key-fly-right");
-                                key_row!(map_fly_up, "key-fly-up");
-                                key_row!(map_fly_down, "key-fly-down");
+                                #[cfg(feature = "mapper")]
+                                {
+                                    key_label!("keygroup-beatmap");
+                                    key_row!(toggle_map_playback, "key-toggle-map-playback");
+                                    key_row!(rotate_map_grid_left, "key-rotate-grid-left");
+                                    key_row!(rotate_map_grid_right, "key-rotate-grid-right");
+                                    key_row!(map_fly_forward, "key-fly-forward");
+                                    key_row!(map_fly_backward, "key-fly-backward");
+                                    key_row!(map_fly_left, "key-fly-left");
+                                    key_row!(map_fly_right, "key-fly-right");
+                                    key_row!(map_fly_up, "key-fly-up");
+                                    key_row!(map_fly_down, "key-fly-down");
 
-                                ui.add_space(20.);
+                                    ui.add_space(20.);
+                                }
 
                                 key_label!("keygroup-debug");
                                 key_row!(rebuild_meshes, "key-rebuild-meshes");
@@ -861,6 +886,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "mesh-editor")]
     fn draw_environment_editor(
         &mut self,
         ctx: &egui::Context,
@@ -1308,6 +1334,7 @@ impl App {
     }
 }
 
+#[cfg(feature = "mesh-editor")]
 pub fn close_environment(s: &mut App, gl: &glow::Context) {
     let meshes = std::mem::take(&mut s.view.meshes);
     for (_, vm) in meshes {
@@ -1329,26 +1356,31 @@ pub fn close_environment(s: &mut App, gl: &glow::Context) {
     }
 }
 
+#[cfg(feature = "mesh-editor")]
 const UV_VERT_COLORS: [egui::Color32; 3] = [
     egui::Color32::from_rgb(220, 80, 80),
     egui::Color32::from_rgb(80, 200, 120),
     egui::Color32::from_rgb(80, 150, 220),
 ];
 
+#[cfg(feature = "mesh-editor")]
 const UV_HIT_RADIUS: f32 = 6.0;
 
+#[cfg(feature = "mesh-editor")]
 fn uv_to_screen(uv: glam::Vec2, rect: egui::Rect, pan: glam::Vec2, zoom: f32) -> egui::Pos2 {
     let origin = rect.min + egui::vec2(rect.width() * 0.5, rect.height() * 0.5);
     let centered = (uv - glam::Vec2::splat(0.5) - pan) * zoom;
     origin + egui::vec2(centered.x, centered.y)
 }
 
+#[cfg(feature = "mesh-editor")]
 fn screen_to_uv(pos: egui::Pos2, rect: egui::Rect, pan: glam::Vec2, zoom: f32) -> glam::Vec2 {
     let origin = rect.min + egui::vec2(rect.width() * 0.5, rect.height() * 0.5);
     let delta = pos - origin;
     glam::Vec2::new(delta.x, delta.y) / zoom + pan + glam::Vec2::splat(0.5)
 }
 
+#[cfg(feature = "mesh-editor")]
 fn snap_uv(uv: glam::Vec2, tex_w: u32, tex_h: u32, modifiers: &egui::Modifiers) -> glam::Vec2 {
     let divisor = match (modifiers.ctrl, modifiers.shift) {
         (true, true) => 8.0,

@@ -71,7 +71,6 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         }
                         if ui.button(s.data.locale.get("button-edit")).clicked() {
                             s.editor.mesh = Some(id.clone());
-                            s.last_mode = s.mode;
                             s.mode = editor::EditorMode::Assembly;
                             s2.rebuild_meshes(gl);
                             return true;

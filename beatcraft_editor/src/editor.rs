@@ -12,18 +12,27 @@ use glam::{IVec3, Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use tracing::Level;
 
+#[cfg(feature = "mapper")]
 use crate::audio::AudioSystem;
+#[cfg(feature = "mapper")]
 use crate::beatmap::BeatmapEditor;
+#[cfg(feature = "mapper")]
 use crate::data::map_editing::ObjectSource;
 use beatmap_core::{BombNote, ChainNote, ColorNote, ObjectType, Obstacle, RuntimeData};
 use crate::config::{AppData, KeyMaps};
 use crate::data::mesh::{
     EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData,
-    MeshType, NormalId, SessionData, SpectrogramData, TypeData, UvId, VertexId,
+    MeshType, SessionData, SpectrogramData, TypeData, VertexId,
 };
+#[cfg(feature = "mesh-editor")]
+use crate::data::mesh::{NormalId, UvId};
 use crate::light_mesh::{
-    LightMesh, LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot,
-    LightMeshSnapshot, Part,
+    LightMesh, Part,
+};
+#[cfg(feature = "mesh-editor")]
+use crate::light_mesh::{
+    LightMeshMetaSnapshot, LightMeshPartSnapshot, LightMeshPlacementSnapshot,
+    LightMeshSnapshot,
 };
 use crate::render::{GpuMesh, InstanceData, LIGHT_COLORS, Renderer};
 use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
@@ -84,6 +93,7 @@ impl Default for Camera {
     }
 }
 
+#[cfg(feature = "mesh-editor")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelEditorContext {
     Environment,
@@ -91,6 +101,7 @@ pub enum ModelEditorContext {
     Notes,
 }
 
+#[cfg(feature = "mesh-editor")]
 impl ModelEditorContext {
     pub fn name(&self) -> &'static str {
         match self {
@@ -101,6 +112,7 @@ impl ModelEditorContext {
     }
 }
 
+#[cfg(feature = "mapper")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapEditorContext {
     Beatmap,
@@ -110,25 +122,20 @@ pub enum MapEditorContext {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum EditorContext {
+    #[cfg(feature = "mesh-editor")]
     Model(ModelEditorContext),
+    #[cfg(feature = "mapper")]
     Map(MapEditorContext),
     #[default]
     None,
 }
 
+#[cfg(feature = "mesh-editor")]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum EditorMode {
     View,
     Assembly,
     Edit,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum ToolMode {
-    Auto,
-    Move,
-    Rotate,
-    Select,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -612,6 +619,7 @@ pub struct State {
     pub view_style: ViewStyle,
 }
 
+#[cfg(feature = "mesh-editor")]
 pub struct PartCollapseToggles {
     pub placements: bool,
     pub data: bool,
@@ -622,6 +630,7 @@ pub struct PartCollapseToggles {
     pub datas: HashMap<usize, bool>,
 }
 
+#[cfg(feature = "mesh-editor")]
 impl Default for PartCollapseToggles {
     fn default() -> Self {
         Self {
@@ -636,6 +645,7 @@ impl Default for PartCollapseToggles {
     }
 }
 
+#[cfg(feature = "mesh-editor")]
 pub struct EditCollapsed {
     pub i_vertices: bool,
     pub n_vertices: bool,
@@ -647,6 +657,7 @@ pub struct EditCollapsed {
     pub c_normals: bool,
 }
 
+#[cfg(feature = "mesh-editor")]
 impl Default for EditCollapsed {
     fn default() -> Self {
         Self {
@@ -662,12 +673,13 @@ impl Default for EditCollapsed {
     }
 }
 
+#[cfg(feature = "mesh-editor")]
 #[derive(Debug, Default, PartialEq, Eq)]
 pub enum WorkingRenameKey {
     /// No name is being edited currently
     #[default]
     None,
-    /// A Data Tag is being edited currently, id'd by original name
+    /// A Data Tag is being edited currently, ID'd by the original name
     DataTag(String),
     NamedVert(String),
     CompVert(String),
@@ -690,6 +702,7 @@ pub enum RoutineAction {
 type PopupCallback = Box<dyn Fn(&mut App, &egui::Ui) -> PopupResponse>;
 type RoutineCallback = Box<dyn Fn(&mut App, &Context) -> RoutineAction>;
 
+#[cfg(feature = "mesh-editor")]
 pub struct MirrorEditorState {
     pub selected: Vec<(usize, usize)>, // (tri_index, vertex_index_within_tri)
     pub active_tri: usize,
@@ -699,6 +712,7 @@ pub struct MirrorEditorState {
     pub drag_start_pos: Option<egui::Pos2>,
 }
 
+#[cfg(feature = "mesh-editor")]
 impl Default for MirrorEditorState {
     fn default() -> Self {
         Self {
@@ -712,6 +726,7 @@ impl Default for MirrorEditorState {
     }
 }
 
+#[cfg(feature = "mesh-editor")]
 pub struct CreateEnv {
     /// Directory to the env.json that beatcraft uses.
     pub env_path: PathBuf,
@@ -727,28 +742,46 @@ pub struct UiState {
     /// callback for custom popup window logic
     pub custom_popup: Vec<(String, PopupCallback)>,
     /// Map<viewmesh id, Vec<view placement collapse state>>
+    #[cfg(feature = "mesh-editor")]
     pub collapsed: HashMap<String, Vec<bool>>,
     /// Map<viewmesh id, Vec<rotation display modes>>
+    #[cfg(feature = "mesh-editor")]
     pub view_rotation_modes: HashMap<String, Vec<[RotationDisplayMode; 4]>>,
     /// Map<Mesh file, part collapse states>
+    #[cfg(feature = "mesh-editor")]
     pub assembly_collapsed: HashMap<PathBuf, PartCollapseToggles>,
     /// global vertices/uvs/normals section collapse states
+    #[cfg(feature = "mesh-editor")]
     pub edit_collpased: EditCollapsed,
     /// Currently-modifying item name, paired with working_key
+    #[cfg(feature = "mesh-editor")]
     pub working_name: Option<String>,
+    #[cfg(feature = "mesh-editor")]
     pub working_key: WorkingRenameKey,
+    #[cfg(feature = "mesh-editor")]
     pub show_uv_window: bool,
+    #[cfg(feature = "mesh-editor")]
     pub selected_group: u8,
+    #[cfg(feature = "mesh-editor")]
     pub selected_tris: HashMap<u8, usize>,
+    #[cfg(feature = "mesh-editor")]
     pub uv_pan: Vec2,
+    #[cfg(feature = "mesh-editor")]
     pub uv_zoom: f32,
+    #[cfg(feature = "mesh-editor")]
     pub hovered_uv: Option<(usize, usize)>,
+    #[cfg(feature = "mesh-editor")]
     pub dragging_uv: Option<(usize, usize)>,
     pub texture_cache: HashMap<String, egui::TextureHandle>,
+    #[cfg(feature = "mesh-editor")]
     pub spectrogram_mode: RotationDisplayMode,
+    #[cfg(feature = "mesh-editor")]
     pub spectrogram_collapse: bool,
+    #[cfg(feature = "mesh-editor")]
     pub meshes_collapse: bool,
+    #[cfg(feature = "mesh-editor")]
     pub show_mirror_window: bool,
+    #[cfg(feature = "mesh-editor")]
     pub mirror_editor: MirrorEditorState,
 }
 
@@ -758,12 +791,14 @@ pub struct PartId {
     pub name: String,
 }
 
+#[cfg(feature = "mesh-editor")]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DataSwap<T: std::fmt::Debug + PartialEq + Eq + Clone> {
     pub from: T,
     pub to: T,
 }
 
+#[cfg(feature = "mesh-editor")]
 impl<T: std::fmt::Debug + PartialEq + Eq + Clone> DataSwap<T> {
     fn invert(self) -> Self {
         Self {
@@ -773,6 +808,7 @@ impl<T: std::fmt::Debug + PartialEq + Eq + Clone> DataSwap<T> {
     }
 }
 
+#[cfg(feature = "mesh-editor")]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Rename {
     DataTag {
@@ -797,6 +833,7 @@ pub enum Rename {
     },
 }
 
+#[cfg(feature = "mesh-editor")]
 impl Rename {
     pub fn invert(self) -> Self {
         match self {
@@ -826,24 +863,42 @@ impl Rename {
 
 #[derive(Debug)]
 pub enum HistoryEntry {
+    MultiStep(Vec<HistoryEntry>),
+
+    #[cfg(feature = "mesh-editor")]
     Mesh(LightMeshSnapshot),
+    #[cfg(feature = "mesh-editor")]
     MeshPart(LightMeshPartSnapshot),
+    #[cfg(feature = "mesh-editor")]
     MeshMeta(LightMeshMetaSnapshot),
+    #[cfg(feature = "mesh-editor")]
     MeshPlacement(LightMeshPlacementSnapshot),
+    #[cfg(feature = "mesh-editor")]
     ViewPlacement(ViewPlacementsSnapshot),
+    #[cfg(feature = "mesh-editor")]
     Rename(Rename),
-    MutliStep(Vec<HistoryEntry>),
+    #[cfg(feature = "mesh-editor")]
     Mirror(Option<String>, Option<PathBuf>, Vec<Vec2>),
+    #[cfg(feature = "mesh-editor")]
     Spectrogram(Option<SpectrogramData>),
+    #[cfg(feature = "mesh-editor")]
     FogHeights(Option<[f32; 2]>),
 
+    #[cfg(feature = "mapper")]
     BeatmapInfo(Box<Option<InfoFile>>),
+    #[cfg(feature = "mapper")]
     BeatmapAudioData(Box<Option<AudioDataFile>>),
+    #[cfg(feature = "mapper")]
     BeatmapNotes(Vec<ColorNote<ObjectSource>>),
+    #[cfg(feature = "mapper")]
     BeatmapBombs(Vec<BombNote<ObjectSource>>),
+    #[cfg(feature = "mapper")]
     BeatmapObstacles(Vec<Obstacle<ObjectSource>>),
+    #[cfg(feature = "mapper")]
     BeatmapChains(Vec<ChainNote<ObjectSource>>),
+    #[cfg(feature = "mapper")]
     BeatmapArcs(Vec<beatmap_core::Arc<ObjectSource>>),
+    #[cfg(feature = "mapper")]
     BeatmapRuntimeData(RuntimeData),
 }
 
@@ -880,6 +935,14 @@ impl History {
         entry: HistoryEntry,
     ) -> HistoryEntry {
         match entry {
+            HistoryEntry::MultiStep(mut steps) => {
+                let mut out = Vec::new();
+                while let Some(step) = steps.pop() {
+                    out.push(self.process_history(editor, gl, step));
+                }
+                HistoryEntry::MultiStep(out)
+            }
+            #[cfg(feature = "mesh-editor")]
             HistoryEntry::Mesh(LightMeshSnapshot { id, mut mesh }) => {
                 let m = editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap();
                 std::mem::swap(&mut m.data, &mut *mesh);
@@ -897,6 +960,7 @@ impl History {
                     .rebuild_with_maps(gl, &texture_paths, &atlas_map);
                 HistoryEntry::Mesh(LightMeshSnapshot { id, mesh })
             }
+            #[cfg(feature = "mesh-editor")]
             HistoryEntry::MeshPart(LightMeshPartSnapshot { id, name, part }) => {
                 let m = editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap();
                 let current = m.data.parts.insert(name.clone(), *part).unwrap();
@@ -918,6 +982,7 @@ impl History {
                     part: Box::new(current),
                 })
             }
+            #[cfg(feature = "mesh-editor")]
             HistoryEntry::MeshMeta(LightMeshMetaSnapshot {
                 id,
                 mut credits,
@@ -951,6 +1016,7 @@ impl History {
                     cull,
                 })
             }
+            #[cfg(feature = "mesh-editor")]
             HistoryEntry::MeshPlacement(LightMeshPlacementSnapshot {
                 view_id,
                 mut placements,
@@ -980,6 +1046,7 @@ impl History {
                     placements,
                 })
             }
+            #[cfg(feature = "mesh-editor")]
             HistoryEntry::ViewPlacement(ViewPlacementsSnapshot { id, mut placements }) => {
                 let m = editor.view.meshes.get_mut(&id).unwrap().as_mut().unwrap();
                 mem::swap(&mut placements, &mut m.view_placements);
@@ -997,6 +1064,7 @@ impl History {
                 editor.upload_selection_points(gl);
                 HistoryEntry::ViewPlacement(ViewPlacementsSnapshot { id, placements })
             }
+            #[cfg(feature = "mesh-editor")]
             HistoryEntry::Rename(rename) => {
                 editor
                     .rename(rename.clone())
@@ -1004,27 +1072,24 @@ impl History {
 
                 HistoryEntry::Rename(rename.invert())
             }
-            HistoryEntry::MutliStep(mut steps) => {
-                let mut out = Vec::new();
-                while let Some(step) = steps.pop() {
-                    out.push(self.process_history(editor, gl, step));
-                }
-                HistoryEntry::MutliStep(out)
-            }
+            #[cfg(feature = "mesh-editor")]
             HistoryEntry::Mirror(mut id, mut path, mut vec2s) => {
                 std::mem::swap(&mut id, &mut editor.view.mirror_id);
                 std::mem::swap(&mut path, &mut editor.view.mirror_path);
                 std::mem::swap(&mut vec2s, &mut editor.view.mirror_geometry);
                 HistoryEntry::Mirror(id, path, vec2s)
             }
+            #[cfg(feature = "mesh-editor")]
             HistoryEntry::Spectrogram(mut spectrogram_data) => {
                 std::mem::swap(&mut spectrogram_data, &mut editor.view.spectrogram);
                 HistoryEntry::Spectrogram(spectrogram_data)
             }
+            #[cfg(feature = "mesh-editor")]
             HistoryEntry::FogHeights(mut heights) => {
                 std::mem::swap(&mut heights, &mut editor.view.fog_heights);
                 HistoryEntry::FogHeights(heights)
             }
+            #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapInfo(mut info_file) => {
                 if let Some(map) = editor.map_editor.map.as_mut() {
                     std::mem::swap(&mut *info_file, &mut map.info);
@@ -1033,6 +1098,7 @@ impl History {
                     panic!("History is meant to be cleared after closing/chainging active map");
                 }
             }
+            #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapAudioData(mut audio_data_file) => {
                 if let Some(map) = editor.map_editor.map.as_mut() {
                     std::mem::swap(&mut *audio_data_file, &mut map.audio_info);
@@ -1041,6 +1107,7 @@ impl History {
                     panic!("History is meant to be cleared after closing/changing active map");
                 }
             }
+            #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapNotes(mut color_notes) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
                     && let Some(controller) = map.controller.as_mut()
@@ -1051,6 +1118,7 @@ impl History {
                     panic!("History is meant to be cleared after closing/changing active map");
                 }
             }
+            #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapBombs(mut bomb_notes) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
                     && let Some(controller) = map.controller.as_mut()
@@ -1061,6 +1129,7 @@ impl History {
                     panic!("History is meant to be cleared after closing/changing active map");
                 }
             }
+            #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapObstacles(mut obstacles) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
                     && let Some(controller) = map.controller.as_mut()
@@ -1071,6 +1140,7 @@ impl History {
                     panic!("History is meant to be cleared after closing/changing active map");
                 }
             }
+            #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapChains(mut chain_notes) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
                     && let Some(controller) = map.controller.as_mut()
@@ -1081,6 +1151,7 @@ impl History {
                     panic!("History is meant to be cleared after closing/changing active map");
                 }
             }
+            #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapArcs(mut arcs) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
                     && let Some(controller) = map.controller.as_mut()
@@ -1091,6 +1162,7 @@ impl History {
                     panic!("History is meant to be cleared after closing/chainging active map");
                 }
             }
+            #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapRuntimeData(mut runtime_data) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
                     && let Some(controller) = map.controller.as_mut()
@@ -1126,13 +1198,12 @@ impl History {
 
 pub struct App {
     pub title: &'static str,
+    #[cfg(feature = "mesh-editor")]
     pub mode: EditorMode,
-    pub last_mode: EditorMode,
     pub context: EditorContext,
-    pub tool: ToolMode,
-    pub last_tool: ToolMode,
     pub render: Render,
     pub editor: Editor,
+    #[cfg(feature = "mapper")]
     pub map_editor: BeatmapEditor,
     pub selection: Selection,
     pub drag: Drag,
@@ -1142,6 +1213,7 @@ pub struct App {
     pub assembly: Assembly,
     pub history: History,
     pub data: AppData,
+    #[cfg(feature = "mapper")]
     pub audio_system: AudioSystem,
 }
 
@@ -1221,9 +1293,11 @@ impl App {
             }
         };
 
+        #[cfg(feature = "mapper")]
         let mut audio_system = AudioSystem::new(Arc::clone(&gl2)).unwrap();
         let data = load_app_data().unwrap_or_else(|_| Default::default());
 
+        #[cfg(feature = "mapper")]
         let map_editor = BeatmapEditor::new(
             &mut audio_system,
             None,
@@ -1235,11 +1309,9 @@ impl App {
 
         let mut s = Self {
             title: "Beatcraft Mesh Editor",
+            #[cfg(feature = "mesh-editor")]
             mode: EditorMode::View,
-            last_mode: EditorMode::View,
             context: EditorContext::None,
-            tool: ToolMode::Auto,
-            last_tool: ToolMode::Auto,
             render: Render {
                 renderer,
                 assembly: None,
@@ -1256,6 +1328,7 @@ impl App {
                 part: None,
                 hovered: None,
             },
+            #[cfg(feature = "mapper")]
             map_editor,
             selection: Selection::None,
             drag: Drag {
@@ -1319,6 +1392,7 @@ impl App {
                 limit: 200,
             },
             data,
+            #[cfg(feature = "mapper")]
             audio_system,
         };
 
@@ -1333,6 +1407,7 @@ impl App {
             let mut add = IndexMap::new();
             add.insert(name, p.clone());
             if s.load_meshes(add, &gl2).is_err() {
+                #[cfg(feature = "mapper")]
                 let _ = s.map_editor.load(
                     &mut s.audio_system,
                     p,
@@ -1395,11 +1470,14 @@ impl App {
     }
 
     pub fn cam(&mut self) -> &mut Camera {
-        match self.mode {
+        #[cfg(feature = "mesh-editor")]
+        return match self.mode {
             EditorMode::View => &mut self.view.camera,
             EditorMode::Assembly => &mut self.editor.camera,
             EditorMode::Edit => &mut self.editor.camera,
-        }
+        };
+        #[cfg(not(feature = "mesh-editor"))]
+        &mut self.view.camera
     }
 
     pub fn rebuild_meshes(&mut self, gl: &Context) {
@@ -1473,6 +1551,7 @@ impl App {
         }
 
         if ctx.input_mut(|i| self.data.keymaps.save.pressed(i)) {
+            #[cfg(feature = "mesh-editor")]
             match self.mode {
                 EditorMode::View => {
                     if let Err(e) = self.save_session() {
@@ -1517,8 +1596,8 @@ impl App {
         if ctx.input_mut(|i| self.data.keymaps.toggle_render_style.pressed(i)) {
             self.state.view_style.cycle();
         }
+        #[cfg(feature = "mesh-editor")]
         if ctx.input_mut(|i| self.data.keymaps.toggle_assembly_view.pressed(i)) {
-            self.last_mode = self.mode;
             self.mode = EditorMode::View;
             self.selection = Selection::None;
             self.upload_selection_points(gl);
@@ -1526,6 +1605,7 @@ impl App {
 
         if ctx.input_mut(|i| self.data.keymaps.deselect.pressed(i)) {
             self.selection = Selection::None;
+            #[cfg(feature = "mesh-editor")]
             self.state.ui.mirror_editor.selected.clear();
             self.upload_selection_points(gl);
         }
@@ -1535,6 +1615,7 @@ impl App {
         }
 
         match self.context {
+            #[cfg(feature = "mesh-editor")]
             EditorContext::Model(_) => match self.mode {
                 EditorMode::View => {
                     if input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace) {
@@ -1552,7 +1633,6 @@ impl App {
                 }
                 EditorMode::Assembly => {
                     if ctx.input_mut(|i| self.data.keymaps.toggle_edit_component.pressed(i)) {
-                        self.last_mode = self.mode;
                         self.selection = Selection::None;
                         self.upload_selection_points(gl);
                         self.mode = EditorMode::Edit;
@@ -1567,7 +1647,6 @@ impl App {
                 }
                 EditorMode::Edit => {
                     if ctx.input_mut(|i| self.data.keymaps.toggle_edit_component.pressed(i)) {
-                        self.last_mode = self.mode;
                         self.selection = Selection::None;
                         self.upload_selection_points(gl);
                         self.mode = EditorMode::Assembly;
@@ -1656,6 +1735,7 @@ impl App {
                     }
                 }
             },
+            #[cfg(feature = "mapper")]
             #[allow(clippy::collapsible_match, clippy::collapsible_if)]
             EditorContext::Map(MapEditorContext::Beatmap) => {
                 if ctx.input_mut(|i| self.data.keymaps.toggle_map_playback.pressed(i)) {
@@ -1727,8 +1807,11 @@ impl App {
         };
 
         if resp.hovered() {
+            #[cfg(feature = "mapper")]
             let is_timeline_scroll =
                 matches!(self.context, EditorContext::Map(MapEditorContext::Beatmap)) && !alt;
+            #[cfg(not(feature = "mapper"))]
+            let is_timeline_scroll = false;
             let scroll = ctx.input(|i| {
                 if shift {
                     i.raw_scroll_delta.x
@@ -1738,6 +1821,7 @@ impl App {
             });
             if scroll != 0. {
                 if is_timeline_scroll {
+                    #[cfg(feature = "mapper")]
                     self.render
                         .renderer
                         .beatmap
@@ -1756,6 +1840,7 @@ impl App {
 
             #[allow(clippy::single_match)]
             match self.context {
+                #[cfg(feature = "mesh-editor")]
                 EditorContext::Model(ModelEditorContext::Environment) => {
                     let rd = RefDuper;
                     let self2 = unsafe { rd.detach_mut_ref(self) };
@@ -1776,6 +1861,7 @@ impl App {
                         self.rebuild_meshes(gl);
                     }
                 }
+                #[cfg(feature = "mapper")]
                 EditorContext::Map(MapEditorContext::Beatmap) => {
                     let move_speed = if shift {
                         if alt { 0.0125 } else { 0.125 }
@@ -2002,6 +2088,7 @@ impl App {
                 .map(|sp| sx0 <= sp.x && sp.x <= sx1 && sy0 <= sp.y && sp.y <= sy1)
                 .unwrap_or(false)
         };
+        #[cfg(feature = "mesh-editor")]
         match self.mode {
             EditorMode::Edit => {
                 if let Some((_, _, part)) = self.get_current_part() {
@@ -2109,6 +2196,7 @@ impl App {
     }
 
     /// Renames the specified data and updates history
+    #[cfg(feature = "mesh-editor")]
     pub fn rename(&mut self, rename: Rename) -> anyhow::Result<()> {
         match &rename {
             Rename::DataTag { view_id, swap } => {
@@ -2261,6 +2349,7 @@ impl App {
         let vp = self.cam().vp(w, h);
 
         self.drag.state = DragState::Orbit;
+        #[cfg(feature = "mesh-editor")]
         match self.mode {
             EditorMode::View => {}
             EditorMode::Assembly => {
@@ -2359,6 +2448,7 @@ impl App {
         let (w, h) = size;
 
         let vp = self.cam().vp(w, h);
+        #[cfg(feature = "mesh-editor")]
         match self.mode {
             EditorMode::View => {}
             EditorMode::Assembly => {
@@ -2781,8 +2871,11 @@ impl Drop for App {
             }
 
             self.context = EditorContext::None;
-            self.map_editor.map = None;
-            self.audio_system.audio_refs.clear();
+            #[cfg(feature = "mapper")]
+            {
+                self.map_editor.map = None;
+                self.audio_system.audio_refs.clear();
+            }
         }
     }
 }
