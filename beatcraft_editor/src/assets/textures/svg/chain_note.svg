@@ -1,0 +1,18 @@
+<svg
+  viewBox="0 0 50 50"
+  xmlns="http://www.w3.org/2000/svg">
+    <mask id="clip" fill="#FFFFFF" stroke="#FFFFFF" maskUnits="userSpaceOnUse">
+        <rect x="0" y="0" width="50" height="25" />
+        <rect x="0" y="29" width="50" height="3" />
+        <rect x="0" y="36" width="50" height="3" />
+        <rect x="0" y="43" width="50" height="3" />
+    </mask>
+    <g mask="url(#clip)">
+        <path stroke="#272727" stroke-width="10" fill="#272727" stroke-linejoin="round"
+            d = "M 5 5 L 45 5 L 45 60 L 5 60 Z"
+        />
+        <path stroke="#202020" stroke-width="5" fill="#202020" stroke-linejoin="round"
+            d = "M 10 10 L 40 10 L 25 18 Z"
+        />
+    </g>
+</svg>

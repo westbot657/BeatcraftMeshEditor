@@ -1,0 +1,17 @@
+<svg
+  viewBox="0 0 200 200"
+  xmlns="http://www.w3.org/2000/svg">
+    <g opacity="0.5">
+        <rect x="0" y="0" width="200" height="200" fill="#000000" />
+        <path fill="#00000000" stroke-width="15" stroke="#FFFFFF" stroke-linecap="round"
+            d = "M 180 90
+            L 180 170 A 10 10 0 0 1 170 180
+            L 30 180 A 10 10 0 0 1 20 170
+            L 20 30 A 10 10 0 0 1 30 20
+            L 110 20"
+        />
+        <path fill="#FFFFFF" stroke="#FFFFFF" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"
+            d = "M 40 160 L 40 120 L 150 10 L 190 50 L 80 160 Z"
+        />
+    </g>
+</svg>

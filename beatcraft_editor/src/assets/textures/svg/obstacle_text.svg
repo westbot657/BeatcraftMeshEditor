@@ -1,0 +1,13 @@
+<svg
+  viewBox="0 0 50 50"
+  xmlns="http://www.w3.org/2000/svg">
+    <path stroke-width="0" fill="#202020"
+        d = "M 10 15 L 25 5 L 40 5 L 40 35 L 25 45 L 10 45 Z"
+    />
+    <path stroke="#272727" stroke-width="3" stroke-linejoin="round" fill="#00000000" stroke-linecap="round"
+        d = "M 10 15 L 10 45 L 25 45 L 25 15 Z
+             M 10 15 L 25 5 L 40 5 L 25 15
+             M 40 5 L 40 35 L 25 45"
+    />
+    <text stroke="#444444" fill="#444444" x="14" y="48" style="font-size:20;">Abc</text>
+</svg>

@@ -4,6 +4,7 @@ use std::sync::mpsc;
 use std::thread;
 
 use eframe::glow::{self, Context, HasContext};
+use egui::ImageSource;
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 
@@ -17,13 +18,14 @@ use crate::editor::{
 };
 use crate::light_mesh::LightMesh;
 use crate::render::{GpuMesh, GridType, InstanceData, MeshDrawCall, Renderer};
+use crate::widgets::ImageCard;
 use crate::{
     DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, MISSING_EDITOR_ICON, RefDuper, UnsafeMutRef, editor,
     get_data_folder,
 };
 
 use self::object::{BeatmapControllerExt, GameObjectExt};
-use self::data::obstacle_font::ObstacleFontData;
+use self::data::obstacle_font::{HorizontalAlign, ObstacleFont, ObstacleFontData, TextLayout, VerticalAlign};
 use bs_mapping_data::custom_info_v2::DifficultyBeatmapCustomDataV2;
 use bs_mapping_data::info_v2::{CharacteristicSetV2, DifficultyBeatmapV2};
 use bs_mapping_data::{ArcMidAnchorMode, AudioDataFile, BeatmapFile, Color, CutDirection, InfoFile, MapCharacteristic, MapDifficulty};
@@ -36,6 +38,28 @@ pub mod object;
 pub mod render;
 #[cfg(test)]
 pub mod tests;
+
+pub static COLOR_NOTE_TOOL_ICON: ImageSource =
+    egui::include_image!("../assets/textures/svg/color_note.svg");
+pub static BOMB_NOTE_TOOL_ICON: ImageSource =
+    egui::include_image!("../assets/textures/svg/bomb.svg");
+pub static CHAIN_NOTE_TOOL_ICON: ImageSource =
+    egui::include_image!("../assets/textures/svg/chain_note.svg");
+
+pub static OBSTACLE_TOOL_ICON: ImageSource =
+    egui::include_image!("../assets/textures/svg/obstacle.svg");
+pub static ARC_TOOL_ICON: ImageSource =
+    egui::include_image!("../assets/textures/svg/arc.svg");
+pub static OBSTACLE_TEXT_TOOL_ICON: ImageSource =
+    egui::include_image!("../assets/textures/svg/obstacle_text.svg");
+
+pub static EDIT_ICON: ImageSource =
+    egui::include_image!("../assets/textures/svg/edit_icon.svg");
+pub static OPEN_MAP_ICON: ImageSource =
+    egui::include_image!("../assets/textures/svg/open_map_icon.svg");
+pub static CREATE_MAP_ICON: ImageSource =
+    egui::include_image!("../assets/textures/svg/create_map_icon.svg");
+
 
 pub struct V4BeatmapProjectDiffData {
     pub mappers: Vec<String>,
@@ -118,16 +142,19 @@ pub enum PlacementObjectType {
     Text,
 }
 
+#[derive(Default)]
 pub struct ColorNotePlacementData {
     pub note_type: Color,
     pub cut_direction: CutDirection,
     pub color: Option<Vec4>,
 }
 
+#[derive(Default)]
 pub struct BombPlacementData {
     pub color: Option<Vec4>,
 }
 
+#[derive(Default)]
 pub struct ObstaclePlacementData {
     pub width: f32,
     pub height: f32,
@@ -136,6 +163,7 @@ pub struct ObstaclePlacementData {
     pub color: Option<Vec4>,
 }
 
+#[derive(Default)]
 pub struct ChainPlacementData {
     pub note_type: Color,
     pub cut_direction: CutDirection,
@@ -143,6 +171,7 @@ pub struct ChainPlacementData {
     pub color: Option<Vec4>,
 }
 
+#[derive(Default)]
 pub struct ArcPlacementData {
     pub note_type: Color,
     pub mid_anchor_mode: ArcMidAnchorMode,
@@ -157,12 +186,43 @@ pub struct TextPlacementData {
     pub font: ObstacleFontData,
 }
 
+impl Default for TextPlacementData {
+    fn default() -> Self {
+        Self {
+            text: Default::default(),
+            scale: 1.,
+            duration: 1.,
+            length: None,
+            font: ObstacleFontData {
+                font: ObstacleFont::Simple,
+                layout: TextLayout::Centered,
+                horizontal_align: HorizontalAlign::Center,
+                vertical_align: VerticalAlign::Center,
+                letter_spacing: 0.8,
+                word_spacing: 0.8,
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct PlacementData {
+    pub color_note: ColorNotePlacementData,
+    pub bomb: BombPlacementData,
+    pub obstacle: ObstaclePlacementData,
+    pub chain: ChainPlacementData,
+    pub arc: ArcPlacementData,
+    pub text: TextPlacementData,
+}
+
 pub struct BeatmapEditor {
     pub map: Option<BeatmapProject>,
     pub mesh_set: BeatmapMeshSet,
     pub scroll_step: f32,
     pub grid_snap: bool,
     pub editor_data: GlobalEditingData,
+    pub selected_placement_type: PlacementObjectType,
+    pub placement_data: PlacementData,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -258,6 +318,8 @@ impl BeatmapEditor {
             scroll_step: 0.125,
             grid_snap: true,
             editor_data: Default::default(),
+            selected_placement_type: PlacementObjectType::ColorNote,
+            placement_data: Default::default(),
         };
 
         if let Some(map) = map {
@@ -490,6 +552,69 @@ impl App {
                         });
                     }
                 });
+                let ml = self.data.locale.get("menu-label").to_string();
+                ui.menu_button(ml.to_string(), |ui| {
+                    if ui.button(ml).clicked() {
+                        tracing::debug!(target: DB_LOGIC, "Returning to menu");
+                        self.context = EditorContext::None;
+                        self.render.renderer.beatmap.seek(0.);
+                        self.history.clear();
+                        if let Some(map) = self.map_editor.map.take()
+                            && let Some(audio) = map.audio
+                        {
+                            audio.stop();
+                            drop(audio);
+                            self.audio_system.remove_dead_audio();
+                            self.state.playback_speed = 1.;
+                        }
+                    }
+                    let close_map = self.data.locale.get("close-map").to_string();
+                    let close_diff = self.data.locale.get("close-difficulty").to_string();
+                    'map_scope: {
+                        let map = self.map_editor.map.as_mut();
+                        'btn1: {
+                            if ui.add_enabled(
+                                map.is_some(),
+                                egui::Button::new(close_map)
+                            ).clicked() {
+                                let Some(map) = map else { break 'btn1 };
+                                self.render.renderer.beatmap.seek(0.);
+                                self.history.clear();
+                                if let Some(audio) = map.audio.take() {
+                                    audio.stop();
+                                    drop(audio);
+                                    self.audio_system.remove_dead_audio();
+                                    self.state.playback_speed = 1.;
+                                }
+                                self.map_editor.map = None;
+                                break 'map_scope;
+                            }
+                        }
+                        let has_controller = match map.as_ref() {
+                            Some(m) => m.controller.is_some(),
+                            None => false
+                        };
+                        'btn2: {
+                            if ui.add_enabled(
+                                has_controller,
+                                egui::Button::new(close_diff)
+                            ).clicked() {
+                                let Some(map) = map else { break 'btn2 };
+                                self.render.renderer.beatmap.seek(0.);
+                                map.controller = None;
+                                self.history.clear();
+                                if let Some(audio) = map.audio.take() {
+                                    audio.stop();
+                                    drop(audio);
+                                    self.audio_system.remove_dead_audio();
+                                    self.state.playback_speed = 1.;
+                                }
+                                self.history.clear();
+                            }
+                        }
+
+                    }
+                });
             });
         });
 
@@ -630,79 +755,7 @@ impl App {
             .exact_width(300.)
             .resizable(false)
             .show(ctx, |ui| {
-                ui.allocate_ui_with_layout(
-                    ui.available_size(),
-                    egui::Layout::top_down(egui::Align::Center),
-                    |ui| {
-                        ui.add_space(10.);
-                        if ui
-                            .add_sized(
-                                [ui.available_width() * 0.75, 20.],
-                                egui::Button::new(self.data.locale.get("menu-label")),
-                            )
-                            .clicked()
-                        {
-                            tracing::debug!(target: DB_LOGIC, "Returning to menu");
-                            self.context = EditorContext::None;
-                            self.render.renderer.beatmap.seek(0.);
-                            self.history.clear();
-                            if let Some(map) = self.map_editor.map.take()
-                                && let Some(audio) = map.audio
-                            {
-                                audio.stop();
-                                drop(audio);
-                                self.audio_system.remove_dead_audio();
-                                self.state.playback_speed = 1.;
-                            }
-                        }
-                        ui.add_space(10.);
-
-                        'map_scope: {
-                            if let Some(map) = self.map_editor.map.as_mut() {
-                                if ui
-                                    .add_sized(
-                                        [ui.available_width() * 0.75, 20.],
-                                        egui::Button::new("Close Map"),
-                                    )
-                                    .clicked()
-                                {
-                                    self.render.renderer.beatmap.seek(0.);
-                                    self.history.clear();
-                                    if let Some(audio) = map.audio.take() {
-                                        audio.stop();
-                                        drop(audio);
-                                        self.audio_system.remove_dead_audio();
-                                        self.state.playback_speed = 1.;
-                                    }
-                                    self.map_editor.map = None;
-                                    break 'map_scope;
-                                }
-
-                                ui.add_space(10.);
-
-                                if map.controller.is_some()
-                                    && ui
-                                        .add_sized(
-                                            [ui.available_width() * 0.75, 20.],
-                                            egui::Button::new("Close Difficulty"),
-                                        )
-                                        .clicked()
-                                {
-                                    self.render.renderer.beatmap.seek(0.);
-                                    map.controller = None;
-                                    self.history.clear();
-                                    if let Some(audio) = map.audio.take() {
-                                        audio.stop();
-                                        drop(audio);
-                                        self.audio_system.remove_dead_audio();
-                                        self.state.playback_speed = 1.;
-                                    }
-                                    self.history.clear();
-                                }
-                            }
-                        }
-                    },
-                );
+                
             });
 
         egui::SidePanel::right("right_panel")
@@ -734,6 +787,7 @@ impl App {
                                 |ui| {
                                     draw_map_info(self, ui, map);
                                     draw_map_diffs(self, ui, map);
+                                    ui.separator();
                                     draw_map_diff(self, ui, map);
                                 },
                             );
@@ -753,17 +807,30 @@ impl App {
         ui: &mut egui::Ui,
     ) {
         ui.allocate_ui_with_layout(
-            [ui.available_width(), 100.].into(),
+            [ui.available_width(), 250.].into(),
             egui::Layout::top_down(egui::Align::Center),
             |ui| {
-                ui.add_space(5.);
-                if ui
-                    .button(self.data.locale.get("open-beatmap-folder"))
-                    .clicked()
-                {
-                    self.await_beatmap_open();
-                }
-                ui.allocate_space(ui.available_size());
+                ui.add_space(25.);
+                ui.allocate_ui_with_layout(
+                    [450., 200.].into(),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        if ui.add_sized(
+                            [200., 200.],
+                            ImageCard::new(OPEN_MAP_ICON.clone(), [200., 200.]).show_border(false)
+                        ).on_hover_text(self.data.locale.get("open-beatmap-project")).clicked() {
+                            self.await_beatmap_open();
+                        }
+                        ui.add_space(50.);
+                        if ui.add_sized(
+                            [200., 200.],
+                            ImageCard::new(CREATE_MAP_ICON.clone(), [200., 200.]).show_border(false)
+                        ).on_hover_text(self.data.locale.get("create-beatmap-project")).clicked() {
+                            // TODO: create beatmap
+                        }
+                    }
+                );
+                ui.add_space(25.);
             },
         );
 
@@ -798,13 +865,16 @@ impl App {
                                 [225., 400.].into(),
                                 egui::Layout::top_down(egui::Align::Center),
                                 |ui| {
-                                    if let Some(img) = img {
-                                        ui.image(format!(
+                                    let src = if let Some(img) = img {
+                                        format!(
                                             "file://{}",
                                             path.join(img).to_string_lossy()
-                                        ));
+                                        ).into()
                                     } else {
-                                        ui.image(MISSING_EDITOR_ICON.clone());
+                                        MISSING_EDITOR_ICON.clone()
+                                    };
+                                    if ui.add(ImageCard::new(src, [200., 200.]).show_border(false).hover_image(EDIT_ICON.clone())).clicked() {
+                                        to_open = Some(path);
                                     }
                                     ui.label(egui::RichText::new(label).strong())
                                         .on_hover_text(full_path);
@@ -820,10 +890,6 @@ impl App {
                                                 .clicked()
                                             {
                                                 to_remove = Some(i);
-                                            }
-                                            ui.add_space(10.);
-                                            if ui.button(self.data.locale.get("open")).clicked() {
-                                                to_open = Some(path);
                                             }
                                         },
                                     );

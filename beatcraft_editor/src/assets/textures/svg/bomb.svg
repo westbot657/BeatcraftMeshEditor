@@ -1,0 +1,21 @@
+<svg
+  viewBox="0 0 50 50"
+  xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <mask id="cutout">
+            <polygon stroke="#FFFFFF" stroke-width="15"
+                points="25.00,52.19 -0.86,33.40 9.02,3.00 40.98,3.00 50.86,33.40"
+            />
+        </mask>
+    </defs>
+    <polygon mask="url(#cutout)" fill="#202020" stroke-linejoin="bevel" stroke-width="3" stroke="#272727"
+        points="25.00,2.50 30.29,17.72 46.40,18.05 33.56,27.78 38.23,43.20 25.00,34.00 11.77,43.20 16.44,27.78 3.60,18.05 19.71,17.72"
+    />
+    <polygon />
+    <polygon fill="#272727"
+        points="25.00,41.07 9.72,29.97 15.55,12.00 34.45,12.00 40.28,29.97"
+    />
+    <polygon fill="#202020"
+        points="25.00,37.36 13.24,28.82 17.73,15.00 32.27,15.00 36.76,28.82"
+    />
+</svg>

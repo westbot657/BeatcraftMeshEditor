@@ -61,16 +61,16 @@ pub const R_ARROW: &str = "▶";
 pub const D_ARROW: &str = "▼";
 pub const SMALL_R_ARROW: &str = "→";
 
-pub static ENVIRONMENT_EDITOR_ICON: egui::ImageSource =
+pub static ENVIRONMENT_EDITOR_ICON: ImageSource =
     egui::include_image!("assets/textures/environment_editor.png");
-pub static SABER_EDITOR_ICON: egui::ImageSource =
+pub static SABER_EDITOR_ICON: ImageSource =
     egui::include_image!("assets/textures/saber_editor.png");
-pub static NOTE_EDITOR_ICON: egui::ImageSource =
+pub static NOTE_EDITOR_ICON: ImageSource =
     egui::include_image!("assets/textures/note_editor.png");
-pub static BEATMAP_EDITOR_ICON: egui::ImageSource =
+pub static BEATMAP_EDITOR_ICON: ImageSource =
     egui::include_image!("assets/textures/beatmap_editor.png");
 
-pub static MISSING_EDITOR_ICON: egui::ImageSource =
+pub static MISSING_EDITOR_ICON: ImageSource =
     egui::include_image!("assets/textures/svg/missing_editor.svg");
 
 pub const APP_NAME: &str = "Beatcraft Mesh Editor";

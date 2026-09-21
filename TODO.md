@@ -8,7 +8,7 @@ Overall:
 Audio stuff:
 - [ ] BPM region editor
 - [ ] BPM detection
-- [ ] beggining silence insertion (and removal)
+- [ ] beginning silence insertion (and removal)
 - [ ] Waveform display
 
 Beatmap editor:
