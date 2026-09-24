@@ -1,0 +1,21 @@
+[package]
+name = "beatcraft_core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+name = "beatcraft_core"
+
+[dependencies]
+glam = "0.33.3"
+rustc-hash = "2.1.2"
+bstr = {version = "1", default-features = false, features = ["std"]}
+jni = { version = "0.22.4" }
+
+java-jni-extras = "0.0.8"
+
+beatmap-core = { path = "../beatmap_core" }
+bs-mapping-data = { path = "../bs_mapping_data" }
+beatcraft-audiolib = { path = "../beatcraft_audiolib" }
+

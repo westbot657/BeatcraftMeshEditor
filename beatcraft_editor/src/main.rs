@@ -29,10 +29,9 @@ use self::editor::{CreateEnv, RoutineAction, ViewStyle};
 #[cfg(feature = "mesh-editor")]
 use self::widgets::MathDragValue;
 use fluent_templates::fluent_bundle::FluentValue;
+#[cfg(any(not(feature = "mesh-editor"), not(feature = "mapper")))]
 use crate::config::ProjectKind;
 
-#[cfg(feature = "mapper")]
-pub mod audio;
 #[cfg(feature = "mapper")]
 pub mod beatmap;
 pub mod config;

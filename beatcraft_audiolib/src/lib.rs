@@ -1,14 +1,11 @@
-use glow::HasContext;
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::path::Path;
 use std::sync::{Arc, mpsc};
 use std::{ptr, thread};
 
-use eframe::glow;
 use parking_lot::RwLock;
-use rustfft::FftPlanner;
-use rustfft::num_complex::Complex;
+
 use symphonia::core::audio::sample::Sample;
 use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
 use symphonia::core::formats::probe::Hint;
@@ -16,7 +13,10 @@ use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
-use crate::DB_AUDIO;
+#[cfg(feature = "spectrogram")]
+use rustfft::{FftPlanner, num_complex::Complex};
+#[cfg(feature = "spectrogram")]
+use glow::{self, HasContext};
 
 pub mod al;
 
@@ -25,6 +25,9 @@ type AudioTask = Box<dyn FnMut() -> TaskAction + Send>;
 const FULL_BUFFER_COUNT: usize = 4;
 const FULL_CHUNK_SAMPLES: usize = 8192;
 const SPECTROGRAM_UPLOAD_BATCH: usize = 128;
+
+#[cfg(feature = "tracing")]
+const DB_AUDIO: &str = "audio";
 
 pub enum AudioThreadCommand {
     AddTask(AudioTask),
@@ -56,6 +59,7 @@ pub struct AudioSystem {
     pub thread_commands: mpsc::Sender<AudioThreadCommand>,
     pub audio_refs: Vec<Arc<Audio>>,
 
+    #[cfg(feature = "spectrogram")]
     gl: Arc<glow::Context>,
 }
 
@@ -68,6 +72,7 @@ pub struct AudioInfo {
     track_id: u32,
 }
 
+#[cfg(feature = "spectrogram")]
 struct SpectrogramState {
     data: Arc<RwLock<Vec<i16>>>,
     decode_cursor: Arc<RwLock<usize>>,
@@ -83,7 +88,10 @@ struct SpectrogramState {
 }
 
 impl AudioSystem {
-    pub fn new(gl: Arc<glow::Context>) -> Result<Self, AudioError> {
+    pub fn new(
+        #[cfg(feature = "spectrogram")]
+        gl: Arc<glow::Context>,
+    ) -> Result<Self, AudioError> {
         unsafe {
             let device = al::alcOpenDevice(ptr::null());
             if device.is_null() {
@@ -105,12 +113,14 @@ impl AudioSystem {
                 if s.to_bytes().is_empty() {
                     break;
                 }
+                #[cfg(feature = "tracing")]
                 tracing::debug!(target: DB_AUDIO, "Available device: {}", s.to_string_lossy());
                 ptr = ptr.add(s.to_bytes_with_nul().len());
             }
 
             let name_ptr = al::alcGetString(device, al::ALC_DEVICE_SPECIFIER);
             let name = std::ffi::CStr::from_ptr(name_ptr).to_string_lossy();
+            #[cfg(feature = "tracing")]
             tracing::debug!(target: DB_AUDIO, "Bound to device: {name}");
 
             let (sx, rx) = mpsc::channel();
@@ -119,12 +129,14 @@ impl AudioSystem {
 
             thread::spawn(move || at.main_loop());
 
+            #[cfg(feature = "tracing")]
             tracing::debug!(target: DB_AUDIO, "Initialized audio system");
             Ok(Self {
                 device,
                 context,
                 thread_commands: sx,
                 audio_refs: Vec::new(),
+                #[cfg(feature = "spectrogram")]
                 gl,
             })
         }
@@ -147,6 +159,7 @@ impl AudioSystem {
             if *audio.loaded.read() {
                 self.audio_refs.push(audio);
             } else {
+                #[cfg(feature = "tracing")]
                 tracing::debug!(target: DB_AUDIO, "Audio unloaded, removing from update queue");
             }
         }
@@ -212,6 +225,7 @@ impl Drop for AudioSystem {
             al::alcDestroyContext(self.context);
             al::alcCloseDevice(self.device);
         }
+        #[cfg(feature = "tracing")]
         tracing::debug!(target: DB_AUDIO, "Closed audio system");
     }
 }
@@ -230,8 +244,11 @@ impl AudioThread {
     }
 
     fn main_loop(mut self) {
+        #[cfg(feature = "tracing")]
         let span = tracing::debug_span!("thread/audio");
+        #[cfg(feature = "tracing")]
         let _guard = span.enter();
+        #[cfg(feature = "tracing")]
         tracing::debug!(target: DB_AUDIO, "Started audio thread");
         'mainloop: loop {
             'io_loop: loop {
@@ -240,6 +257,7 @@ impl AudioThread {
                     Err(mpsc::TryRecvError::Disconnected) => break 'mainloop,
                     Ok(cmd) => match cmd {
                         AudioThreadCommand::AddTask(task) => {
+                            #[cfg(feature = "tracing")]
                             tracing::debug!(target: DB_AUDIO, "Added new audio task");
                             self.tasks.push(task);
                         }
@@ -263,6 +281,7 @@ pub fn check_al_error(where_: impl Display) {
     unsafe {
         let err = al::alGetError();
         if err != al::AL_NO_ERROR {
+            #[cfg(feature = "tracing")]
             tracing::error!("AL error at: {where_}: {err:#x}");
         }
     }
@@ -300,6 +319,7 @@ enum AudioSource {
     },
 }
 
+#[cfg(feature = "spectrogram")]
 #[derive(Debug)]
 struct SpectrogramGlCache {
     tex: glow::NativeTexture,
@@ -319,13 +339,20 @@ pub struct Audio {
     pub sample_rate: u32,
     fx_filter: u32,
 
+    #[cfg(feature = "spectrogram")]
     spectrogram_tex_data: Arc<RwLock<Vec<f32>>>,
+    #[cfg(feature = "spectrogram")]
     spectrogram_columns_done: Arc<RwLock<usize>>,
+    #[cfg(feature = "spectrogram")]
     spectrogram_freq_bins: usize,
+    #[cfg(feature = "spectrogram")]
     spectrogram_hop: usize,
+    #[cfg(feature = "spectrogram")]
     spectrogram_finished: Arc<RwLock<bool>>,
+    #[cfg(feature = "spectrogram")]
     spectrogram_gl_cache: RwLock<Option<SpectrogramGlCache>>,
 
+    #[cfg(feature = "spectrogram")]
     gl: Arc<glow::Context>,
 }
 
@@ -335,7 +362,9 @@ impl Audio {
         path: &Path,
         mode: AudioMode,
     ) -> Result<Arc<Self>, AudioError> {
+        #[cfg(feature = "tracing")]
         let span = tracing::debug_span!("audio init");
+        #[cfg(feature = "tracing")]
         let _guard = span.enter();
         match mode {
             AudioMode::Stream => {
@@ -350,6 +379,7 @@ impl Audio {
                     al::alGenBuffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr());
                 }
                 check_al_error("after alGenBuffers");
+                #[cfg(feature = "tracing")]
                 tracing::debug!(target: DB_AUDIO, "Generated {} AL buffers for streaming", FULL_BUFFER_COUNT);
 
                 let source = Arc::new(RwLock::new(AudioSource::Stream {
@@ -384,6 +414,7 @@ impl Audio {
                 let spec_cursor = Arc::clone(&pb_cursor);
                 let sample_rate = audio_info.sample_rate;
                 let dcf2 = Arc::clone(&decode_finished);
+                #[cfg(feature = "spectrogram")]
                 let (
                     spectrogram_tex_data,
                     spectrogram_columns_done,
@@ -429,12 +460,19 @@ impl Audio {
                     channels: audio_info.channels,
                     sample_rate: audio_info.sample_rate,
                     fx_filter,
+                    #[cfg(feature = "spectrogram")]
                     spectrogram_columns_done,
+                    #[cfg(feature = "spectrogram")]
                     spectrogram_freq_bins,
+                    #[cfg(feature = "spectrogram")]
                     spectrogram_tex_data,
+                    #[cfg(feature = "spectrogram")]
                     spectrogram_hop,
+                    #[cfg(feature = "spectrogram")]
                     spectrogram_finished,
+                    #[cfg(feature = "spectrogram")]
                     spectrogram_gl_cache: RwLock::default(),
+                    #[cfg(feature = "spectrogram")]
                     gl: Arc::clone(&audio_sys.gl),
                 });
 
@@ -443,6 +481,7 @@ impl Audio {
                 Ok(audio)
             }
             AudioMode::Full => {
+                #[cfg(feature = "tracing")]
                 tracing::debug!(target: DB_AUDIO, ?path, "Loading file in Full mode.");
                 let data = Arc::new(RwLock::new(Vec::new()));
                 let mut audio_info = AudioSystem::open_decoder(path)?;
@@ -463,6 +502,7 @@ impl Audio {
                     al::alGenBuffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr());
                 }
                 check_al_error("after alGenBuffers");
+                #[cfg(feature = "tracing")]
                 tracing::debug!(target: DB_AUDIO, "Generated {} AL buffers for full-streaming", FULL_BUFFER_COUNT);
 
                 let source = Arc::new(RwLock::new(AudioSource::Full {
@@ -507,6 +547,7 @@ impl Audio {
                     )
                 }));
 
+                #[cfg(feature = "spectrogram")]
                 let (
                     spectrogram_tex_data,
                     spectrogram_columns_done,
@@ -532,12 +573,19 @@ impl Audio {
                     channels,
                     sample_rate,
                     fx_filter,
+                    #[cfg(feature = "spectrogram")]
                     spectrogram_tex_data,
+                    #[cfg(feature = "spectrogram")]
                     spectrogram_columns_done,
+                    #[cfg(feature = "spectrogram")]
                     spectrogram_freq_bins,
+                    #[cfg(feature = "spectrogram")]
                     spectrogram_hop,
+                    #[cfg(feature = "spectrogram")]
                     spectrogram_finished,
+                    #[cfg(feature = "spectrogram")]
                     spectrogram_gl_cache: RwLock::default(),
+                    #[cfg(feature = "spectrogram")]
                     gl: Arc::clone(&audio_sys.gl),
                 });
 
@@ -667,6 +715,7 @@ impl Audio {
         if *self.pending_play.read() {
             match self.play() {
                 Ok(()) => {
+                    #[cfg(feature = "tracing")]
                     tracing::debug!(target: DB_AUDIO, "Playing queued audio");
                     *self.pending_play.write() = false
                 }
@@ -729,6 +778,7 @@ impl Audio {
     }
 
     pub fn queue_play(&self) {
+        #[cfg(feature = "tracing")]
         tracing::debug!(target: DB_AUDIO, "Queueing audio to play when ready");
         *self.pending_play.write() = true;
     }
@@ -924,6 +974,7 @@ impl Audio {
                     unimplemented!("why do I have to deal with OGG");
                 }
                 Err(err) => {
+                    #[cfg(feature = "tracing")]
                     tracing::error!(target: DB_AUDIO, "Audio reader encountered an unrecoverable error: {err}");
                     *decode_finished.write() = true;
                     *sample_count.write() = Some(*decoded_frames.read());
@@ -954,12 +1005,15 @@ impl Audio {
                 *decoded_frames.write() += frames; // NEW
             }
             Err(symphonia::core::errors::Error::IoError(err)) => {
+                #[cfg(feature = "tracing")]
                 tracing::warn!(target: DB_AUDIO, "IO Error during decode: {err}");
             }
             Err(symphonia::core::errors::Error::DecodeError(err)) => {
+                #[cfg(feature = "tracing")]
                 tracing::warn!(target: DB_AUDIO, "Decode error: {err}")
             }
             Err(err) => {
+                #[cfg(feature = "tracing")]
                 tracing::error!(target: DB_AUDIO, "Audio decoder encountered an unrecoverable error: {err}")
             }
         }
@@ -967,6 +1021,7 @@ impl Audio {
         TaskAction::None
     }
 
+    #[cfg(feature = "spectrogram")]
     #[allow(clippy::type_complexity)]
     fn spawn_spectrogram_task(
         audio_sys: &AudioSystem,
@@ -1054,7 +1109,10 @@ impl Audio {
                     let actual_frame = seeked.actual_ts.get().max(0) as usize;
                     *decode_cursor.write() = actual_frame * channels as usize;
                 }
-                Err(err) => tracing::warn!(target: DB_AUDIO, "seek failed: {err}"),
+                Err(err) => {
+                    #[cfg(feature = "tracing")]
+                    tracing::warn!(target: DB_AUDIO, "seek failed: {err}")
+                },
             }
         }
 
@@ -1070,6 +1128,7 @@ impl Audio {
                     unimplemented!("why do I have to deal with OGG")
                 }
                 Err(err) => {
+                    #[cfg(feature = "tracing")]
                     tracing::error!(target: DB_AUDIO, "{err}");
                     *decode_finished.write() = true;
                     *sample_count.write() = Some(*decoded_frames.read());
@@ -1107,6 +1166,7 @@ impl Audio {
         TaskAction::None
     }
 
+    #[cfg(feature = "spectrogram")]
     fn spectrogram_task_loop(state: &mut SpectrogramState) -> TaskAction {
         let decoded_samples = *state.decode_cursor.read();
         let decoded_frames = decoded_samples / state.channels as usize;
@@ -1172,6 +1232,7 @@ impl Audio {
         *ranges = merged;
     }
 
+    #[cfg(feature = "spectrogram")]
     pub fn spectrogram_uploaded_columns(&self) -> usize {
         self.spectrogram_gl_cache
             .read()
@@ -1180,6 +1241,7 @@ impl Audio {
             .unwrap_or(0)
     }
 
+    #[cfg(feature = "spectrogram")]
     pub fn spectrogram_synced_coverage(&self) -> f32 {
         let Some(total_frames) = *self.sample_count.read() else {
             return 1.0;
@@ -1192,6 +1254,7 @@ impl Audio {
         (uploaded as f32 / total_columns_full as f32).min(1.0)
     }
 
+    #[cfg(feature = "spectrogram")]
     pub fn spectrogram_coverage(&self) -> f32 {
         let Some(total_frames) = *self.sample_count.read() else {
             return 1.0;
@@ -1204,6 +1267,7 @@ impl Audio {
         (columns_done as f32 / total_columns_full as f32).min(1.0)
     }
 
+    #[cfg(feature = "spectrogram")]
     pub fn get_spectrogram_tex(&self, gl: &glow::Context) -> Option<glow::NativeTexture> {
         let freq_bins = self.spectrogram_freq_bins;
         let columns_done = *self.spectrogram_columns_done.read();
@@ -1323,44 +1387,48 @@ impl Drop for Audio {
         if std::thread::panicking() {
             return;
         }
-
-        if let Some(cache) = self.spectrogram_gl_cache.write().take() {
-            unsafe {
-                self.gl.delete_texture(cache.tex);
-            }
-        }
-
-        unsafe {
-            al::alSourceStop(self.src_handle);
-            al::alSourcei(self.src_handle, al::AL_BUFFER, 0);
-            check_al_error("drop: detach buffers");
-
-            al::alDeleteSources(1, &self.src_handle);
-            check_al_error("drop: delete source");
-
-            al::alDeleteFilters(1, &self.fx_filter);
-            check_al_error("drop: delete filter");
-        }
-
-        let mut all_buffers: Vec<u32> = Vec::new();
+        #[cfg(feature = "spectrogram")]
         {
-            let source = self.source.read();
-            match &*source {
-                AudioSource::Full {
-                    all_buffers: bufs, ..
-                } => all_buffers.extend_from_slice(bufs),
-                AudioSource::Stream { free_buffers, .. } => {
-                    all_buffers.extend_from_slice(free_buffers)
+            if let Some(cache) = self.spectrogram_gl_cache.write().take() {
+                unsafe {
+                    self.gl.delete_texture(cache.tex);
+                }
+            }
+
+            unsafe {
+                al::alSourceStop(self.src_handle);
+                al::alSourcei(self.src_handle, al::AL_BUFFER, 0);
+                check_al_error("drop: detach buffers");
+
+                al::alDeleteSources(1, &self.src_handle);
+                check_al_error("drop: delete source");
+
+                al::alDeleteFilters(1, &self.fx_filter);
+                check_al_error("drop: delete filter");
+            }
+
+            let mut all_buffers: Vec<u32> = Vec::new();
+            {
+                let source = self.source.read();
+                match &*source {
+                    AudioSource::Full {
+                        all_buffers: bufs, ..
+                    } => all_buffers.extend_from_slice(bufs),
+                    AudioSource::Stream { free_buffers, .. } => {
+                        all_buffers.extend_from_slice(free_buffers)
+                    }
+                }
+            }
+            if !all_buffers.is_empty() {
+                unsafe {
+                    al::alDeleteBuffers(all_buffers.len() as i32, all_buffers.as_ptr());
+                    check_al_error("drop: delete buffers");
                 }
             }
         }
-        if !all_buffers.is_empty() {
-            unsafe {
-                al::alDeleteBuffers(all_buffers.len() as i32, all_buffers.as_ptr());
-                check_al_error("drop: delete buffers");
-            }
-        }
 
+        #[cfg(feature = "tracing")]
         tracing::debug!(target: DB_AUDIO, "Dropped audio resources");
     }
 }
+

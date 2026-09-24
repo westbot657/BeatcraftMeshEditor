@@ -2,7 +2,7 @@ use eframe::glow::{self, HasContext};
 use glam::{FloatExt, Mat4, Vec2};
 
 use crate::DB_RENDER;
-use crate::audio::Audio;
+use beatcraft_audiolib::Audio;
 use crate::render::Renderer;
 
 const SPECTROGRAM_MIN_ZOOM: f32 = 0.01;

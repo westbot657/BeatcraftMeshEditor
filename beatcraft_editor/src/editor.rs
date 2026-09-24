@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 use tracing::Level;
 
 #[cfg(feature = "mapper")]
-use crate::audio::AudioSystem;
+use beatcraft_audiolib::AudioSystem;
 #[cfg(feature = "mapper")]
 use crate::beatmap::BeatmapEditor;
 #[cfg(feature = "mapper")]

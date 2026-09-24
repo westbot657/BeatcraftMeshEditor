@@ -1,0 +1,25 @@
+[package]
+name = "beatcraft-audiolib"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+tracing = ["dep:tracing", "dep:tracing-subscriber", "dep:tracing-appender"]
+spectrogram = ["dep:rustfft", "dep:glow", "dep:bytemuck"]
+
+[dependencies]
+parking_lot = "0.12"
+symphonia = "0.6.0"
+thiserror = "2"
+
+rustfft = { version = "6.4.1", optional = true }
+glow = { version = "0.16.0", optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }
+
+tracing = { version = "0.1.44", optional = true }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"], optional = true }
+tracing-appender = { version = "0.2.5", optional = true }
+
+[build-dependencies]
+bindgen = "0.72.1"

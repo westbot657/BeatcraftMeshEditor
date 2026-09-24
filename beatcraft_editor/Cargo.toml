@@ -49,6 +49,5 @@ bincode-next = { version = "3.1.1", features = ["serde"] }
 bs-mapping-data = { path = "../bs_mapping_data" }
 beatcraft_editor_proc = { path = "../beatcraft_editor_proc" }
 beatmap-core = { path = "../beatmap_core", features = ["beatcraft_worldspace"] }
+beatcraft-audiolib = { path = "../beatcraft_audiolib", features = ["spectrogram", "tracing"] }
 
-[build-dependencies]
-bindgen = "0.72.1"

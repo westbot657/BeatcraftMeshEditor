@@ -8,7 +8,7 @@ use egui::ImageSource;
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 
-use crate::audio::{Audio, AudioError, AudioMode, AudioSystem};
+use beatcraft_audiolib::{Audio, AudioError, AudioMode, AudioSystem};
 use crate::config::ProjectType;
 use crate::data::map_editing::{GlobalEditingData, ObjectSource};
 use crate::data::mesh::LightMeshData;
