@@ -94,7 +94,7 @@ fn init_types<'c>(env: &mut Env<'c>) -> Result<(), jni::errors::Error> {
         string: get_global_class(env, jni_str!("java/lang/String"))?,
         error: get_global_class(
             env,
-            jni_str!("com/beatcraft/interop/TuringError"),
+            jni_str!("com/beatcraft/interop/BeatcraftError"),
         )?,
         vec2: get_global_class(env, jni_str!("org/joml/Vector2f"))?,
         vec3: get_global_class(env, jni_str!("org/joml/Vector3f"))?,
