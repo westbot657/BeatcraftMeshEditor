@@ -13,7 +13,7 @@ rustc-hash = "2.1.2"
 bstr = {version = "1", default-features = false, features = ["std"]}
 jni = { version = "0.22.4" }
 
-java-jni-extras = "0.0.8"
+java-jni-extras = "0.1.0"
 
 beatmap-core = { path = "../beatmap_core" }
 bs-mapping-data = { path = "../bs_mapping_data" }

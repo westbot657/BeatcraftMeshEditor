@@ -1,10 +1,10 @@
 #![allow(non_snake_case, static_mut_refs)]
-use std::mem::MaybeUninit;
 
-use java_jni_extras::java_class_decl;
+use std::mem::MaybeUninit;
+use java_jni_extras::*;
 use jni::strings::JNIStr;
 use jni::{Env, JValue, jni_sig, jni_str};
-use jni::objects::{JClass, JObject, JString};
+use jni::objects::{JClass, JObject, JObjectArray, JString};
 use jni::refs::Global;
 
 pub type GlbCls = Global<JClass<'static>>;
@@ -33,27 +33,54 @@ pub struct JavaTypes {
 
 pub static mut TYPES: MaybeUninit<JavaTypes> = MaybeUninit::uninit();
 
-java_class_decl! {
+java_class! {
     package com.beatcraft.interop;
 
-    class BeatcraftCore {
-        static native void beatcraftCoreInit();
+    import org.joml.Vector2f;
 
-        static void logInfo(String msg);
-        static void logWarn(String msg);
-        static void logCritical(String msg);
-        static void logDebug(String msg);
+    use crate::com.beatcraft.Beatmap;
+    use crate::com.beatcraft.ColorNote;
+
+    class BeatcraftCore {
+        static native fn beatcraftCoreInit() {
+            BeatcraftCore::_validate_interface(env)?;
+            Beatmap::_validate_interface(env)?;
+
+            init_types(env)?;
+        }
+
+        static fn logInfo(msg: String);
+        static fn logWarn(msg: String);
+        static fn logCritical(msg: String);
+        static fn logDebug(msg: String);
     }
 }
 
-java_class_decl! {
+java_class! {
     package com.beatcraft.interop;
 
     class Beatmap {
-        static native com.beatcraft.interop.Beatmap load(java.lang.String path);
-        // native java.lang.String[] getSets();
-        // native java.lang.String[] getDiffs(java.lang.String set);
-        // native void openDiff(java.lang.String set, java.lang.String diff);
+        static native fn load(path: String) -> Beatmap {
+            let bm = env.alloc_object(jni_str!("com.beatcraft.Beatmap"))?;
+            bm
+        }
+        native fn getSets() -> String[] {
+            &[""]
+        }
+        native fn getDiffs(set: String) -> String[] {
+            &[""]
+        }
+        native fn openDiff(set: String, diff: String) {
+            let i = env.get_field(this, jni_str!("value"), jni_sig!("I"))?.i()? as i32;
+        }
+    }
+}
+
+java_class! {
+    package com.beatcraft;
+
+    class ColorNote {
+
     }
 }
 
@@ -66,7 +93,7 @@ where
     env.new_global_ref(cls)
 }
 
-fn init_types<'c>(env: &mut Env<'c>) -> Result<(), jni::errors::Error> {
+fn init_types(env: &mut Env<'_>) -> Result<(), jni::errors::Error> {
     let types = JavaTypes {
         i8: get_global_class(env, jni_str!("java/lang/Byte"))?,
         i16: get_global_class(env, jni_str!("java/lang/Short"))?,
@@ -113,35 +140,5 @@ fn init_types<'c>(env: &mut Env<'c>) -> Result<(), jni::errors::Error> {
 pub(crate) fn jtypes() -> &'static JavaTypes {
     unsafe { TYPES.assume_init_ref() }
 }
-
-
-// Class functions
-
-fn beatcraftCoreInit<'c>(
-    env: &mut Env<'c>,
-    _class: JClass<'c>,
-) -> Result<(), jni::errors::Error> {
-    // Class link validation
-    BeatcraftCore::_validate_interface(env)?;
-
-    init_types(env)?;
-
-    Ok(())
-}
-
-
-fn load<'c>(
-    env: &mut Env<'c>,
-    _class: JClass<'c>,
-    path: JString<'c>,
-) -> Result<JObject<'c>, jni::errors::Error> {
-
-    let obj = env.alloc_object(jni_str!("com/beatcraft/interop/Beatmap"))?;
-
-    env.set_field(&obj, jni_str!("path"), jni_sig!("Ljava.lang.String"), JValue::from(&path))?;
-
-    Ok(obj)
-}
-
 
 
