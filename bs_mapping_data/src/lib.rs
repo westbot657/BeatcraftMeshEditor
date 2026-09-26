@@ -4,7 +4,8 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Debug, Display};
 use std::hint::unreachable_unchecked;
-
+use std::{fs, io};
+use std::path::Path;
 use crate::easing::Easing;
 
 #[cfg(not(any(feature = "v2", feature = "v3", feature = "v4")))]
@@ -488,6 +489,16 @@ pub enum AudioDataFile {
     V4(info_v4::AudioDataFileV4),
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum DataError {
+    #[error("{0}")]
+    IOError(#[from] io::Error),
+    #[error("0")]
+    SerdeError(#[from] serde_json::Error),
+    #[error("File not found: {0}")]
+    FileNotFound(&'static str),
+}
+
 impl InfoFile {
     pub fn bpm(&self) -> f32 {
         #[allow(clippy::single_match, unreachable_patterns)]
@@ -498,6 +509,18 @@ impl InfoFile {
             Self::V4(v4) => v4.audio.bpm,
             _ => unsafe { unreachable_unchecked() },
         }
+    }
+    pub fn load_from_folder(folder: &Path) -> Result<Self, DataError> {
+        for path in fs::read_dir(folder)? {
+            let path = path?;
+            let name = path.file_name().to_string_lossy().to_lowercase();
+            if name == "info.dat" {
+                let data = fs::read(path.path())?;
+                let info: Self = serde_json::from_slice(&data)?;
+                return Ok(info)
+            }
+        }
+        Err(DataError::FileNotFound("info.dat"))
     }
 }
 

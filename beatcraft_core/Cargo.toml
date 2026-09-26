@@ -18,4 +18,6 @@ java-jni-extras = "0.1.0"
 beatmap-core = { path = "../beatmap_core" }
 bs-mapping-data = { path = "../bs_mapping_data" }
 beatcraft-audiolib = { path = "../beatcraft_audiolib" }
+slotmap = "1.1.1"
+parking_lot = "0.12.5"
 
