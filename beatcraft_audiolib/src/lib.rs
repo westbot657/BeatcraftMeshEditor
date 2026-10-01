@@ -20,6 +20,10 @@ use glow::{self, HasContext};
 
 pub mod al;
 
+pub trait AlInterface {
+    fn init();
+}
+
 type AudioTask = Box<dyn FnMut() -> TaskAction + Send>;
 
 const FULL_BUFFER_COUNT: usize = 4;

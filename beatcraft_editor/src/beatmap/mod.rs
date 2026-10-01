@@ -1402,7 +1402,7 @@ fn draw_map_gl(
         let wp = Mat4::IDENTITY;
 
         if let Some(mat) = match s.state.view_style {
-            ViewStyle::Edit => object.animate_simple(wp, beat, &controller.runtime_data, beatmap.beats_before, beatmap.visible_beat_count, beatmap.beat_spacing),
+            ViewStyle::Edit => object.animate_simple(wp, beat, beatmap.beats_before, beatmap.visible_beat_count, beatmap.beat_spacing),
             ViewStyle::Beatcraft { .. } => {
                 object.animate_complex(wp, beat, &controller.runtime_data)
             }
@@ -1478,7 +1478,7 @@ fn draw_map_gl(
                     for link in links {
                         if let Some(mat) = match s.state.view_style {
                             ViewStyle::Edit => {
-                                link.animate_simple(wp, beat, &controller.runtime_data, beatmap.beats_before, beatmap.visible_beat_count, beatmap.beat_spacing)
+                                link.animate_simple(wp, beat, beatmap.beats_before, beatmap.visible_beat_count, beatmap.beat_spacing)
                             }
                             ViewStyle::Beatcraft { .. } => {
                                 link.animate_complex(wp, beat, &controller.runtime_data)

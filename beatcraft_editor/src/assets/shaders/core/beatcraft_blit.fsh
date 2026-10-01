@@ -2,8 +2,7 @@
 
 uniform sampler2D Sampler0;
 
-uniform vec2 texelSize; // required to be swappable with other effect passes
-uniform float GameTime; // ^
+uniform float GameTime; // required to be swappable with other effect passes
 
 in vec2 texCoord0;
 

@@ -1,15 +1,12 @@
 #![allow(non_snake_case, static_mut_refs)]
 
-use std::cell::RefCell;
-use std::fmt::Display;
-use std::fs;
-use std::mem::{ManuallyDrop, MaybeUninit};
+use std::mem::MaybeUninit;
 use std::path::PathBuf;
 use std::sync::{LazyLock};
 use java_jni_extras::*;
-use jni::strings::JNIStr;
+use jni::strings::{JNIStr, JNIString};
 use jni::{Env, JValue, jni_sig, jni_str};
-use jni::objects::{JClass, JObject, JObjectArray, JString};
+use jni::objects::JClass;
 use jni::refs::Global;
 use jni::sys::jlong;
 use parking_lot::RwLock;
@@ -43,18 +40,9 @@ pub struct JavaTypes {
 
 pub static mut TYPES: MaybeUninit<JavaTypes> = MaybeUninit::uninit();
 
-pub fn throw_exception<T: Display>(e: T) -> jni::errors::Error {
-    eprintln!("Native Error: {e}");
-    jni::errors::Error::JavaException
-}
 
 java_class! {
     package com.beatcraft.interop;
-
-    import org.joml.Vector2f;
-
-    use crate::com.beatcraft.Beatmap;
-    use crate::com.beatcraft.ColorNote;
 
     class BeatcraftCore {
         static native fn beatcraftCoreInit() {
@@ -89,7 +77,11 @@ pub enum DataItem {
     BeatmapController(Box<BeatmapController<()>>)
 }
 
-pub static DATA: LazyLock<RwLock<SlotMap<DataKey, DataItem>>> = LazyLock::new(|| Default::default());
+/// Safety:
+/// Passing raw pointers to java may be unsafe (in the modding environment at least),
+/// so as a precausion, all objects are id'd and
+/// must be looked up, instead of assuming pointers are valid.
+pub static DATA: LazyLock<RwLock<SlotMap<DataKey, DataItem>>> = LazyLock::new(Default::default);
 
 java_class! {
     package com.beatcraft.interop;
@@ -97,7 +89,16 @@ java_class! {
     class Info {
         static native fn load(path: String) -> Info {
             let path = PathBuf::from(path.to_string());
-            let info = Box::new(InfoFile::load_from_folder(&path).map_err(throw_exception)?);
+            let info = Box::new(
+                InfoFile::load_from_folder(&path)
+                    .map_err(|e| {
+                        let s = JNIString::new(e.to_string());
+                        env.throw_new(
+                            jni_str!("java.io.IOException"),
+                            s
+                        ).unwrap_err()
+                    })?
+            );
             let info_key = DATA.write().insert(DataItem::Info(info));
 
             let info_obj = env.alloc_object(jni_str!("com.beatcraft.interop.Info"))?;
@@ -105,46 +106,9 @@ java_class! {
 
             info_obj
         }
-        native fn getSets() -> String[] {
-            let info_id = env.get_field(&this, jni_str!("handle"), jni_sig!("J"))?.j()? as u64;
-            let info_key: DataKey = info_id.into();
 
-            let out = if let Some(DataItem::Info(info)) = DATA.read().get(info_key) {
-                let mut sets = Vec::new();
-                match &**info {
-                    InfoFile::V2(v2) => {
-                        for set in v2.difficulty_beatmap_sets.iter() {
-                            sets.push(set.beatmap_characteristic_name.to_string());
-                        }
-                    }
-                    InfoFile::V4(v4) => {
-                        for diff in v4.difficulty_beatmaps.iter() {
-                            let set = diff.characteristic.to_string();
-                            if !sets.contains(&set) {
-                                sets.push(set);
-                            }
-                        }
-                    }
-                }
-                sets
-            } else {
-                return Ok(JObjectArray::<JString>::null())
-            };
-
-            out
-        }
-        native fn getDiffs(set: String) -> String[] {
-            let info_id = env.get_field(&this, jni_str!("handle"), jni_sig!("J"))?.j()? as u64;
-            let info_key: DataKey = info_id.into();
-
-
-
-            &[""]
-        }
     }
 }
-
-
 
 fn get_global_class<S>(env: &mut Env, name: S) -> Result<GlbCls, jni::errors::Error>
 where

@@ -1,13 +1,13 @@
 #version 150
 
 uniform sampler2D Sampler0;
-uniform vec2 texelSize;
 
 in vec2 texCoord0;
 
 out vec4 fragColor;
 
 void main() {
+    vec2 texelSize = 1.0 / vec2(textureSize(Sampler0, 0));
     vec4 d = texelSize.xyxy * vec4(-1.0, -1.0, 1.0, 1.0);
 
     vec4 s;

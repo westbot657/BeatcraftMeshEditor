@@ -272,7 +272,6 @@ pub trait GameObject<ObjectSource>: Debug {
         &self,
         mut m: Mat4,
         beat: f32,
-        _data: &RuntimeData,
         beats_before: u16,
         visible_beat_count: u8,
         beat_spacing: f32,
@@ -298,7 +297,12 @@ pub trait GameObject<ObjectSource>: Debug {
         }
     }
 
-    fn animate_complex(&self, mut m: Mat4, beat: f32, data: &RuntimeData) -> Option<Mat4> {
+    fn animate_complex(
+        &self,
+        mut m: Mat4,
+        beat: f32,
+        data: &RuntimeData
+    ) -> Option<Mat4> {
         fn spawn_parabola(
             target_height: f32,
             base_height: f32,
