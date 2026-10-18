@@ -7,10 +7,15 @@ fn main() {
 
     println!("cargo:rerun-if-changed=wrapper.h");
 
-    let bindings = bindgen::Builder::default()
-        .header("wrapper.h")
-        .allowlist_function("al[A-Z].*")
-        .allowlist_function("alc[A-Z].*")
+    let mut bindings = bindgen::Builder::default()
+        .header("wrapper.h");
+
+    if env::var_os("CARGO_FEATURE_LINK_OPEN_AL").is_some() {
+        bindings = bindings
+            .allowlist_function("al[A-Z].*")
+            .allowlist_function("alc[A-Z].*");
+    }
+    let bindings = bindings
         .allowlist_var("AL_.*")
         .allowlist_var("ALC_.*")
         .allowlist_type("AL[C]?.*")

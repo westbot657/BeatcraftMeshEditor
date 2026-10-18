@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::fmt::Display;
+use std::marker::PhantomData;
 use std::path::Path;
 use std::sync::{Arc, mpsc};
 use std::{ptr, thread};
@@ -18,11 +19,139 @@ use rustfft::{FftPlanner, num_complex::Complex};
 #[cfg(feature = "spectrogram")]
 use glow::{self, HasContext};
 
+use self::al::{ALenum, ALfloat, ALint, ALsizei, ALuint, ALvoid};
+
 pub mod al;
 
 pub trait AlInterface {
-    fn init();
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn gen_buffers(n: ALsizei, buffers: *mut ALuint);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn gen_sources(n: ALsizei, buffers: *mut ALuint);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn gen_filters(n: ALsizei, buffers: *mut ALuint);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn filter_i(filter: ALuint, param: ALenum, i_value: ALint);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn filter_f(filter: ALuint, param: ALenum, f_value: ALfloat);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn get_source_i(source: ALuint, param: ALenum, value: *mut ALint);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn source_unqueue_buffers(source: ALuint, nb: ALsizei, buffers: *mut ALuint);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn buffer_data(buffer: ALuint, format: ALenum, data: *const ALvoid, size: ALsizei, samplerate: ALsizei);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn source_queue_buffers(source: ALuint, nb: ALsizei, buffers: *const ALuint);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn source_play(source: ALuint);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn source_pause(source: ALuint);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn source_stop(source: ALuint);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn source_i(source: ALuint, param: ALenum, value: ALint);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn source_f(source: ALuint, param: ALenum, value: ALfloat);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn delete_sources(n: ALsizei, sources: *const ALuint);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn delete_filters(n: ALsizei, filters: *const ALuint);
+    /// # Safety
+    /// must bind to openAL or no-op
+    unsafe fn delete_buffers(n: ALsizei, buffers: *const ALuint);
 }
+
+
+#[cfg(feature = "link_open_al")]
+pub struct NativeOpenAL;
+
+#[cfg(feature = "link_open_al")]
+impl AlInterface for NativeOpenAL {
+    unsafe fn gen_buffers(n: ALsizei, buffers: *mut ALuint) {
+        unsafe { al::alGenBuffers(n, buffers); }
+    }
+
+    unsafe fn gen_sources(n: ALsizei, sources: *mut ALuint) {
+        unsafe { al::alGenSources(n, sources); }
+    }
+
+    unsafe fn gen_filters(n: ALsizei, filters: *mut ALuint) {
+        unsafe { al::alGenFilters(n, filters); }
+    }
+
+    unsafe fn filter_i(filter: ALuint, param: ALenum, i_value: ALint) {
+        unsafe { al::alFilteri(filter, param, i_value); }
+    }
+
+    unsafe fn filter_f(filter: ALuint, param: ALenum, fl_value: ALfloat) {
+        unsafe { al::alFilterf(filter, param, fl_value); }
+    }
+
+    unsafe fn get_source_i(source: ALuint, param: ALenum, value: *mut ALint) {
+        unsafe { al::alGetSourcei(source, param, value); }
+    }
+
+    unsafe fn source_unqueue_buffers(source: ALuint, nb: ALsizei, buffers: *mut ALuint) {
+        unsafe { al::alSourceUnqueueBuffers(source, nb, buffers); }
+    }
+
+    unsafe fn buffer_data(buffer: ALuint, format: ALenum, data: *const ALvoid, size: ALsizei, samplerate: ALsizei) {
+        unsafe { al::alBufferData(buffer, format, data, size, samplerate); }
+    }
+
+    unsafe fn source_queue_buffers(source: ALuint, nb: ALsizei, buffers: *const ALuint) {
+        unsafe { al::alSourceQueueBuffers(source, nb, buffers); }
+    }
+
+    unsafe fn source_play(source: ALuint) {
+        unsafe { al::alSourcePlay(source); }
+    }
+
+    unsafe fn source_pause(source: ALuint) {
+        unsafe { al::alSourcePause(source); }
+    }
+
+    unsafe fn source_stop(source: ALuint) {
+        unsafe { al::alSourceStop(source); }
+    }
+
+    unsafe fn source_i(source: ALuint, param: ALenum, value: ALint) {
+        unsafe { al::alSourcei(source, param, value); }
+    }
+
+    unsafe fn source_f(source: ALuint, param: ALenum, value: ALfloat) {
+        unsafe { al::alSourcef(source, param, value); }
+    }
+
+    unsafe fn delete_sources(n: ALsizei, sources: *const ALuint) {
+        unsafe { al::alDeleteSources(n, sources); }
+    }
+
+    unsafe fn delete_filters(n: ALsizei, filters: *const ALuint) {
+        unsafe { al::alDeleteFilters(n, filters); }
+    }
+
+    unsafe fn delete_buffers(n: ALsizei, buffers: *const ALuint) {
+        unsafe { al::alDeleteBuffers(n, buffers); }
+    }
+}
+
 
 type AudioTask = Box<dyn FnMut() -> TaskAction + Send>;
 
@@ -57,14 +186,14 @@ pub enum PlaybackError {
     InvalidSeekPosition(f32),
 }
 
-pub struct AudioSystem {
+pub struct AudioSystem<Al: AlInterface> {
     pub device: *mut al::ALCdevice,
     pub context: *mut al::ALCcontext,
     pub thread_commands: mpsc::Sender<AudioThreadCommand>,
-    pub audio_refs: Vec<Arc<Audio>>,
-
+    pub audio_refs: Vec<Arc<Audio<Al>>>,
     #[cfg(feature = "spectrogram")]
     gl: Arc<glow::Context>,
+    do_resource_cleanup: bool,
 }
 
 pub struct AudioInfo {
@@ -91,7 +220,8 @@ struct SpectrogramState {
     finished: Arc<RwLock<bool>>,
 }
 
-impl AudioSystem {
+impl<Al: AlInterface> AudioSystem<Al> {
+    #[cfg(feature = "link_open_al")]
     pub fn new(
         #[cfg(feature = "spectrogram")]
         gl: Arc<glow::Context>,
@@ -127,22 +257,38 @@ impl AudioSystem {
             #[cfg(feature = "tracing")]
             tracing::debug!(target: DB_AUDIO, "Bound to device: {name}");
 
-            let (sx, rx) = mpsc::channel();
 
-            let at = AudioThread::new(rx);
-
-            thread::spawn(move || at.main_loop());
-
-            #[cfg(feature = "tracing")]
-            tracing::debug!(target: DB_AUDIO, "Initialized audio system");
-            Ok(Self {
+            let mut s = Self::from_existing(
                 device,
                 context,
-                thread_commands: sx,
-                audio_refs: Vec::new(),
                 #[cfg(feature = "spectrogram")]
-                gl,
-            })
+                gl
+            );
+            s.do_resource_cleanup = true;
+            #[cfg(feature = "tracing")]
+            tracing::debug!(target: DB_AUDIO, "Initialized audio system");
+            Ok(s)
+        }
+    }
+
+    pub fn from_existing(
+        device: *mut al::ALCdevice,
+        context: *mut al::ALCcontext,
+        #[cfg(feature = "spectrogram")]
+        gl: Arc<glow::Context>,
+    ) -> Self {
+        let (sx, rx) = mpsc::channel();
+        let at = AudioThread::new(rx);
+        thread::spawn(move || at.main_loop());
+
+        Self {
+            device,
+            context,
+            thread_commands: sx,
+            audio_refs: Vec::new(),
+            #[cfg(feature = "spectrogram")]
+            gl,
+            do_resource_cleanup: false,
         }
     }
 
@@ -223,11 +369,14 @@ impl AudioSystem {
     }
 }
 
-impl Drop for AudioSystem {
+impl<Al: AlInterface> Drop for AudioSystem<Al> {
     fn drop(&mut self) {
-        unsafe {
-            al::alcDestroyContext(self.context);
-            al::alcCloseDevice(self.device);
+        if self.do_resource_cleanup {
+            #[cfg(feature = "link_open_al")]
+            unsafe {
+                al::alcDestroyContext(self.context);
+                al::alcCloseDevice(self.device);
+            }
         }
         #[cfg(feature = "tracing")]
         tracing::debug!(target: DB_AUDIO, "Closed audio system");
@@ -332,7 +481,7 @@ struct SpectrogramGlCache {
 }
 
 #[derive(Debug)]
-pub struct Audio {
+pub struct Audio<Al: AlInterface> {
     data: Arc<RwLock<Vec<i16>>>,
     sample_count: Arc<RwLock<Option<usize>>>,
     source: Arc<RwLock<AudioSource>>,
@@ -358,11 +507,12 @@ pub struct Audio {
 
     #[cfg(feature = "spectrogram")]
     gl: Arc<glow::Context>,
+    _phantom_data: PhantomData<Al>,
 }
 
-impl Audio {
+impl<Al: AlInterface> Audio<Al> {
     pub fn new(
-        audio_sys: &mut AudioSystem,
+        audio_sys: &mut AudioSystem<Al>,
         path: &Path,
         mode: AudioMode,
     ) -> Result<Arc<Self>, AudioError> {
@@ -372,7 +522,7 @@ impl Audio {
         let _guard = span.enter();
         match mode {
             AudioMode::Stream => {
-                let audio_info = AudioSystem::open_decoder(path)?;
+                let audio_info = AudioSystem::<Al>::open_decoder(path)?;
                 let data: Arc<RwLock<Vec<i16>>> = Arc::default();
                 let sections: Arc<RwLock<Vec<(usize, usize)>>> = Arc::default();
                 let pb_cursor: Arc<RwLock<usize>> = Arc::default();
@@ -380,7 +530,7 @@ impl Audio {
 
                 let mut buffers = vec![0u32; FULL_BUFFER_COUNT];
                 unsafe {
-                    al::alGenBuffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr());
+                    Al::gen_buffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr());
                 }
                 check_al_error("after alGenBuffers");
                 #[cfg(feature = "tracing")]
@@ -398,18 +548,18 @@ impl Audio {
 
                 let mut src_handle = [0];
                 unsafe {
-                    al::alGenSources(1, src_handle.as_mut_ptr());
+                    Al::gen_sources(1, src_handle.as_mut_ptr());
                 }
                 let [src_handle] = src_handle;
 
                 let mut fx_filter = [0];
-                unsafe { al::alGenFilters(1, fx_filter.as_mut_ptr()) };
+                unsafe { Al::gen_filters(1, fx_filter.as_mut_ptr()) };
                 let [fx_filter] = fx_filter;
 
                 unsafe {
-                    al::alFilteri(fx_filter, al::AL_FILTER_TYPE, al::AL_FILTER_LOWPASS);
-                    al::alFilterf(fx_filter, al::AL_LOWPASS_GAIN, 1.);
-                    al::alFilterf(fx_filter, al::AL_LOWPASS_GAINHF, 0.1);
+                    Al::filter_i(fx_filter, al::AL_FILTER_TYPE, al::AL_FILTER_LOWPASS);
+                    Al::filter_f(fx_filter, al::AL_LOWPASS_GAIN, 1.);
+                    Al::filter_f(fx_filter, al::AL_LOWPASS_GAINHF, 0.1);
                 }
 
                 let decode_finished: Arc<RwLock<bool>> = Arc::default();
@@ -436,7 +586,7 @@ impl Audio {
 
                 let data2 = Arc::clone(&data);
                 let loaded2 = Arc::clone(&loaded);
-                let mut audio_info2 = AudioSystem::open_decoder(path)?;
+                let mut audio_info2 = AudioSystem::<Al>::open_decoder(path)?;
                 let df2 = Arc::new(RwLock::new(0));
                 let sc2 = Arc::clone(&sample_count);
                 audio_sys.add_task(Box::new(move || {
@@ -478,6 +628,7 @@ impl Audio {
                     spectrogram_gl_cache: RwLock::default(),
                     #[cfg(feature = "spectrogram")]
                     gl: Arc::clone(&audio_sys.gl),
+                    _phantom_data: PhantomData,
                 });
 
                 audio_sys.audio_refs.push(Arc::clone(&audio));
@@ -488,7 +639,7 @@ impl Audio {
                 #[cfg(feature = "tracing")]
                 tracing::debug!(target: DB_AUDIO, ?path, "Loading file in Full mode.");
                 let data = Arc::new(RwLock::new(Vec::new()));
-                let mut audio_info = AudioSystem::open_decoder(path)?;
+                let mut audio_info = AudioSystem::<Al>::open_decoder(path)?;
                 let channels = audio_info.channels;
                 let sample_rate = audio_info.sample_rate;
 
@@ -496,14 +647,14 @@ impl Audio {
 
                 let mut src_handle = [0];
                 unsafe {
-                    al::alGenSources(1, src_handle.as_mut_ptr());
+                    Al::gen_sources(1, src_handle.as_mut_ptr());
                 }
                 let [src_handle] = src_handle;
                 check_al_error("after alGenSources");
 
                 let mut buffers = vec![0u32; FULL_BUFFER_COUNT];
                 unsafe {
-                    al::alGenBuffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr());
+                    Al::gen_buffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr());
                 }
                 check_al_error("after alGenBuffers");
                 #[cfg(feature = "tracing")]
@@ -521,12 +672,12 @@ impl Audio {
                 let loaded = Arc::new(RwLock::new(true));
 
                 let mut fx_filter = [0];
-                unsafe { al::alGenFilters(1, fx_filter.as_mut_ptr()) };
+                unsafe { Al::gen_filters(1, fx_filter.as_mut_ptr()) };
                 let [fx_filter] = fx_filter;
                 unsafe {
-                    al::alFilteri(fx_filter, al::AL_FILTER_TYPE, al::AL_FILTER_LOWPASS);
-                    al::alFilterf(fx_filter, al::AL_LOWPASS_GAIN, 1.);
-                    al::alFilterf(fx_filter, al::AL_LOWPASS_GAINHF, 0.1);
+                    Al::filter_i(fx_filter, al::AL_FILTER_TYPE, al::AL_FILTER_LOWPASS);
+                    Al::filter_f(fx_filter, al::AL_LOWPASS_GAIN, 1.);
+                    Al::filter_f(fx_filter, al::AL_LOWPASS_GAINHF, 0.1);
                 }
 
                 let sample_count = Arc::new(RwLock::new(audio_info.sample_count));
@@ -591,6 +742,7 @@ impl Audio {
                     spectrogram_gl_cache: RwLock::default(),
                     #[cfg(feature = "spectrogram")]
                     gl: Arc::clone(&audio_sys.gl),
+                    _phantom_data: PhantomData,
                 });
 
                 audio_sys.audio_refs.push(Arc::clone(&audio));
@@ -611,14 +763,14 @@ impl Audio {
             } => {
                 unsafe {
                     let mut processed = [0i32];
-                    al::alGetSourcei(
+                    Al::get_source_i(
                         self.src_handle,
                         al::AL_BUFFERS_PROCESSED,
                         processed.as_mut_ptr(),
                     );
                     for _ in 0..processed[0] {
                         let mut buf = [0u32];
-                        al::alSourceUnqueueBuffers(self.src_handle, 1, buf.as_mut_ptr());
+                        Al::source_unqueue_buffers(self.src_handle, 1, buf.as_mut_ptr());
                         free_buffers.push(buf[0]);
                     }
                 }
@@ -642,14 +794,14 @@ impl Audio {
                         } else {
                             al::AL_FORMAT_STEREO16
                         };
-                        al::alBufferData(
+                        Al::buffer_data(
                             buf,
                             format,
                             slice.as_ptr() as *const _,
                             std::mem::size_of_val(slice) as i32,
                             self.sample_rate as i32,
                         );
-                        al::alSourceQueueBuffers(self.src_handle, 1, &buf);
+                        Al::source_queue_buffers(self.src_handle, 1, &buf);
                     }
                     *playback_position += take;
                 }
@@ -664,14 +816,14 @@ impl Audio {
             } => {
                 unsafe {
                     let mut processed = [0i32];
-                    al::alGetSourcei(
+                    Al::get_source_i(
                         self.src_handle,
                         al::AL_BUFFERS_PROCESSED,
                         processed.as_mut_ptr(),
                     );
                     for _ in 0..processed[0] {
                         let mut buf = [0u32];
-                        al::alSourceUnqueueBuffers(self.src_handle, 1, buf.as_mut_ptr());
+                        Al::source_unqueue_buffers(self.src_handle, 1, buf.as_mut_ptr());
                         check_al_error("alSourceUnqueueBuffers");
                         free_buffers.push(buf[0]);
                         if let Some(consumed) = queued_sizes.pop_front() {
@@ -697,14 +849,14 @@ impl Audio {
                         } else {
                             al::AL_FORMAT_STEREO16
                         };
-                        al::alBufferData(
+                        Al::buffer_data(
                             buf,
                             format,
                             slice.as_ptr() as *const _,
                             std::mem::size_of_val(slice) as i32,
                             self.sample_rate as i32,
                         );
-                        al::alSourceQueueBuffers(self.src_handle, 1, &buf);
+                        Al::source_queue_buffers(self.src_handle, 1, &buf);
                         check_al_error("alBufferData/QueueBuffers");
                     }
                     queued_sizes.push_back(take);
@@ -736,14 +888,14 @@ impl Audio {
     pub fn play(&self) -> Result<(), PlaybackError> {
         unsafe {
             let mut state = [0i32];
-            al::alGetSourcei(self.src_handle, al::AL_SOURCE_STATE, state.as_mut_ptr());
+            Al::get_source_i(self.src_handle, al::AL_SOURCE_STATE, state.as_mut_ptr());
             let mut queued = [0i32];
-            al::alGetSourcei(self.src_handle, al::AL_BUFFERS_QUEUED, queued.as_mut_ptr());
+            Al::get_source_i(self.src_handle, al::AL_BUFFERS_QUEUED, queued.as_mut_ptr());
             if state[0] == al::AL_PLAYING {
                 return Ok(());
             }
             if queued[0] > 0 {
-                al::alSourcePlay(self.src_handle);
+                Al::source_play(self.src_handle);
                 Ok(())
             } else {
                 Err(PlaybackError::NotReady)
@@ -754,7 +906,7 @@ impl Audio {
     pub fn is_playing(&self) -> bool {
         unsafe {
             let mut state = [0];
-            al::alGetSourcei(self.src_handle, al::AL_SOURCE_STATE, state.as_mut_ptr());
+            Al::get_source_i(self.src_handle, al::AL_SOURCE_STATE, state.as_mut_ptr());
             state[0] == al::AL_PLAYING
         }
     }
@@ -768,7 +920,7 @@ impl Audio {
 
         let mut offset_frames = [0i32];
         unsafe {
-            al::alGetSourcei(
+            Al::get_source_i(
                 self.src_handle,
                 al::AL_SAMPLE_OFFSET,
                 offset_frames.as_mut_ptr(),
@@ -790,39 +942,39 @@ impl Audio {
     pub fn pause(&self) {
         *self.pending_play.write() = false;
         unsafe {
-            al::alSourcePause(self.src_handle);
+            Al::source_pause(self.src_handle);
         }
     }
 
     pub fn stop(&self) {
         *self.pending_play.write() = false;
         unsafe {
-            al::alSourceStop(self.src_handle);
+            Al::source_stop(self.src_handle);
         }
     }
 
     /// Volume should be between 0-1
     pub fn set_volume(&self, volume: f32) {
         unsafe {
-            al::alSourcef(self.src_handle, al::AL_GAIN, volume);
+            Al::source_f(self.src_handle, al::AL_GAIN, volume);
         }
     }
 
     pub fn enable_fx(&self) {
         unsafe {
-            al::alSourcei(self.src_handle, al::AL_DIRECT_FILTER, self.fx_filter as i32);
+            Al::source_i(self.src_handle, al::AL_DIRECT_FILTER, self.fx_filter as i32);
         }
     }
 
     pub fn disable_fx(&self) {
         unsafe {
-            al::alSourcei(self.src_handle, al::AL_DIRECT_FILTER, 0);
+            Al::source_i(self.src_handle, al::AL_DIRECT_FILTER, 0);
         }
     }
 
     pub fn set_speed(&self, speed: f32) {
         unsafe {
-            al::alSourcef(self.src_handle, al::AL_PITCH, speed);
+            Al::source_f(self.src_handle, al::AL_PITCH, speed);
         }
     }
 
@@ -853,7 +1005,7 @@ impl Audio {
 
                 let mut was_playing = [0i32];
                 unsafe {
-                    al::alGetSourcei(
+                    Al::get_source_i(
                         self.src_handle,
                         al::AL_SOURCE_STATE,
                         was_playing.as_mut_ptr(),
@@ -862,8 +1014,8 @@ impl Audio {
                 let was_playing = was_playing[0] == al::AL_PLAYING;
 
                 unsafe {
-                    al::alSourceStop(self.src_handle);
-                    al::alSourcei(self.src_handle, al::AL_BUFFER, 0);
+                    Al::source_stop(self.src_handle);
+                    Al::source_i(self.src_handle, al::AL_BUFFER, 0);
                     check_al_error("seek: flush buffers");
                 }
                 free_buffers.clear();
@@ -905,12 +1057,12 @@ impl Audio {
                 Self::contiguous_loaded_end(&loaded_ranges.read(), target_sample) > target_sample;
 
             unsafe {
-                al::alSourceStop(self.src_handle);
+                Al::source_stop(self.src_handle);
                 let mut queued = [0i32];
-                al::alGetSourcei(self.src_handle, al::AL_BUFFERS_QUEUED, queued.as_mut_ptr());
+                Al::get_source_i(self.src_handle, al::AL_BUFFERS_QUEUED, queued.as_mut_ptr());
                 for _ in 0..queued[0] {
                     let mut buf = [0u32];
-                    al::alSourceUnqueueBuffers(self.src_handle, 1, buf.as_mut_ptr());
+                    Al::source_unqueue_buffers(self.src_handle, 1, buf.as_mut_ptr());
                     free_buffers.push(buf[0]);
                 }
             }
@@ -1028,7 +1180,7 @@ impl Audio {
     #[cfg(feature = "spectrogram")]
     #[allow(clippy::type_complexity)]
     fn spawn_spectrogram_task(
-        audio_sys: &AudioSystem,
+        audio_sys: &AudioSystem<Al>,
         data: Arc<RwLock<Vec<i16>>>,
         decode_cursor: Arc<RwLock<usize>>,
         decode_finished: Arc<RwLock<bool>>,
@@ -1384,7 +1536,7 @@ impl Audio {
     }
 }
 
-impl Drop for Audio {
+impl<Al: AlInterface> Drop for Audio<Al> {
     fn drop(&mut self) {
         *self.loaded.write() = false;
 
@@ -1400,14 +1552,14 @@ impl Drop for Audio {
             }
 
             unsafe {
-                al::alSourceStop(self.src_handle);
-                al::alSourcei(self.src_handle, al::AL_BUFFER, 0);
+                Al::source_stop(self.src_handle);
+                Al::source_i(self.src_handle, al::AL_BUFFER, 0);
                 check_al_error("drop: detach buffers");
 
-                al::alDeleteSources(1, &self.src_handle);
+                Al::delete_sources(1, &self.src_handle);
                 check_al_error("drop: delete source");
 
-                al::alDeleteFilters(1, &self.fx_filter);
+                Al::delete_filters(1, &self.fx_filter);
                 check_al_error("drop: delete filter");
             }
 
@@ -1425,7 +1577,7 @@ impl Drop for Audio {
             }
             if !all_buffers.is_empty() {
                 unsafe {
-                    al::alDeleteBuffers(all_buffers.len() as i32, all_buffers.as_ptr());
+                    Al::delete_buffers(all_buffers.len() as i32, all_buffers.as_ptr());
                     check_al_error("drop: delete buffers");
                 }
             }

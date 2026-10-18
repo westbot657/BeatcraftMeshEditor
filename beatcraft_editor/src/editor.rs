@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 use tracing::Level;
 
 #[cfg(feature = "mapper")]
-use beatcraft_audiolib::AudioSystem;
+use beatcraft_audiolib::{AudioSystem, NativeOpenAL};
 #[cfg(feature = "mapper")]
 use crate::beatmap::BeatmapEditor;
 #[cfg(feature = "mapper")]
@@ -1214,7 +1214,7 @@ pub struct App {
     pub history: History,
     pub data: AppData,
     #[cfg(feature = "mapper")]
-    pub audio_system: AudioSystem,
+    pub audio_system: AudioSystem<NativeOpenAL>,
 }
 
 pub struct TriMeta {

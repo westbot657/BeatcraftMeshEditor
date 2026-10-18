@@ -8,7 +8,7 @@ use egui::ImageSource;
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 
-use beatcraft_audiolib::{Audio, AudioError, AudioMode, AudioSystem};
+use beatcraft_audiolib::{Audio, AudioError, AudioMode, AudioSystem, NativeOpenAL};
 use crate::config::ProjectType;
 use crate::data::map_editing::{GlobalEditingData, ObjectSource};
 use crate::data::mesh::LightMeshData;
@@ -110,7 +110,7 @@ pub struct BeatmapProject {
     pub info: Option<InfoFile>,
     pub audio_info_path: Option<PathBuf>,
     pub audio_info: Option<AudioDataFile>,
-    pub audio: Option<std::sync::Arc<Audio>>,
+    pub audio: Option<std::sync::Arc<Audio<NativeOpenAL>>>,
     pub cover_image: Option<PathBuf>,
     pub sets: Vec<BeatmapProjectSet>,
     pub controller: Option<BeatmapController<ObjectSource>>,
@@ -306,7 +306,7 @@ impl BeatmapMeshSet {
 
 impl BeatmapEditor {
     pub fn new(
-        audio_system: &mut AudioSystem,
+        audio_system: &mut AudioSystem<NativeOpenAL>,
         map: Option<PathBuf>,
         gl: &Context,
         renderer: &mut Renderer,
@@ -331,7 +331,7 @@ impl BeatmapEditor {
 
     pub fn load(
         &mut self,
-        s: &mut AudioSystem,
+        s: &mut AudioSystem<NativeOpenAL>,
         map: PathBuf,
         _gl: &Context,
         _renderer: &mut Renderer,
@@ -996,7 +996,7 @@ impl App {
 
     pub fn load_beatmap(
         &mut self,
-        audio_system: &mut AudioSystem,
+        audio_system: &mut AudioSystem<NativeOpenAL>,
         folder: PathBuf,
         gl: &Context,
         renderer: &mut Renderer,

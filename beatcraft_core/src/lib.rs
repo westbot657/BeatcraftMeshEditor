@@ -9,6 +9,7 @@ use crate::type_map::TypeMap;
 
 pub mod classes;
 mod type_map;
+pub mod audio_system;
 
 pub type GlbCls = Global<JClass<'static>>;
 pub struct JavaTypes {

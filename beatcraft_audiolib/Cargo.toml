@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = []
+default = ["link_open_al"]
 tracing = ["dep:tracing", "dep:tracing-subscriber", "dep:tracing-appender"]
 spectrogram = ["dep:rustfft", "dep:glow", "dep:bytemuck"]
+link_open_al = []
 
 [dependencies]
 parking_lot = "0.12"
