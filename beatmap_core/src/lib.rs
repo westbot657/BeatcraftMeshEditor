@@ -653,6 +653,9 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ColorNote<ObjectSource> {
     fn get_orientation(&self) -> Quat {
         self.cut_direction.to_quat() * Quat::from_rotation_z(self.angle_offset_deg.to_radians())
     }
+    fn spawn_orientation(&self) -> Quat {
+        self.spawn_orientation
+    }
     fn do_gravity(&self) -> bool {
         true
     }
@@ -662,18 +665,15 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ColorNote<ObjectSource> {
     fn do_spawn_rotation(&self) -> bool {
         true
     }
-    fn spawn_orientation(&self) -> Quat {
-        self.spawn_orientation
-    }
-    fn lane_rotation_degrees(&self) -> f32 {
-        self.lane_rotation_deg
-    }
     fn arrow_type(&self) -> ArrowType {
         if self.cut_direction == CutDirection::Dot {
             ArrowType::Dot
         } else {
             ArrowType::Arrow
         }
+    }
+    fn lane_rotation_degrees(&self) -> f32 {
+        self.lane_rotation_deg
     }
 }
 
@@ -741,6 +741,7 @@ pub struct ChainNoteLink<ObjectSource> {
     pub dissolve: f32,
     pub _source: PhantomData<ObjectSource>,
 }
+
 impl<ObjectSource: Debug> GameObject<ObjectSource> for ChainNote<ObjectSource> {
     fn beat(&self) -> f32 {
         self.head_beat
@@ -751,6 +752,9 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ChainNote<ObjectSource> {
     fn get_orientation(&self) -> Quat {
         self.cut_direction.to_quat()
     }
+    fn spawn_orientation(&self) -> Quat {
+        self.spawn_orientation
+    }
     fn do_gravity(&self) -> bool {
         true
     }
@@ -760,19 +764,17 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ChainNote<ObjectSource> {
     fn do_spawn_rotation(&self) -> bool {
         true
     }
-    fn spawn_orientation(&self) -> Quat {
-        self.spawn_orientation
+    fn lane_rotation_degrees(&self) -> f32 {
+        self.head_lane_rotation_deg
     }
     fn upcast_chain_head(&self) -> Option<&ChainNote<ObjectSource>> {
         Some(self)
-    }
-    fn lane_rotation_degrees(&self) -> f32 {
-        self.head_lane_rotation_deg
     }
     fn editor_hitbox(&self, _bs: Option<f32>) -> HitBox {
         CHAIN_HEAD_HITBOX
     }
 }
+
 impl<ObjectSource> ChainNote<ObjectSource> {
     pub fn get_links(&self) -> Vec<ChainNoteLink<ObjectSource>> {
         let slice_count = self.links.len();
@@ -825,6 +827,9 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ChainNoteLink<ObjectSourc
     fn get_orientation(&self) -> Quat {
         self.orientation
     }
+    fn spawn_orientation(&self) -> Quat {
+        self.spawn_orientation
+    }
     fn do_gravity(&self) -> bool {
         true
     }
@@ -833,9 +838,6 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ChainNoteLink<ObjectSourc
     }
     fn do_spawn_rotation(&self) -> bool {
         true
-    }
-    fn spawn_orientation(&self) -> Quat {
-        self.spawn_orientation
     }
     fn lane_rotation_degrees(&self) -> f32 {
         self.lane_rotation_deg

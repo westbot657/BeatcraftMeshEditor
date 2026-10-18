@@ -10,7 +10,7 @@ class BeatcraftCore {
 /// describes what sets and diffs are available
 class SetInfo {
     String characteristic;
-    DifficultyInfo[] difficulties;
+    DifficultyInfo[] difficulties:
 }
 
 /// Describes each difficulty
