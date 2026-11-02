@@ -1,16 +1,18 @@
 use std::collections::HashSet;
+use std::fmt::Display;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 
 use eframe::glow::{self, Context, HasContext};
-use egui::ImageSource;
+use egui::{ImageSource, Ui};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
-
+use rand::rngs::ThreadRng;
 use beatcraft_audiolib::{Audio, AudioError, AudioMode, AudioSystem, NativeOpenAL};
+use beatcraft_editor_proc::hex;
 use crate::config::ProjectType;
-use crate::data::map_editing::{GlobalEditingData, ObjectSource};
+use crate::data::map_editing::{EditingData, GlobalEditingData, ObjectSource};
 use crate::data::mesh::LightMeshData;
 use crate::editor::{
     App, EditorContext, MINECRAFT_F, RoutineAction, SOURCE_CODE_F, Selection, ViewStyle,
@@ -24,18 +26,20 @@ use crate::{
     get_data_folder,
 };
 
-use self::object::{BeatmapControllerExt, GameObjectExt};
+use self::object::GameObjectExt;
 use self::data::obstacle_font::{HorizontalAlign, ObstacleFont, ObstacleFontData, TextLayout, VerticalAlign};
 use bs_mapping_data::custom_info_v2::DifficultyBeatmapCustomDataV2;
 use bs_mapping_data::info_v2::{CharacteristicSetV2, DifficultyBeatmapV2};
 use bs_mapping_data::{ArcMidAnchorMode, AudioDataFile, BeatmapFile, Color, CutDirection, InfoFile, MapCharacteristic, MapDifficulty};
 
-use beatmap_core::{ArrowType, BeatmapController, GameObject, HitBox, ObjectType};
+use beatmap_core::{ArrowType, BeatmapController, GameObject, HitBox, ObjectType, RuntimeData};
+use crate::beatmap::widgets::cut_direction_selector::{CutDirectionSelector, SelectorLayout};
 
 pub mod data;
 pub mod event;
 pub mod object;
 pub mod render;
+pub mod widgets;
 #[cfg(test)]
 pub mod tests;
 
@@ -60,6 +64,10 @@ pub static OPEN_MAP_ICON: ImageSource =
 pub static CREATE_MAP_ICON: ImageSource =
     egui::include_image!("../assets/textures/svg/create_map_icon.svg");
 
+pub static COLOR_NOTE_BRIGHT: ImageSource =
+    egui::include_image!("../assets/textures/svg/color_note_bright.svg");
+pub static COLOR_NOTE_DOT_BRIGHT: ImageSource =
+    egui::include_image!("../assets/textures/svg/color_note_dot_bright.svg");
 
 pub struct V4BeatmapProjectDiffData {
     pub mappers: Vec<String>,
@@ -113,7 +121,7 @@ pub struct BeatmapProject {
     pub audio: Option<std::sync::Arc<Audio<NativeOpenAL>>>,
     pub cover_image: Option<PathBuf>,
     pub sets: Vec<BeatmapProjectSet>,
-    pub controller: Option<BeatmapController<ObjectSource>>,
+    pub controller: Option<(BeatmapController<ObjectSource>, EditingData)>,
 
     pub editor_data_path: Option<PathBuf>,
     pub editor_data: GlobalEditingData,
@@ -133,6 +141,7 @@ pub struct BeatmapMeshSet {
     obstacle_mesh: GpuMesh,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PlacementObjectType {
     ColorNote,
     BombNote,
@@ -142,57 +151,289 @@ pub enum PlacementObjectType {
     Text,
 }
 
-#[derive(Default)]
+impl PlacementObjectType {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::ColorNote => "Color Note",
+            Self::BombNote => "Bomb Note",
+            Self::Obstacle => "Obstacle",
+            Self::Chain => "Chain Note",
+            Self::Arc => "Arc",
+            Self::Text => "Obstacle Text",
+        }
+    }
+
+    pub fn tool_icon(&self) -> ImageSource<'_> {
+        match self {
+            Self::ColorNote => COLOR_NOTE_TOOL_ICON.clone(),
+            Self::BombNote => BOMB_NOTE_TOOL_ICON.clone(),
+            Self::Obstacle => OBSTACLE_TOOL_ICON.clone(),
+            Self::Chain => CHAIN_NOTE_TOOL_ICON.clone(),
+            Self::Arc => ARC_TOOL_ICON.clone(),
+            Self::Text => OBSTACLE_TEXT_TOOL_ICON.clone(),
+        }
+    }
+
+    pub fn iter_all() -> impl Iterator<Item = Self> {
+        [
+            Self::ColorNote,
+            Self::BombNote,
+            Self::Obstacle,
+            Self::Chain,
+            Self::Arc,
+            Self::Text,
+        ].into_iter()
+    }
+}
+
+impl Display for PlacementObjectType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display_name())
+    }
+}
+
+#[derive(Default, Clone, PartialEq, Eq)]
+pub enum ColorMode {
+    #[default]
+    Default,
+    Color,
+    Gradient,
+}
+
 pub struct ColorNotePlacementData {
     pub note_type: Color,
     pub cut_direction: CutDirection,
-    pub color: Option<Vec4>,
+    pub cut_offset: f32,
+    pub use_cut_offset: bool,
+
+    pub left_color_mode: ColorMode,
+    pub left_custom_color: Vec4,
+    pub left_gradient: String,
+
+    pub right_color_mode: ColorMode,
+    pub right_custom_color: Vec4,
+    pub right_gradient: String,
 }
 
-#[derive(Default)]
+impl Default for ColorNotePlacementData {
+    fn default() -> Self {
+        Self {
+            note_type: Default::default(),
+            cut_direction: CutDirection::Down,
+            cut_offset: 0.0,
+            use_cut_offset: false,
+
+            left_color_mode: Default::default(),
+            left_custom_color: hex!(#BF2F2F),
+            left_gradient: String::new(),
+
+            right_color_mode: Default::default(),
+            right_custom_color: hex!(#1F63A7),
+            right_gradient: String::new(),
+        }
+    }
+}
+
+impl ColorNotePlacementData {
+    fn note_colors(&mut self) -> NoteColorRef<'_> {
+        NoteColorRef::new(
+            &mut self.note_type,
+            &mut self.left_color_mode,
+            &mut self.left_custom_color,
+            &mut self.left_gradient,
+            &mut self.right_color_mode,
+            &mut self.right_custom_color,
+            &mut self.right_gradient,
+        )
+    }
+}
+
 pub struct BombPlacementData {
-    pub color: Option<Vec4>,
+    pub color_mode: ColorMode,
+    pub custom_color: Vec4,
+    pub gradient: String,
 }
 
-#[derive(Default)]
+impl Default for BombPlacementData {
+    fn default() -> Self {
+        Self {
+            color_mode: Default::default(),
+            custom_color: hex!(#333333),
+            gradient: String::new(),
+        }
+    }
+}
+
+impl BombPlacementData {
+    fn object_color(&mut self) -> ObjectColorRef<'_> {
+        ObjectColorRef::new(&mut self.color_mode, &mut self.custom_color, &mut self.gradient)
+    }
+}
+
 pub struct ObstaclePlacementData {
     pub width: f32,
     pub height: f32,
     pub duration: f32,
-    pub length: Option<f32>,
-    pub color: Option<Vec4>,
+
+    pub length: f32,
+    pub use_length: bool,
+
+    pub color_mode: ColorMode,
+    pub custom_color: Vec4,
+    pub gradient: String,
 }
 
-#[derive(Default)]
+impl Default for ObstaclePlacementData {
+    fn default() -> Self {
+        Self {
+            width: 1.0,
+            height: 5.0,
+            duration: 1.0,
+
+            length: 1.0,
+            use_length: false,
+
+            color_mode: Default::default(),
+            custom_color: hex!(#FF2F2F),
+            gradient: String::new(),
+        }
+    }
+}
+
+impl ObstaclePlacementData {
+    fn object_color(&mut self) -> ObjectColorRef<'_> {
+        ObjectColorRef::new(&mut self.color_mode, &mut self.custom_color, &mut self.gradient)
+    }
+}
+
 pub struct ChainPlacementData {
     pub note_type: Color,
     pub cut_direction: CutDirection,
     pub link_count: u8,
-    pub color: Option<Vec4>,
+
+    pub left_color_mode: ColorMode,
+    pub left_custom_color: Vec4,
+    pub left_gradient: String,
+
+    pub right_color_mode: ColorMode,
+    pub right_custom_color: Vec4,
+    pub right_gradient: String,
 }
 
-#[derive(Default)]
+impl Default for ChainPlacementData {
+    fn default() -> Self {
+        Self {
+            note_type: Default::default(),
+            cut_direction: CutDirection::Down,
+            link_count: 0,
+
+            left_color_mode: Default::default(),
+            left_custom_color: hex!(#BF2F2F),
+            left_gradient: String::new(),
+
+            right_color_mode: Default::default(),
+            right_custom_color: hex!(#1F63A7),
+            right_gradient: String::new(),
+        }
+    }
+}
+
+impl ChainPlacementData {
+    fn note_colors(&mut self) -> NoteColorRef<'_> {
+        NoteColorRef::new(
+            &mut self.note_type,
+            &mut self.left_color_mode,
+            &mut self.left_custom_color,
+            &mut self.left_gradient,
+            &mut self.right_color_mode,
+            &mut self.right_custom_color,
+            &mut self.right_gradient,
+        )
+    }
+}
+
 pub struct ArcPlacementData {
     pub note_type: Color,
+
+    pub head_cut_direction: CutDirection,
+
     pub mid_anchor_mode: ArcMidAnchorMode,
-    pub color: Option<Vec4>,
+
+    pub tail_cut_direction: CutDirection,
+
+    pub left_color_mode: ColorMode,
+    pub left_custom_color: Vec4,
+    pub left_gradient: String,
+
+    pub right_color_mode: ColorMode,
+    pub right_custom_color: Vec4,
+    pub right_gradient: String,
+}
+
+impl Default for ArcPlacementData {
+    fn default() -> Self {
+        Self {
+            note_type: Default::default(),
+
+            head_cut_direction: CutDirection::Down,
+
+            mid_anchor_mode: Default::default(),
+
+            tail_cut_direction: CutDirection::Down,
+
+            left_color_mode: Default::default(),
+            left_custom_color: hex!(#BF2F2F),
+            left_gradient: String::new(),
+
+            right_color_mode: Default::default(),
+            right_custom_color: hex!(#1F63A7),
+            right_gradient: String::new(),
+        }
+    }
+}
+
+impl ArcPlacementData {
+    fn note_colors(&mut self) -> NoteColorRef<'_> {
+        NoteColorRef::new(
+            &mut self.note_type,
+            &mut self.left_color_mode,
+            &mut self.left_custom_color,
+            &mut self.left_gradient,
+            &mut self.right_color_mode,
+            &mut self.right_custom_color,
+            &mut self.right_gradient,
+        )
+    }
 }
 
 pub struct TextPlacementData {
+    pub color_mode: ColorMode,
+    pub custom_color: Vec4,
+    pub gradient: String,
+
     pub text: String,
-    pub scale: f32,
-    pub duration: f32,
-    pub length: Option<f32>,
     pub font: ObstacleFontData,
+
+    pub kerning: f32,
+    pub word_spacing: f32,
+    pub line_spacing: f32,
+
+    pub offset: Vec3,
+    pub scale: Vec3,
+    pub rotation: Quat,
+
+    pub duration: f32,
+    pub use_duration: bool,
 }
 
 impl Default for TextPlacementData {
     fn default() -> Self {
         Self {
+            color_mode: Default::default(),
+            custom_color: hex!(#FF2F2F),
+            gradient: String::new(),
+
             text: Default::default(),
-            scale: 1.,
-            duration: 1.,
-            length: None,
             font: ObstacleFontData {
                 font: ObstacleFont::Simple,
                 layout: TextLayout::Centered,
@@ -200,7 +441,18 @@ impl Default for TextPlacementData {
                 vertical_align: VerticalAlign::Center,
                 letter_spacing: 0.8,
                 word_spacing: 0.8,
-            }
+            },
+
+            kerning: 0.8,
+            word_spacing: 0.8,
+            line_spacing: 0.8,
+
+            offset: Vec3::ZERO,
+            scale: Vec3::ONE,
+            rotation: Quat::IDENTITY,
+
+            duration: 1.,
+            use_duration: true,
         }
     }
 }
@@ -257,8 +509,8 @@ impl BeatmapMeshSet {
         let note_tex = dir.join("color_note.png");
         let arrow_tex = dir.join("arrow.png");
 
-        std::fs::write(&note_tex, NOTE_TEXTURE).unwrap();
-        std::fs::write(&arrow_tex, ARROW_TEXTURE).unwrap();
+        std::fs::write(&note_tex, NOTE_TEXTURE)?;
+        std::fs::write(&arrow_tex, ARROW_TEXTURE)?;
 
         renderer
             .texture_paths
@@ -441,6 +693,185 @@ impl BeatmapEditor {
         self.map = Some(project);
 
         Ok(())
+    }
+}
+
+struct NoteColorRef<'c> {
+    note_type: &'c mut Color,
+
+    left_mode: &'c mut ColorMode,
+    left_color: &'c mut Vec4,
+    left_gradient: &'c mut String,
+
+    right_mode: &'c mut ColorMode,
+    right_color: &'c mut Vec4,
+    right_gradient: &'c mut String,
+}
+
+impl<'c> NoteColorRef<'c> {
+    fn new(
+        note_type: &'c mut Color,
+
+        left_mode: &'c mut ColorMode,
+        left_color: &'c mut Vec4,
+        left_gradient: &'c mut String,
+
+        right_mode: &'c mut ColorMode,
+        right_color: &'c mut Vec4,
+        right_gradient: &'c mut String,
+    ) -> Self {
+        Self {
+            note_type,
+            left_mode,
+            left_color,
+            left_gradient,
+            right_mode,
+            right_color,
+            right_gradient,
+        }
+    }
+
+    fn left(&mut self) -> ObjectColorRef<'_> {
+        ObjectColorRef::new(self.left_mode, self.left_color, self.left_gradient)
+    }
+
+    fn right(&mut self) -> ObjectColorRef<'_> {
+        ObjectColorRef::new(self.right_mode, self.right_color, self.right_gradient)
+    }
+}
+
+struct ObjectColorRef<'c> {
+    mode: &'c mut ColorMode,
+    color: &'c mut Vec4,
+    gradient: &'c mut String,
+}
+
+impl<'c> ObjectColorRef<'c> {
+    fn new(
+        mode: &'c mut ColorMode,
+        color: &'c mut Vec4,
+        gradient: &'c mut String,
+    ) -> Self {
+        Self {
+            mode,
+            color,
+            gradient,
+        }
+    }
+}
+
+fn note_color_selector<'c>(
+    app: &mut App,
+    ui: &mut Ui,
+    width: f32,
+    w2: f32,
+    w3: f32,
+    mut data: NoteColorRef<'c>
+) {
+    // Left/Right selector
+    // Color selector
+    // -----------------
+    // rotation selector
+    let left_str = app.data.locale.get("button-beatmap_editor-place-left").to_string();
+    let right_str = app.data.locale.get("button-beatmap_editor-place-right").to_string();
+
+    ui.horizontal(|ui| {
+        if ui.add_sized(
+            [w2, 20.],
+            egui::Button::new(left_str)
+                .selected(*data.note_type == Color::Red)
+        ).clicked() {
+            *data.note_type = Color::Red;
+        }
+
+        if ui.add_sized(
+            [w2, 20.],
+            egui::Button::new(right_str)
+                .selected(*data.note_type == Color::Blue)
+        ).clicked() {
+            *data.note_type = Color::Blue;
+        }
+
+    });
+
+    let obj = match *data.note_type {
+        Color::Red => data.left(),
+        Color::Blue => data.right()
+    };
+
+    object_color_selector(
+        app, ui,
+        width, w3,
+        obj
+    );
+}
+
+fn object_color_selector<'c>(
+    app: &mut App,
+    ui: &mut Ui,
+    width: f32,
+    w3: f32,
+    obj: ObjectColorRef<'c>,
+) {
+
+    let color_str = app.data.locale.get("label-beatmap_editor-place-color").to_string();
+
+    let default_color_str = app.data.locale.get("button-beatmap_editor-place-default-color").to_string();
+    let rgba_str = app.data.locale.get("button-beatmap_editor-place-custom-color").to_string();
+    let gradient_str = app.data.locale.get("button-beatmap_editor-place-gradient-color").to_string();
+    let gradient_tooltip = app.data.locale.get("tooltip-beatmap_editor-place-gradient-color-disabled").to_string();
+
+    ui.label(color_str);
+
+    ui.horizontal(|ui| {
+        if ui.add_sized(
+            [w3, 20.],
+            egui::Button::new(default_color_str)
+                .selected(*obj.mode == ColorMode::Default)
+        ).clicked() {
+            *obj.mode = ColorMode::Default;
+        }
+
+        if ui.add_sized(
+            [w3, 20.],
+            egui::Button::new(rgba_str)
+                .selected(*obj.mode == ColorMode::Color)
+        ).clicked() {
+            *obj.mode = ColorMode::Color;
+        }
+
+        ui.add_enabled_ui(
+            false,
+            |ui| {
+                if ui.add_sized(
+                    [w3, 20.],
+                    egui::Button::new(gradient_str)
+                        .selected(*obj.mode == ColorMode::Gradient)
+                ).on_disabled_hover_text(gradient_tooltip).clicked() {
+                    *obj.mode = ColorMode::Gradient;
+                }
+            }
+        );
+
+    });
+
+    match *obj.mode {
+        ColorMode::Default => {
+            let padding = ui.spacing().item_spacing.y;
+            ui.add_space(20. + padding);
+        },
+        ColorMode::Color => {
+            let rgba = obj.color;
+            let mut col = egui::Rgba::from_rgba_premultiplied(rgba.x, rgba.y, rgba.z, rgba.w);
+            let spacing = ui.spacing().interact_size;
+            ui.spacing_mut().interact_size = egui::Vec2::new(width, 20.);
+            egui::color_picker::color_edit_button_rgba(ui, &mut col, egui::color_picker::Alpha::OnlyBlend);
+            ui.spacing_mut().interact_size = spacing;
+            *rgba = Vec4::new(col.r(), col.g(), col.b(), col.a())
+        },
+        ColorMode::Gradient => {
+            // TODO: dropdown selector
+        },
     }
 }
 
@@ -634,7 +1065,7 @@ impl App {
                     if scroll != 0.0 {
                         if alt {
                             if let Some(map) = self.map_editor.map.as_ref()
-                                && let Some(controller) = map.controller.as_ref()
+                                && let Some((controller, _)) = map.controller.as_ref()
                                 && let Some(audio) = map.audio.as_ref()
                                 && let Some(length_secs) = audio.length_seconds()
                             {
@@ -658,7 +1089,7 @@ impl App {
                 if (resp.clicked() || resp.dragged())
                     && let Some(pos) = resp.interact_pointer_pos()
                     && let Some(map) = self.map_editor.map.as_ref()
-                    && let Some(controller) = map.controller.as_ref()
+                    && let Some((controller, _)) = map.controller.as_ref()
                     && let Some(audio) = map.audio.as_ref()
                     && let Some(length_secs) = audio.length_seconds()
                 {
@@ -679,7 +1110,7 @@ impl App {
                     callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
                         move |_info, painter| {
                             if let Some(map) = s.map_editor.map.as_ref()
-                                && let Some(controller) = map.controller.as_ref()
+                                && let Some((controller, _)) = map.controller.as_ref()
                                 && let Some(audio) = map.audio.as_ref()
                                 && let Some(length) = audio.length_seconds()
                             {
@@ -755,7 +1186,177 @@ impl App {
             .exact_width(300.)
             .resizable(false)
             .show(ctx, |ui| {
-                
+                match self.map_editor.map.as_ref() {
+                    None => {
+                        // No map selected
+                    }
+                    Some(map) => match map.controller.as_ref() {
+                        None => {
+                            // No difficulty selected
+                        },
+                        Some(_) => {
+                            // In editor
+                            let mut current = self.map_editor.selected_placement_type;
+
+                            const TOOL_SIZE: f32 = 88.;
+                            const TOOL_MARGIN: f32 = 5.;
+                            const TOOL_PADDING: f32 = 5.;
+                            const TOOL_ROWS: usize = 2;
+                            const TOOL_COLS: usize = 3;
+
+                            const T_WIDTH: f32 = TOOL_MARGIN * 2.
+                                + TOOL_SIZE * TOOL_COLS as f32
+                                + TOOL_PADDING * (TOOL_COLS - 1) as f32;
+                            const T_HEIGHT: f32 = TOOL_MARGIN * 2.
+                                + TOOL_SIZE * TOOL_ROWS as f32
+                                + TOOL_PADDING * (TOOL_ROWS - 1) as f32;
+
+                            ui.allocate_ui_with_layout(
+                                [T_WIDTH, T_HEIGHT].into(),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    let origin = ui.max_rect().min + egui::vec2(TOOL_MARGIN, TOOL_MARGIN);
+
+                                    for (i, tool) in PlacementObjectType::iter_all().enumerate() {
+                                        let col = i % TOOL_COLS;
+                                        let row = i / TOOL_COLS;
+
+                                        let img_src = tool.tool_icon();
+
+                                        let pos = origin
+                                            + egui::vec2(
+                                            col as f32 * (TOOL_SIZE + TOOL_PADDING),
+                                            row as f32 * (TOOL_SIZE + TOOL_PADDING),
+                                        );
+                                        let rect = egui::Rect::from_min_size(pos, egui::Vec2::splat(TOOL_SIZE));
+
+                                        let response = ui.allocate_rect(rect, egui::Sense::click()).on_hover_text(tool.display_name());
+
+                                        let bg = if tool == current {
+                                            egui::Color32::from_gray(60)
+                                        } else if response.hovered() {
+                                            egui::Color32::from_gray(50)
+                                        } else {
+                                            egui::Color32::from_gray(0x20)
+                                        };
+                                        ui.painter().rect_filled(rect, 4.0, bg);
+
+                                        egui::Image::new(img_src).paint_at(ui, rect);
+
+                                        if response.clicked() {
+                                            current = tool;
+                                        }
+                                    }
+                                },
+                            );
+
+                            self.map_editor.selected_placement_type = current;
+
+                            ui.separator();
+
+                            let width = ui.available_width();
+                            let padding = ui.style().spacing.item_spacing.x;
+
+                            let w2 = (width - padding) / 2.;
+                            let w3 = (width - padding * 2.) / 3.;
+                            let w4 = (width - padding * 3.) / 4.;
+
+                            let rd = RefDuper;
+                            let placement_data = unsafe { rd.detach_mut_ref(&mut self.map_editor.placement_data) };
+
+                            match current {
+                                PlacementObjectType::ColorNote => {
+                                    // Left/Right selector
+                                    // Color selector
+                                    // -----------------
+                                    // rotation selector
+                                    note_color_selector(
+                                        self, ui,
+                                        width, w2, w3,
+                                        placement_data.color_note.note_colors(),
+                                    );
+
+                                    ui.add_space(10.);
+                                    ui.separator();
+
+                                    let is_dot = self.map_editor.placement_data.color_note.cut_direction == CutDirection::Dot;
+
+                                    ui.add_sized(
+                                        [width, width/2.],
+                                        CutDirectionSelector::new(
+                                            &mut placement_data.color_note.cut_direction,
+                                            &mut placement_data.color_note.use_cut_offset,
+                                            SelectorLayout::Horizontal,
+                                        ).cut_offset(
+                                            &mut placement_data.color_note.cut_offset,
+                                        ).image(if is_dot { COLOR_NOTE_DOT_BRIGHT.clone() } else { COLOR_NOTE_BRIGHT.clone() })
+                                    );
+
+                                }
+                                PlacementObjectType::BombNote => {
+                                    // color selector
+                                    object_color_selector(
+                                        self, ui,
+                                        width, w3,
+                                        placement_data.bomb.object_color(),
+                                    );
+                                }
+                                PlacementObjectType::Obstacle => {
+                                    // color selector
+                                    // --------------
+                                    // scale
+                                    // rotation
+                                    // duration
+                                    object_color_selector(
+                                        self, ui,
+                                        width, w3,
+                                        placement_data.obstacle.object_color(),
+                                    );
+                                }
+                                PlacementObjectType::Chain => {
+                                    // left/right selector
+                                    // color selector
+                                    // -------------------
+                                    // slice count/squish selector
+                                    // rotation selector
+                                    note_color_selector(
+                                        self, ui,
+                                        width, w2, w3,
+                                        placement_data.chain.note_colors(),
+                                    );
+                                }
+                                PlacementObjectType::Arc => {
+                                    // left/right selector
+                                    // color selector
+                                    // -------------------
+                                    // head rotation selector
+                                    // midpoint mode
+                                    // tail rotation selector
+                                    note_color_selector(
+                                        self, ui,
+                                        width, w2, w3,
+                                        placement_data.arc.note_colors(),
+                                    );
+                                }
+                                PlacementObjectType::Text => {
+                                    // color/gradient selector
+                                    // -----------------------
+                                    // text
+                                    // font
+                                    // kerning, spacing options
+                                    // anchor
+                                    // ------------------------
+                                    // offset
+                                    // scale
+                                    // rotation
+                                    // duration
+                                }
+                            }
+
+                        }
+                    }
+                }
+
             });
 
         egui::SidePanel::right("right_panel")
@@ -792,7 +1393,7 @@ impl App {
                                 },
                             );
                         }
-                        Some(controller) => {
+                        Some((controller, _)) => {
                             self.draw_beatmap_scene(ctx, ui, gl, map, controller);
                         }
                     },
@@ -1160,14 +1761,22 @@ fn draw_map_diff(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
                                                     }
                                                 };
                                                 app.selection = Selection::None;
-                                                map.controller = Some(BeatmapController::new(
-                                                        map.info.as_ref().unwrap(),
-                                                        diff,
-                                                        &diff2,
-                                                        bpm_regions,
-                                                        sample_count,
-                                                        audio.sample_rate,
-                                                ).unwrap());
+                                                let editing_data = EditingData::from_beatmap(&diff2);
+                                                let mut rng = ThreadRng::default();
+                                                let runtime_data = RuntimeData::new(
+                                                    diff.njs,
+                                                    map.info.as_ref().unwrap().bpm(),
+                                                    diff.njs_offset,
+                                                    bpm_regions,
+                                                    sample_count,
+                                                    audio.sample_rate,
+                                                );
+                                                let controller = editing_data.canonicalize(
+                                                    &mut rng,
+                                                    runtime_data,
+                                                    Default::default(),
+                                                ).unwrap();
+                                                map.controller = Some((controller, editing_data));
                                             } else {
                                                 tracing::warn!(target: DB_AUDIO, "Audio sample_count is None");
                                             }
@@ -1283,7 +1892,7 @@ fn draw_map_gl(
         .unwrap();
 
     let rd = RefDuper;
-    let controller = unsafe { rd.detach_mut_ref(controller) };
+    let (controller, _) = unsafe { rd.detach_mut_ref(controller) };
 
     let mut note_instances = Vec::new();
     let mut bomb_instances = Vec::new();

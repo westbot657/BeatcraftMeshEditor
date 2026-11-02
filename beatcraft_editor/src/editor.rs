@@ -1110,7 +1110,7 @@ impl History {
             #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapNotes(mut color_notes) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
-                    && let Some(controller) = map.controller.as_mut()
+                    && let Some((controller, _)) = map.controller.as_mut()
                 {
                     std::mem::swap(&mut color_notes, &mut controller.color_notes);
                     HistoryEntry::BeatmapNotes(color_notes)
@@ -1121,7 +1121,7 @@ impl History {
             #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapBombs(mut bomb_notes) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
-                    && let Some(controller) = map.controller.as_mut()
+                    && let Some((controller, _)) = map.controller.as_mut()
                 {
                     std::mem::swap(&mut bomb_notes, &mut controller.bomb_notes);
                     HistoryEntry::BeatmapBombs(bomb_notes)
@@ -1132,7 +1132,7 @@ impl History {
             #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapObstacles(mut obstacles) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
-                    && let Some(controller) = map.controller.as_mut()
+                    && let Some((controller, _)) = map.controller.as_mut()
                 {
                     std::mem::swap(&mut obstacles, &mut controller.obstacles);
                     HistoryEntry::BeatmapObstacles(obstacles)
@@ -1143,7 +1143,7 @@ impl History {
             #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapChains(mut chain_notes) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
-                    && let Some(controller) = map.controller.as_mut()
+                    && let Some((controller, _)) = map.controller.as_mut()
                 {
                     std::mem::swap(&mut chain_notes, &mut controller.chain_notes);
                     HistoryEntry::BeatmapChains(chain_notes)
@@ -1154,7 +1154,7 @@ impl History {
             #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapArcs(mut arcs) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
-                    && let Some(controller) = map.controller.as_mut()
+                    && let Some((controller, _)) = map.controller.as_mut()
                 {
                     std::mem::swap(&mut arcs, &mut controller.arcs);
                     HistoryEntry::BeatmapArcs(arcs)
@@ -1165,7 +1165,7 @@ impl History {
             #[cfg(feature = "mapper")]
             HistoryEntry::BeatmapRuntimeData(mut runtime_data) => {
                 if let Some(map) = editor.map_editor.map.as_mut()
-                    && let Some(controller) = map.controller.as_mut()
+                    && let Some((controller, _)) = map.controller.as_mut()
                 {
                     std::mem::swap(&mut runtime_data, &mut controller.runtime_data);
                     HistoryEntry::BeatmapRuntimeData(runtime_data)
@@ -1740,7 +1740,7 @@ impl App {
             EditorContext::Map(MapEditorContext::Beatmap) => {
                 if ctx.input_mut(|i| self.data.keymaps.toggle_map_playback.pressed(i)) {
                     if let Some(map) = self.map_editor.map.as_ref()
-                        && let Some(controller) = map.controller.as_ref()
+                        && let Some((controller, _)) = map.controller.as_ref()
                         && let Some(audio) = map.audio.as_ref()
                     {
                         if audio.is_playing() {

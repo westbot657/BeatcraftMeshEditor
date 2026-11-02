@@ -1,13 +1,30 @@
 <svg
-  viewBox="0 0 50 50"
-  xmlns="http://www.w3.org/2000/svg">
+        viewBox="0 0 50 50"
+        xmlns="http://www.w3.org/2000/svg">
     <path stroke-width="0" fill="#202020"
-        d = "M 10 15 L 25 5 L 40 5 L 40 35 L 25 45 L 10 45 Z"
+          d = "M 10 15 L 25 5 L 40 5 L 40 35 L 25 45 L 10 45 Z"
     />
     <path stroke="#272727" stroke-width="3" stroke-linejoin="round" fill="#00000000" stroke-linecap="round"
-        d = "M 10 15 L 10 45 L 25 45 L 25 15 Z
-             M 10 15 L 25 5 L 40 5 L 25 15
-             M 40 5 L 40 35 L 25 45"
+          d = "M 10 15 L 10 45 L 25 45 L 25 15 Z
+               M 10 15 L 25 5 L 40 5 L 25 15
+               M 40 5 L 40 35 L 25 45"
     />
-    <text stroke="#444444" fill="#444444" x="14" y="48" style="font-size:20;">Abc</text>
+    <!-- "Abc" pixel text (2-unit pixels) -->
+    <path stroke-width="0" fill="#444444"
+        d = "M 16 34 h 6 v 2 h -6 z
+             M 14 36 h 2 v 12 h -2 z
+             M 22 36 h 2 v 12 h -2 z
+             M 16 40 h 6 v 2 h -6 z
+
+             M 26 34 h 2 v 14 h -2 z
+             M 28 38 h 6 v 2 h -6 z
+             M 34 40 h 2 v 6 h -2 z
+             M 28 46 h 6 v 2 h -6 z
+
+             M 40 38 h 6 v 2 h -6 z
+             M 38 40 h 2 v 6 h -2 z
+             M 40 46 h 6 v 2 h -6 z
+             M 46 40 h 2 v 2 h -2 z
+             M 46 44 h 2 v 2 h -2 z"
+    />
 </svg>

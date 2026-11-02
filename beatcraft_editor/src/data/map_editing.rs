@@ -4,19 +4,12 @@ use glam::{Quat, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
 
 use crate::DB_DATA;
-use beatmap_core::{
-    BeatmapController, BombNote, ChainNote, ChainNoteLinkData, ColorNote, NoteColor, ObjectColor,
-    Obstacle, RuntimeData, TimeUnit,
-};
+use beatmap_core::{BeatmapController, BombNote, ChainNote, ChainNoteLinkData, ColorNote, CutDirectionExt, NoteColor, ObjectColor, Obstacle, RawNoteColor, RuntimeData, TimeUnit};
 use bs_mapping_data::v2::{self, ObstacleV2Type, V2Note};
 use bs_mapping_data::{ArcMidAnchorMode, BeatmapFile, Color, CutDirection, Sentinel};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObjectSource {
-    #[deprecated = "re-route JSON through editor system."]
-    Json {
-        index: u32,
-    },
     Element {
         index: usize,
     },
@@ -1330,6 +1323,8 @@ impl EditingData {
                 DataElement::ObstacleText(obstacle_text_data) => todo!(),
             }
         }
+        
+        Self::check_window_snaps(&mut color_notes);
 
         Ok(BeatmapController {
             runtime_data,
@@ -1340,4 +1335,72 @@ impl EditingData {
             arcs,
         })
     }
+
+    fn check_window_snaps(color_notes: &mut [ColorNote<ObjectSource>]) {
+        let mut note_types: HashMap<RawNoteColor, Vec<&mut ColorNote<ObjectSource>>> = HashMap::new();
+        for n in color_notes.iter_mut() {
+            let entry = note_types.entry(n.color.raw()).or_default();
+            entry.push(n)
+        }
+        for (_, notes) in note_types.into_iter() {
+            let mut time_groups: HashMap<u32, Vec<&mut ColorNote<ObjectSource>>> = HashMap::new();
+            for n in notes.into_iter() {
+                let entry = time_groups.entry(n.beat.to_bits()).or_default();
+                entry.push(n);
+            }
+
+            for (_, mut notes) in time_groups.into_iter() {
+                if notes.len() != 2 {
+                    continue;
+                }
+                let b = notes.pop().unwrap();
+                let a = notes.pop().unwrap();
+
+                Self::check_window_snap(a, b);
+                Self::check_window_snap(b, a);
+            }
+        }
+    }
+
+    fn check_window_snap(a: &mut ColorNote<ObjectSource>, b: &mut ColorNote<ObjectSource>) {
+        fn normalize_angle(a: f32) -> f32 {
+            (a + 360.) % 360.
+        }
+        fn degrees_between(a: f32, b: f32) -> f32 {
+            let diff = (normalize_angle(a) - normalize_angle(b)).abs();
+            f32::min(diff, 360. - diff)
+        }
+
+        let same_cuts = a.cut_direction == b.cut_direction;
+        let this_is_dot = a.cut_direction == CutDirection::Dot;
+        let other_is_dot = b.cut_direction == CutDirection::Dot;
+
+        if !same_cuts && !this_is_dot && !other_is_dot {
+            return;
+        }
+
+        let ap = a.grid_pos;
+        let bp = b.grid_pos;
+        let cross = bp - ap;
+        let angle = -cross.to_angle().to_degrees() + 90.;
+
+        if this_is_dot && other_is_dot {
+            a.angle_offset_deg = angle;
+            b.angle_offset_deg = angle;
+            return;
+        }
+
+        let degrees = if this_is_dot {
+            b.cut_direction.angle_degrees()
+        } else {
+            a.cut_direction.angle_degrees()
+        };
+        let between = degrees_between(degrees, angle);
+
+        if between <= 40. {
+            a.angle_offset_deg = angle - a.cut_direction.angle_degrees();
+            b.angle_offset_deg = angle - b.cut_direction.angle_degrees();
+        }
+    }
+    
 }
