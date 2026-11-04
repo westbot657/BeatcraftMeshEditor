@@ -19,7 +19,7 @@ use indexmap::IndexMap;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
-use self::config::{AppData, KeyMaps, LocaleCache, RawAppData, RecentProject};
+use self::config::{AppData, LocaleCache, RawAppData, RecentProject};
 use self::editor::{
     App, MINECRAFT_F, SOURCE_CODE_F, Selection, SettingsPage,
     SettingsScreen, UiState, setup_fonts,
@@ -31,6 +31,7 @@ use self::widgets::MathDragValue;
 use fluent_templates::fluent_bundle::FluentValue;
 #[cfg(any(not(feature = "mesh-editor"), not(feature = "mapper")))]
 use crate::config::ProjectKind;
+use crate::keymap::KeymapSystem;
 
 #[cfg(feature = "mapper")]
 pub mod beatmap;
@@ -45,6 +46,7 @@ pub mod render;
 pub mod scenes;
 pub mod ui_elements;
 pub mod widgets;
+mod keymap;
 
 // Logging targets
 pub const DB_LOGIC: &str = "logic";
@@ -54,6 +56,7 @@ pub const DB_DATA: &str = "data";
 pub const DB_HISTORY: &str = "history";
 pub const DB_MATH: &str = "math";
 pub const DB_MAIN: &str = "editor";
+pub const DB_KEYMAP: &str = "keymap";
 
 pub const SMALL_X: &str = "×";
 pub const R_ARROW: &str = "▶";
@@ -76,16 +79,6 @@ pub const APP_NAME: &str = "Beatcraft Mesh Editor";
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
-
-const MODIFIER_NAMES: egui::ModifierNames<'_> = egui::ModifierNames {
-    is_short: false,
-    alt: "Alt",
-    ctrl: "Ctrl",
-    shift: "Shift",
-    mac_cmd: "Cmd",
-    mac_alt: "Alt",
-    concat: "+",
-};
 
 pub fn get_data_folder() -> Option<PathBuf> {
     dirs::data_local_dir().map(|dir| dir.join("beatcraftmesheditor"))
@@ -178,6 +171,8 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let gl = frame.gl().unwrap();
 
+        self.data.keymaps.poll(ctx);
+
         if self.state.dirty {
             self.rebuild_meshes(gl);
         }
@@ -239,7 +234,11 @@ impl eframe::App for App {
                 #[cfg(feature = "mesh-editor")]
                 editor::EditorContext::Model(model_editor_context) => match model_editor_context {
                     editor::ModelEditorContext::Environment => {
-                        self.draw_environment_editor(ctx, frame, shift, ctrl)
+                        self.data.keymaps.push_ctx("editor");
+                        self.data.keymaps.push_ctx("mesh");
+                        self.draw_environment_editor(ctx, frame, shift, ctrl);
+                        self.data.keymaps.remove_ctx("editor");
+                        self.data.keymaps.remove_ctx("mesh");
                     }
                     editor::ModelEditorContext::Saber => todo!(),
                     editor::ModelEditorContext::Notes => todo!(),
@@ -247,7 +246,11 @@ impl eframe::App for App {
                 #[cfg(feature = "mapper")]
                 editor::EditorContext::Map(map_editor_context) => match map_editor_context {
                     editor::MapEditorContext::Beatmap => {
-                        self.draw_beatmap_editor(ctx, frame, shift, ctrl, alt)
+                        self.data.keymaps.push_ctx("editor");
+                        self.data.keymaps.push_ctx("beatmap");
+                        self.draw_beatmap_editor(ctx, frame, shift, ctrl, alt);
+                        self.data.keymaps.remove_ctx("editor");
+                        self.data.keymaps.remove_ctx("beatmap");
                     }
                     editor::MapEditorContext::Lightshow => todo!(),
                     editor::MapEditorContext::Audio => todo!(),
@@ -294,7 +297,7 @@ impl App {
     fn draw_settings_page(
         lang: &mut LocaleCache,
         ctx: &egui::Context,
-        keymaps: &mut KeyMaps,
+        keymaps: &mut KeymapSystem,
         settings: &mut SettingsScreen,
     ) -> bool {
         if !egui::SidePanel::new(egui::panel::Side::Left, "setting selector")
@@ -323,7 +326,7 @@ impl App {
                             .clicked()
                         {
                             settings.page = SettingsPage::Keymaps;
-                            settings.cached_binds = Some(keymaps.clone());
+                            settings.cached_binds = Some(keymaps.get_map());
                         }
                         if ui
                             .add_sized(
@@ -370,31 +373,32 @@ impl App {
                                 }
 
                                 macro_rules! key_row {
-                                    ( $attr:tt, $id:literal ) => {
+                                    ($id:literal -> $lang_key:literal ) => {
+                                        key_row!(root: $lang_key: {
+
+                                        })
+                                    };
+                                    ($id:literal => $lang_key:literal ) => {
+                                        key_row!(root: $lang_key: {
+
+                                        })
+                                    };
+                                    (root: $lang_key:literal : $widget:block) => {
                                         ui.allocate_ui_with_layout(
                                             [ui.available_width(), 20.].into(),
                                             egui::Layout::left_to_right(egui::Align::Center),
                                             |ui| {
                                                 ui.allocate_ui_with_layout(
                                                     [ui.available_width() / 2. - 10., 15.].into(),
-                                                    egui::Layout::right_to_left(
-                                                        egui::Align::Center,
-                                                    ),
+                                                    egui::Layout::right_to_left(egui::Align::Center),
                                                     |ui| {
-                                                        ui.add(egui::Label::new(lang.get($id)));
+                                                        ui.add(egui::Label::new(lang.get($lang_key)));
                                                     },
                                                 );
                                                 ui.allocate_ui_with_layout(
                                                     [ui.available_width() / 2. - 10., 15.].into(),
-                                                    egui::Layout::left_to_right(
-                                                        egui::Align::Center,
-                                                    ),
-                                                    |ui| {
-                                                        ui.add(egui_keybind::Keybind::new(
-                                                            &mut keymaps.$attr,
-                                                            $id,
-                                                        ))
-                                                    },
+                                                    egui::Layout::left_to_right(egui::Align::Center),
+                                                    |ui| { $widget },
                                                 );
                                             },
                                         );
@@ -402,27 +406,27 @@ impl App {
                                 }
 
                                 key_label!("keygroup-general");
-                                key_row!(toggle_wireframe, "key-toggle-wireframe");
-                                key_row!(toggle_grid, "key-toggle-grid");
-                                key_row!(toggle_render_style, "key-toggle-render-style");
-                                key_row!(deselect, "key-deselect");
-                                key_row!(save, "key-save");
-                                key_row!(undo, "key-undo");
-                                key_row!(redo, "key-redo");
+                                key_row!("toggle_wireframe" => "key-toggle-wireframe");
+                                key_row!("toggle_grid" => "key-toggle-grid");
+                                key_row!("toggle_render_style" => "key-toggle-render-style");
+                                key_row!("deselect" => "key-deselect");
+                                key_row!("save" => "key-save");
+                                key_row!("undo" => "key-undo");
+                                key_row!("redo" => "key-redo");
 
                                 ui.add_space(20.);
 
                                 #[cfg(feature = "mesh-editor")]
                                 {
                                     key_label!("keygroup-mesh");
-                                    key_row!(toggle_vertices, "key-toggle-vertices");
-                                    key_row!(toggle_mesh_part_back, "key-toggle-mesh-part-back");
-                                    key_row!(toggle_mesh_part_forward, "key-toggle-mesh-part-forward");
-                                    key_row!(toggle_edit_component, "key-toggle-edit-component");
-                                    key_row!(toggle_assembly_view, "key-toggle-assembly-view");
-                                    key_row!(create_or_remove_triangles, "key-toggle-triangles");
-                                    key_row!(flip_triangles, "key-flip-triangles");
-                                    key_row!(create_vertex, "key-create-vertex");
+                                    key_row!("toggle_vertices" => "key-toggle-vertices");
+                                    key_row!("toggle_mesh_part_back" => "key-toggle-mesh-part-back");
+                                    key_row!("toggle_mesh_part_forward" => "key-toggle-mesh-part-forward");
+                                    key_row!("toggle_edit_component" => "key-toggle-edit-component");
+                                    key_row!("toggle_assembly_view" => "key-toggle-assembly-view");
+                                    key_row!("create_or_remove_triangles" => "key-toggle-triangles");
+                                    key_row!("flip_triangles" => "key-flip-triangles");
+                                    key_row!("create_vertex" => "key-create-vertex");
 
                                     ui.add_space(20.);
                                 }
@@ -430,21 +434,21 @@ impl App {
                                 #[cfg(feature = "mapper")]
                                 {
                                     key_label!("keygroup-beatmap");
-                                    key_row!(toggle_map_playback, "key-toggle-map-playback");
-                                    key_row!(rotate_map_grid_left, "key-rotate-grid-left");
-                                    key_row!(rotate_map_grid_right, "key-rotate-grid-right");
-                                    key_row!(map_fly_forward, "key-fly-forward");
-                                    key_row!(map_fly_backward, "key-fly-backward");
-                                    key_row!(map_fly_left, "key-fly-left");
-                                    key_row!(map_fly_right, "key-fly-right");
-                                    key_row!(map_fly_up, "key-fly-up");
-                                    key_row!(map_fly_down, "key-fly-down");
+                                    key_row!("toggle_map_playback" => "key-toggle-map-playback");
+                                    key_row!("rotate_map_grid_left" => "key-rotate-grid-left");
+                                    key_row!("rotate_map_grid_right" => "key-rotate-grid-right");
+                                    key_row!("map_fly_forward" -> "key-fly-forward");
+                                    key_row!("map_fly_backward" -> "key-fly-backward");
+                                    key_row!("map_fly_left" -> "key-fly-left");
+                                    key_row!("map_fly_right" -> "key-fly-right");
+                                    key_row!("map_fly_up" -> "key-fly-up");
+                                    key_row!("map_fly_down" -> "key-fly-down");
 
                                     ui.add_space(20.);
                                 }
 
                                 key_label!("keygroup-debug");
-                                key_row!(rebuild_meshes, "key-rebuild-meshes");
+                                key_row!("rebuild_meshes" => "key-rebuild-meshes");
                             });
 
                         ui.separator();
@@ -458,14 +462,14 @@ impl App {
                             .clicked()
                             && let Some(cached) = settings.cached_binds.clone()
                         {
-                            *keymaps = cached;
+                            keymaps.update_from_map(cached);
                         }
                         ui.add_space(10.);
                         if ui
                             .add_sized([200., 20.], egui::Button::new(lang.get("reset-keys-label")))
                             .clicked()
                         {
-                            *keymaps = KeyMaps::default();
+                            keymaps.init();
                         }
                     },
                 );
@@ -789,7 +793,7 @@ impl App {
     pub fn open_settings(&mut self) {
         self.state.settings_screen = Some(SettingsScreen {
             page: SettingsPage::Keymaps,
-            cached_binds: Some(self.data.keymaps.clone()),
+            cached_binds: Some(self.data.keymaps.get_map()),
         });
     }
 
@@ -905,7 +909,7 @@ impl App {
                         (self.data.locale.get("open-menu-label").to_string(), None),
                         (
                             self.data.locale.get("save-menu-label").to_string(),
-                            Some(self.data.keymaps.save.format(&MODIFIER_NAMES, cfg!(target_os = "macos")))
+                            Some(self.data.keymaps.get_sequence_string2("save", " | "))
                         ),
                         (self.data.locale.get("menu-label").to_string(), None),
                     ];
@@ -1041,11 +1045,11 @@ impl App {
                     let mut options = [
                         (
                             self.data.locale.get("undo").to_string(),
-                            Some(self.data.keymaps.undo.format(&MODIFIER_NAMES, cfg!(target_os = "macos")))
+                            Some(self.data.keymaps.get_sequence_string2("undo", " | "))
                         ),
                         (
                             self.data.locale.get("redo").to_string(),
-                            Some(self.data.keymaps.redo.format(&MODIFIER_NAMES, cfg!(target_os = "macos")))
+                            Some(self.data.keymaps.get_sequence_string2("redo", " | "))
                         )
                     ];
                     Self::pad_menu_text(&mut options);
@@ -1066,15 +1070,15 @@ impl App {
                     let mut options = [
                         (
                             self.data.locale.get("wireframe").to_string(),
-                            Some(self.data.keymaps.toggle_wireframe.format(&MODIFIER_NAMES, cfg!(target_os = "macos")))
+                            Some(self.data.keymaps.get_sequence_string2("toggle-wireframe", " | "))
                         ),
                         (
                             self.data.locale.get("show-grid").to_string(),
-                            Some(self.data.keymaps.toggle_grid.format(&MODIFIER_NAMES, cfg!(target_os = "macos")))
+                            Some(self.data.keymaps.get_sequence_string2("toggle-grid", " | "))
                         ),
                         (
                             self.data.locale.get("show-vertices").to_string(),
-                            Some(self.data.keymaps.toggle_vertices.format(&MODIFIER_NAMES, cfg!(target_os = "macos")))
+                            Some(self.data.keymaps.get_sequence_string2("toggle-vertices", " | "))
                         ),
                     ];
                     Self::pad_menu_text(&mut options);
@@ -1152,13 +1156,19 @@ impl App {
                                 .id_salt("left_p_scroll")
                                 .show(ui, |ui| match self.mode {
                                     editor::EditorMode::View => {
+                                        self.data.keymaps.push_ctx("view");
                                         scenes::view::draw_view_left(self, ui, gl);
+                                        self.data.keymaps.remove_ctx("view");
                                     }
                                     editor::EditorMode::Assembly => {
+                                        self.data.keymaps.push_ctx("assembly");
                                         scenes::assembly::draw_assembly_left(self, ui, gl);
+                                        self.data.keymaps.remove_ctx("assembly");
                                     }
                                     editor::EditorMode::Edit => {
+                                        self.data.keymaps.push_ctx("part");
                                         scenes::edit::draw_edit_left(self, ui, gl);
+                                        self.data.keymaps.remove_ctx("part");
                                     }
                                 });
                         },
@@ -1223,13 +1233,19 @@ impl App {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| match self.mode {
                     editor::EditorMode::View => {
+                        self.data.keymaps.push_ctx("view");
                         scenes::view::draw_view_right(self, ui, gl);
+                        self.data.keymaps.remove_ctx("view");
                     }
                     editor::EditorMode::Assembly => {
+                        self.data.keymaps.push_ctx("assembly");
                         scenes::assembly::draw_assembly_right(self, ui, gl);
+                        self.data.keymaps.remove_ctx("assembly");
                     }
                     editor::EditorMode::Edit => {
+                        self.data.keymaps.push_ctx("part");
                         scenes::edit::draw_edit_right(self, ui, gl);
+                        self.data.keymaps.remove_ctx("part");
                     }
                 });
             });
@@ -1272,6 +1288,7 @@ impl App {
 
                                 match s.mode {
                                     editor::EditorMode::View => {
+                                        s.ref_mut().data.keymaps.push_ctx("view");
                                         scenes::view::draw_view_gl(
                                             &s,
                                             gl,
@@ -1279,8 +1296,10 @@ impl App {
                                             &proj,
                                             (w as i32, h as i32),
                                         );
+                                        s.ref_mut().data.keymaps.remove_ctx("view");
                                     }
                                     editor::EditorMode::Assembly => {
+                                        s.ref_mut().data.keymaps.push_ctx("assembly");
                                         scenes::assembly::draw_assembly_gl(
                                             &s,
                                             gl,
@@ -1288,8 +1307,10 @@ impl App {
                                             &proj,
                                             (w as i32, h as i32),
                                         );
+                                        s.ref_mut().data.keymaps.remove_ctx("assembly");
                                     }
                                     editor::EditorMode::Edit => {
+                                        s.ref_mut().data.keymaps.push_ctx("part");
                                         scenes::edit::draw_edit_gl(
                                             &s,
                                             gl,
@@ -1297,6 +1318,7 @@ impl App {
                                             &proj,
                                             (w as i32, h as i32),
                                         );
+                                        s.ref_mut().data.keymaps.remove_ctx("part");
                                     }
                                 }
 
@@ -1443,6 +1465,7 @@ fn build_env_filter(debug: bool) -> EnvFilter {
             .add_directive(format!("{DB_RENDER}=debug").parse().unwrap())
             .add_directive(format!("{DB_AUDIO}=debug").parse().unwrap())
             .add_directive(format!("{DB_HISTORY}=debug").parse().unwrap())
+            .add_directive(format!("{DB_KEYMAP}=debug").parse().unwrap())
     } else {
         EnvFilter::new("info")
     };

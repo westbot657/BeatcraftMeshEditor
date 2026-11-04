@@ -10,10 +10,12 @@ use chrono::DateTime;
 use egui::{Key, KeyboardShortcut, Modifiers};
 use fluent_templates::fluent_bundle::FluentValue;
 use fluent_templates::{LanguageIdentifier, Loader, static_loader};
+use keybinds::KeySeq;
 use serde::{Deserialize, Serialize};
-
+use beatcraft_editor_proc::when;
 use crate::DB_DATA;
 use bs_mapping_data::InfoFile;
+use crate::keymap::KeymapSystem;
 
 static_loader! {
     static LOCALES = {
@@ -23,12 +25,27 @@ static_loader! {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+struct RawKeymapData {
+    maps: HashMap<String, Vec<KeySeq>>,
+    timeout: f64,
+}
+
+impl Default for RawKeymapData {
+    fn default() -> Self {
+        Self {
+            maps: Default::default(),
+            timeout: 1.,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RawAppData {
     recents: RawRecentProjects,
     audio_volume: f32,
     #[serde(default)]
-    keymaps: KeyMaps,
+    keymaps: RawKeymapData,
 
     locale: String,
 
@@ -53,7 +70,7 @@ impl Default for RawAppData {
 pub struct AppData {
     pub recents: RecentProjects,
     pub audio_volume: f32,
-    pub keymaps: KeyMaps,
+    pub keymaps: KeymapSystem,
     pub locale: LocaleCache,
 }
 
@@ -82,66 +99,86 @@ pub enum ProjectType {
     Lightshow,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyMaps {
-    pub toggle_vertices: KeyboardShortcut,
-    pub toggle_wireframe: KeyboardShortcut,
-    pub toggle_grid: KeyboardShortcut,
-    pub toggle_render_style: KeyboardShortcut,
-    pub toggle_mesh_part_back: KeyboardShortcut,
-    pub toggle_mesh_part_forward: KeyboardShortcut,
-    pub toggle_edit_component: KeyboardShortcut,
-    pub toggle_assembly_view: KeyboardShortcut,
-    pub create_or_remove_triangles: KeyboardShortcut,
-    pub flip_triangles: KeyboardShortcut,
-    pub create_vertex: KeyboardShortcut,
+impl KeymapSystem {
+    /// Registers the default keymaps
+    pub fn init(&mut self) {
 
-    pub toggle_map_playback: KeyboardShortcut,
-    pub rotate_map_grid_left: KeyboardShortcut,
-    pub rotate_map_grid_right: KeyboardShortcut,
-    pub map_fly_forward: Key,
-    pub map_fly_backward: Key,
-    pub map_fly_left: Key,
-    pub map_fly_right: Key,
-    pub map_fly_up: Key,
-    pub map_fly_down: Key,
-
-    pub deselect: KeyboardShortcut,
-    pub save: KeyboardShortcut,
-    pub undo: KeyboardShortcut,
-    pub redo: KeyboardShortcut,
-    pub rebuild_meshes: KeyboardShortcut,
-}
-
-impl Default for KeyMaps {
-    fn default() -> Self {
-        Self {
-            toggle_vertices: KeyboardShortcut::new(Modifiers::NONE, Key::V),
-            toggle_wireframe: KeyboardShortcut::new(Modifiers::NONE, Key::L),
-            toggle_grid: KeyboardShortcut::new(Modifiers::NONE, Key::G),
-            toggle_render_style: KeyboardShortcut::new(Modifiers::NONE, Key::F),
-            toggle_mesh_part_back: KeyboardShortcut::new(Modifiers::NONE, Key::ArrowLeft),
-            toggle_mesh_part_forward: KeyboardShortcut::new(Modifiers::NONE, Key::ArrowRight),
-            toggle_edit_component: KeyboardShortcut::new(Modifiers::NONE, Key::E),
-            toggle_assembly_view: KeyboardShortcut::new(Modifiers::NONE, Key::I),
-            create_or_remove_triangles: KeyboardShortcut::new(Modifiers::NONE, Key::N),
-            flip_triangles: KeyboardShortcut::new(Modifiers::NONE, Key::R),
-            create_vertex: KeyboardShortcut::new(Modifiers::NONE, Key::C),
-            toggle_map_playback: KeyboardShortcut::new(Modifiers::NONE, Key::Space),
-            rotate_map_grid_left: KeyboardShortcut::new(Modifiers::NONE, Key::ArrowLeft),
-            rotate_map_grid_right: KeyboardShortcut::new(Modifiers::NONE, Key::ArrowRight),
-            map_fly_forward: Key::W,
-            map_fly_backward: Key::S,
-            map_fly_left: Key::A,
-            map_fly_right: Key::D,
-            map_fly_up: Key::E,
-            map_fly_down: Key::Q,
-            deselect: KeyboardShortcut::new(Modifiers::NONE, Key::Escape),
-            save: KeyboardShortcut::new(Modifiers::CTRL, Key::S),
-            undo: KeyboardShortcut::new(Modifiers::CTRL, Key::Z),
-            redo: KeyboardShortcut::new(Modifiers::CTRL | Modifiers::SHIFT, Key::Z),
-            rebuild_meshes: KeyboardShortcut::new(Modifiers::ALT, Key::R),
+        macro_rules! key {
+            ( $id:literal, $when:expr, $( $ks:literal ),+ $(,)? ) => {
+                self.register_keybind(
+                    $id, $when,
+                    vec![
+                        $( KeySeq::from_str($ks).unwrap() ),+
+                    ]
+                );
+            };
         }
+
+        key!("save", when!(always), "Ctrl+s");
+        key!("undo", when!(always), "Ctrl+z");
+        key!("redo", when!(always), "Ctrl+Z", "Ctrl+y");
+
+        key!("copy", when!(always), "Ctrl+c");
+        key!("cut", when!(always), "Ctrl+x");
+        key!("paste", when!(always), "Ctrl+v");
+        key!("delete", when!(always), "Delete", "Backspace");
+        
+        key!("deselect", when!(always), "Esc");
+
+        key!("toggle-vertices", when!(editor & mesh), "v");
+        key!("toggle-wireframe", when!(editor & mesh), "l");
+        key!("toggle-grid", when!(editor & mesh), "g");
+        key!("toggle-render-style", when!(editor & mesh), "f");
+
+        key!("toggle-mesh-part-back", when!(editor & mesh & part), "Left");
+        key!("toggle-mesh-part-forward", when!(editor & mesh & part), "Right");
+        key!("toggle-edit-component", when!(editor & mesh & (part | assembly)), "e");
+
+        key!("toggle-assembly-view", when!(editor & mesh), "i");
+        key!("add-remove-triangles", when!(editor & mesh & part), "n");
+        key!("flip-triangles", when!(editor & mesh & part), "r");
+
+        key!("create-vertex", when!(editor & mesh & part), "c");
+
+        key!("toggle-map-playback", when!(editor & beatmap), "Space");
+        key!("rotate-map-grid-left", when!(editor & beatmap), "Left");
+        key!("rotate-map-grid-right", when!(editor & beatmap), "Right");
+
+        key!("camera-fly-forward", when!(!"block-camera-fly"), "w");
+        key!("camera-fly-backward", when!(!"block-camera-fly"), "s");
+        key!("camera-fly-left", when!(!"block-camera-fly"), "a");
+        key!("camera-fly-right", when!(!"block-camera-fly"), "d");
+        key!("camera-fly-up", when!(!"block-camera-fly"), "e");
+        key!("camera-fly-down", when!(!"block-camera-fly"), "q");
+
+        key!("rebuild-meshes", when!(always), "Alt+r");
+
+        key!("tool-note", when!("hover-tool-panel"), "q");
+        key!("tool-bomb", when!("hover-tool-panel"), "w");
+        key!("tool-obstacle", when!("hover-tool-panel"), "e");
+        key!("tool-chain", when!("hover-tool-panel"), "a");
+        key!("tool-arc", when!("hover-tool-panel"), "s");
+        key!("tool-text", when!("hover-tool-panel"), "d");
+
+        key!("set-note-left", when!("hover-note-type"), "q");
+        key!("set-note-right", when!("hover-note-type"), "e");
+
+        key!("set-color-default", when!("hover-note-color"), "q");
+        key!("set-color-rgba", when!("hover-note-color"), "w");
+        key!("set-color-gradient", when!("hover-note-color"), "e");
+
+        key!("cut-dir-ul", when!("hover-cut-dir"), "q");
+        key!("cut-dir-u", when!("hover-cut-dir"), "w");
+        key!("cut-dir-ur", when!("hover-cut-dir"), "e");
+        key!("cut-dir-l", when!("hover-cut-dir"), "a");
+        key!("cut-dir-dot", when!("hover-cut-dir"), "s");
+        key!("cut-dir-r", when!("hover-cut-dir"), "d");
+        key!("cut-dir-dl", when!("hover-cut-dir"), "z");
+        key!("cut-dir-d", when!("hover-cut-dir"), "x");
+        key!("cut-dir-dr", when!("hover-cut-dir"), "c");
+
+        key!("place-object", when!("hover-place-grid"), "t");
+
     }
 }
 
@@ -220,10 +257,14 @@ pub struct RecentProject {
 impl From<RawAppData> for AppData {
     fn from(value: RawAppData) -> Self {
         tracing::debug!(target: DB_DATA, ?value, "Loading from raw data");
+        let mut keymaps = KeymapSystem::default();
+        keymaps.init();
+        keymaps.update_from_map(value.keymaps.maps);
+        keymaps.timeout = value.keymaps.timeout;
         Self {
             recents: value.recents.into(),
             audio_volume: value.audio_volume,
-            keymaps: value.keymaps,
+            keymaps,
             locale: LocaleCache::new(&value.locale),
         }
     }
@@ -295,7 +336,10 @@ impl From<&AppData> for RawAppData {
         Self {
             recents: (&value.recents).into(),
             audio_volume: value.audio_volume,
-            keymaps: value.keymaps.clone(),
+            keymaps: RawKeymapData {
+                maps: value.keymaps.get_map(),
+                timeout: value.keymaps.timeout,
+            },
             locale: value.locale.locale.to_string(),
             catch_all: None,
         }

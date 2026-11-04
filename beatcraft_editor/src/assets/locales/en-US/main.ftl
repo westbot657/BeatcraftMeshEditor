@@ -264,7 +264,7 @@ language-help =
     please open a PR at {$url}
     or contact {$discord} on discord
 
-keygroup-general = Global controlls
+keygroup-general = Global
 key-toggle-wireframe = Toggle wireframe
 key-toggle-grid = Toggle grid
 key-toggle-render-style = Toggle VFX
@@ -273,7 +273,7 @@ key-save = Save current project
 key-undo = Undo most recent change
 key-redo = Redo most recent change
 
-keygroup-mesh = Mesh editor controlls
+keygroup-mesh = Mesh editor
 key-toggle-vertices = Toggle vertices
 key-toggle-mesh-part-back = Cycle part backwards
 key-toggle-mesh-part-forward = Cycle part forwards
@@ -283,7 +283,7 @@ key-toggle-triangles = Create/Remove triangles
 key-flip-triangles = Flip selected triangle winding
 key-create-vertex = Spawn vertex
 
-keygroup-beatmap = Beatmap controlls
+keygroup-beatmap = Beatmap - Global
 key-toggle-map-playback = Play/Pause beatmap playback
 key-rotate-grid-left = Rotate placement grid left
 key-rotate-grid-right = Rotate placement grid right
@@ -294,7 +294,9 @@ key-fly-right = Move camera right
 key-fly-up = Move camera up
 key-fly-down = Move camera down
 
-keygroup-debug = Debug controlls
+keygroup-beatmap-primary-editing = Beatmap - Global Editing
+
+keygroup-debug = Debug
 key-rebuild-meshes = Rebuild texture atlas and meshes
 
 revert-keys-label = Revert current changes

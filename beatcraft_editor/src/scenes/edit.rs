@@ -4,7 +4,7 @@ use crate::light_mesh::{self, BloomfogStyle, ComputeNormal, ComputeVertex};
 use crate::render::{GridType, InstanceData, LIGHT_COLORS, MeshDrawCall, PointDrawCall};
 use crate::ui_elements::*;
 use crate::widgets::TextInput;
-use crate::{App, D_ARROW, MODIFIER_NAMES, R_ARROW, RefDuper, SMALL_X, UnsafeMutRef, data, editor};
+use crate::{App, D_ARROW, R_ARROW, RefDuper, SMALL_X, UnsafeMutRef, data, editor};
 use bs_mapping_data::easing::Easing;
 use eframe::glow;
 use egui::Ui;
@@ -619,16 +619,14 @@ pub fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 "left".into(),
                 s.data
                     .keymaps
-                    .toggle_mesh_part_back
-                    .format(&MODIFIER_NAMES, cfg!(target_os = "macos"))
+                    .get_sequence_string2("toggle-mesh-part-back", " | ")
                     .into(),
             ),
             (
                 "right".into(),
                 s.data
                     .keymaps
-                    .toggle_mesh_part_forward
-                    .format(&MODIFIER_NAMES, cfg!(target_os = "macos"))
+                    .get_sequence_string2("toggle-mesh-part-forward", " | ")
                     .into(),
             ),
         ]

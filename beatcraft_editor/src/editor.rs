@@ -7,9 +7,9 @@ use std::{fs, mem};
 
 use eframe::glow::{self, Context, HasContext};
 use egui::{Key, Response};
-use egui_keybind::Bind;
 use glam::{IVec3, Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
+use keybinds::KeySeq;
 use tracing::Level;
 
 #[cfg(feature = "mapper")]
@@ -19,7 +19,7 @@ use crate::beatmap::BeatmapEditor;
 #[cfg(feature = "mapper")]
 use crate::data::map_editing::ObjectSource;
 use beatmap_core::{BombNote, ChainNote, ColorNote, ObjectType, Obstacle, RuntimeData};
-use crate::config::{AppData, KeyMaps};
+use crate::config::AppData;
 use crate::data::mesh::{
     EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData,
     MeshType, SessionData, SpectrogramData, TypeData, VertexId,
@@ -37,6 +37,7 @@ use crate::light_mesh::{
 use crate::render::{GpuMesh, InstanceData, LIGHT_COLORS, Renderer};
 use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
 use bs_mapping_data::{AudioDataFile, InfoFile};
+use crate::keymap::KeymapSystem;
 
 #[derive(Copy, Clone)]
 pub struct Camera {
@@ -597,7 +598,7 @@ pub enum SettingsPage {
 
 pub struct SettingsScreen {
     pub page: SettingsPage,
-    pub cached_binds: Option<KeyMaps>,
+    pub cached_binds: Option<HashMap<String, Vec<KeySeq>>>,
 }
 
 pub struct State {
@@ -1543,14 +1544,14 @@ impl App {
         let shift = input.modifiers.shift;
         let alt = input.modifiers.alt;
 
-        if ctx.input_mut(|i| self.data.keymaps.redo.pressed(i)) {
+        if ctx.input_mut(|i| self.data.keymaps.pressed("redo")) {
             self.redo(gl);
         }
-        if ctx.input_mut(|i| self.data.keymaps.undo.pressed(i)) {
+        if ctx.input_mut(|i| self.data.keymaps.pressed("undo")) {
             self.undo(gl);
         }
 
-        if ctx.input_mut(|i| self.data.keymaps.save.pressed(i)) {
+        if ctx.input_mut(|i| self.data.keymaps.pressed("save")) {
             #[cfg(feature = "mesh-editor")]
             match self.mode {
                 EditorMode::View => {
@@ -1584,33 +1585,33 @@ impl App {
             // TODO
         }
 
-        if ctx.input_mut(|i| self.data.keymaps.toggle_wireframe.pressed(i)) {
+        if ctx.input_mut(|i| self.data.keymaps.pressed("toggle-wireframe")) {
             self.state.wireframe = !self.state.wireframe;
         }
-        if ctx.input_mut(|i| self.data.keymaps.toggle_grid.pressed(i)) {
+        if ctx.input_mut(|i| self.data.keymaps.pressed("toggle-grid")) {
             self.state.show_grid = !self.state.show_grid;
         }
-        if ctx.input_mut(|i| self.data.keymaps.toggle_vertices.pressed(i)) {
+        if ctx.input_mut(|i| self.data.keymaps.pressed("toggle-vertices")) {
             self.state.show_verts = !self.state.show_verts;
         }
-        if ctx.input_mut(|i| self.data.keymaps.toggle_render_style.pressed(i)) {
+        if ctx.input_mut(|i| self.data.keymaps.pressed("toggle-render-style")) {
             self.state.view_style.cycle();
         }
         #[cfg(feature = "mesh-editor")]
-        if ctx.input_mut(|i| self.data.keymaps.toggle_assembly_view.pressed(i)) {
+        if ctx.input_mut(|i| self.data.keymaps.pressed("toggle-assembly-view")) {
             self.mode = EditorMode::View;
             self.selection = Selection::None;
             self.upload_selection_points(gl);
         }
 
-        if ctx.input_mut(|i| self.data.keymaps.deselect.pressed(i)) {
+        if ctx.input_mut(|i| self.data.keymaps.pressed("deselect")) {
             self.selection = Selection::None;
             #[cfg(feature = "mesh-editor")]
             self.state.ui.mirror_editor.selected.clear();
             self.upload_selection_points(gl);
         }
 
-        if ctx.input_mut(|i| self.data.keymaps.rebuild_meshes.pressed(i)) {
+        if ctx.input_mut(|i| self.data.keymaps.pressed("rebuild-meshes")) {
             self.rebuild_meshes(gl);
         }
 
@@ -1632,7 +1633,7 @@ impl App {
                     }
                 }
                 EditorMode::Assembly => {
-                    if ctx.input_mut(|i| self.data.keymaps.toggle_edit_component.pressed(i)) {
+                    if ctx.input_mut(|i| self.data.keymaps.pressed("toggle-edit-component")) {
                         self.selection = Selection::None;
                         self.upload_selection_points(gl);
                         self.mode = EditorMode::Edit;
@@ -1646,12 +1647,12 @@ impl App {
                     }
                 }
                 EditorMode::Edit => {
-                    if ctx.input_mut(|i| self.data.keymaps.toggle_edit_component.pressed(i)) {
+                    if ctx.input_mut(|i| self.data.keymaps.pressed("toggle-edit-component")) {
                         self.selection = Selection::None;
                         self.upload_selection_points(gl);
                         self.mode = EditorMode::Assembly;
                     }
-                    if ctx.input_mut(|i| self.data.keymaps.toggle_mesh_part_back.pressed(i))
+                    if ctx.input_mut(|i| self.data.keymaps.pressed("toggle-mesh-part-back"))
                         && let Some(sel) = self.editor.mesh.as_deref()
                         && let Some(Some(mesh)) = self.view.meshes.get(sel)
                     {
@@ -1665,7 +1666,7 @@ impl App {
                         self.selection = Selection::None;
                         self.upload_selection_points(gl);
                     }
-                    if ctx.input_mut(|i| self.data.keymaps.toggle_mesh_part_forward.pressed(i))
+                    if ctx.input_mut(|i| self.data.keymaps.pressed("toggle-mesh-part-forward"))
                         && let Some(sel) = self.editor.mesh.as_deref()
                         && let Some(Some(mesh)) = self.view.meshes.get(sel)
                     {
@@ -1700,7 +1701,7 @@ impl App {
                             self.rebuild_meshes(gl);
                         }
                     }
-                    if ctx.input_mut(|i| self.data.keymaps.create_or_remove_triangles.pressed(i))
+                    if ctx.input_mut(|i| self.data.keymaps.pressed("add-remove-triangles"))
                         && let Selection::Vertices(ref verts) = self.selection
                     {
                         let rd = RefDuper;
@@ -1717,7 +1718,7 @@ impl App {
                             self.rebuild_meshes(gl);
                         }
                     }
-                    if ctx.input_mut(|i| self.data.keymaps.flip_triangles.pressed(i))
+                    if ctx.input_mut(|i| self.data.keymaps.pressed("flip-triangles"))
                         && let Selection::Vertices(ref verts) = self.selection
                     {
                         let rd = RefDuper;
@@ -1738,7 +1739,7 @@ impl App {
             #[cfg(feature = "mapper")]
             #[allow(clippy::collapsible_match, clippy::collapsible_if)]
             EditorContext::Map(MapEditorContext::Beatmap) => {
-                if ctx.input_mut(|i| self.data.keymaps.toggle_map_playback.pressed(i)) {
+                if ctx.input_mut(|i| self.data.keymaps.pressed("toggle-map-playback")) {
                     if let Some(map) = self.map_editor.map.as_ref()
                         && let Some((controller, _)) = map.controller.as_ref()
                         && let Some(audio) = map.audio.as_ref()
@@ -1758,10 +1759,10 @@ impl App {
                         }
                     }
                 }
-                if ctx.input_mut(|i| self.data.keymaps.rotate_map_grid_left.pressed(i)) {
+                if ctx.input_mut(|i| self.data.keymaps.pressed("rotate-map-grid-left")) {
                     self.render.renderer.beatmap.placement_r += 15f32.to_radians();
                 }
-                if ctx.input_mut(|i| self.data.keymaps.rotate_map_grid_right.pressed(i)) {
+                if ctx.input_mut(|i| self.data.keymaps.pressed("rotate-map-grid-right")) {
                     self.render.renderer.beatmap.placement_r -= 15f32.to_radians();
                 }
             }
@@ -1846,7 +1847,7 @@ impl App {
                     let self2 = unsafe { rd.detach_mut_ref(self) };
                     if self.mode == EditorMode::Edit
                         && let Some(i) = &input
-                        && ctx.input_mut(|i| self.data.keymaps.create_vertex.pressed(i))
+                        && self.data.keymaps.pressed("create_vertex")
                         && !i.modifiers.ctrl
                         && let vp = self.cam().vp(w, h)
                         && let Some(part) = self.get_current_part_mut()
@@ -1875,22 +1876,22 @@ impl App {
                     let right = Vec2::from_angle(-self.cam().yaw) * move_speed;
                     let forward = Vec3::new(forward.x, 0., forward.y);
                     let right = Vec3::new(right.x, 0., right.y);
-                    if ctx.input(|i| i.key_down(self.data.keymaps.map_fly_forward)) {
+                    if self.data.keymaps.pressed("camera-fly-forward") {
                         self.cam().target += forward;
                     }
-                    if ctx.input(|i| i.key_down(self.data.keymaps.map_fly_backward)) {
+                    if self.data.keymaps.pressed("camera-fly-backward") {
                         self.cam().target -= forward;
                     }
-                    if ctx.input(|i| i.key_down(self.data.keymaps.map_fly_left)) {
+                    if self.data.keymaps.pressed("camera-fly-left") {
                         self.cam().target -= right;
                     }
-                    if ctx.input(|i| i.key_down(self.data.keymaps.map_fly_right)) {
+                    if self.data.keymaps.pressed("camera-fly-right") {
                         self.cam().target += right;
                     }
-                    if ctx.input(|i| i.key_down(self.data.keymaps.map_fly_up)) {
+                    if self.data.keymaps.pressed("camera-fly-up") {
                         self.cam().target.y += move_speed;
                     }
-                    if ctx.input(|i| i.key_down(self.data.keymaps.map_fly_down)) {
+                    if self.data.keymaps.pressed("camera-fly-down") {
                         self.cam().target.y -= move_speed;
                     }
                 }
