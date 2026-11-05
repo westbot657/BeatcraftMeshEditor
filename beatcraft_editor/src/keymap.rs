@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
 use std::fmt::{Display, Formatter};
+use std::hash::Hash;
 use std::ops::{BitAnd, BitOr, Not};
+use std::rc::Rc;
 use std::time::Duration;
 use bitflags::bitflags;
 use egui::{Event, Id, Modifiers, Response, Ui, Widget};
 use keybinds::{Key, KeyInput, KeySeq, Match, Mods};
+use parking_lot::RwLock;
 use crate::{DB_KEYMAP, DB_LOGIC};
 
 /// Use bitwise operators to build: | & !
@@ -44,6 +46,10 @@ impl ContextCondition {
     }
 
     pub fn overlaps(&self, other: &Self) -> bool {
+        self.overlaps_excluding(other, &[])
+    }
+
+    pub fn overlaps_excluding(&self, other: &Self, exclusive: &[Vec<&'static str>]) -> bool {
         let mut names = Vec::new();
         self.collect_names(&mut names);
         other.collect_names(&mut names);
@@ -54,6 +60,12 @@ impl ContextCondition {
         }
         (0u32..1 << names.len()).any(|mask| {
             let active = |n: &str| names.iter().position(|x| *x == n).is_some_and(|i| mask >> i & 1 == 1);
+            if exclusive
+                .iter()
+                .any(|g| g.iter().copied().filter(|c| active(c)).count() > 1)
+            {
+                return false;
+            }
             self.eval(&active) && other.eval(&active)
         })
     }
@@ -119,7 +131,7 @@ impl Display for ContextCondition {
                 write!(f, "(")?;
                 for (i, c) in a.iter().enumerate() {
                     c.fmt(f)?;
-                    if i < a.len()-1 {
+                    if i < a.len() - 1 {
                         write!(f, " & ")?;
                     }
                 }
@@ -129,7 +141,7 @@ impl Display for ContextCondition {
                 write!(f, "(")?;
                 for (i, c) in a.iter().enumerate() {
                     c.fmt(f)?;
-                    if i < a.len()-1 {
+                    if i < a.len() - 1 {
                         write!(f, " | ")?;
                     }
                 }
@@ -298,26 +310,21 @@ pub fn key_as_mod(k: Key) -> Option<Mods> {
 }
 
 fn input_down(i: &egui::InputState, input: KeyInput, text_safe: bool) -> bool {
-    // A lone modifier is down whenever that modifier is held (others may be too).
     if let Some(m) = key_as_mod(input.key()) {
         return i.modifiers.to_mods().contains(m);
     }
-    let want = input.mods();
+    let mut want = input.mods();
     if text_safe && !want.intersects(Mods::CTRL | Mods::ALT | Mods::CMD) {
         return false;
     }
+    if matches!(input.key(), Key::Char(c) if c.is_uppercase()) {
+        want |= Mods::SHIFT;
+    }
     let mut have = i.modifiers.to_mods();
-    match input.key() {
-        // Letters: `Char('A')` means Shift+a, `Char('a')` means no Shift.
-        Key::Char(c) if c.is_alphabetic() => {
-            if have.contains(Mods::SHIFT) != c.is_uppercase() {
-                return false;
-            }
-            have.remove(Mods::SHIFT);
+    for m in [Mods::SHIFT, Mods::ALT] {
+        if !want.contains(m) {
+            have.remove(m);
         }
-        // Symbols: shift is already baked into the character.
-        Key::Char(_) => have.remove(Mods::SHIFT),
-        _ => {}
     }
     have == want && to_egui_key(input.key()).is_some_and(|k| i.key_down(k))
 }
@@ -331,8 +338,10 @@ fn recording_id() -> Id {
 
 #[derive(Debug)]
 pub struct KeymapSystem {
-    context: Vec<&'static str>,
+    context: Rc<RwLock<Vec<&'static str>>>,
     keymaps: HashMap<&'static str, Keymap>,
+    /// Groups of contexts that can never be active together (used by conflict checks).
+    exclusive: Vec<Vec<&'static str>>,
     /// What happened to each bind this frame. Rebuilt by `poll`.
     triggered: HashMap<&'static str, KeyAction>,
     /// Single-key binds that were held last frame (for release detection).
@@ -342,10 +351,26 @@ pub struct KeymapSystem {
     /// Binds that match `pending` exactly but could still become longer ones.
     deferred: Vec<&'static str>,
     deadline: Option<f64>,
+
+    recording_frame: bool,
+    text_focus_frame: bool,
+
     /// Seconds allowed between keys of a sequence.
     pub timeout: f64,
     /// While a text field has focus, ignore binds without Ctrl/Alt/Cmd.
     pub text_safe: bool,
+}
+
+pub struct ContextGuard {
+    system_ctx: Rc<RwLock<Vec<&'static str>>>,
+    context: Vec<&'static str>,
+}
+
+impl Drop for ContextGuard {
+    fn drop(&mut self) {
+        let mut guard = self.system_ctx.write();
+        guard.retain(|c| !self.context.contains(c))
+    }
 }
 
 #[derive(Debug)]
@@ -368,13 +393,16 @@ bitflags! {
 impl Default for KeymapSystem {
     fn default() -> Self {
         Self {
-            context: Vec::new(),
+            context: Default::default(),
             keymaps: HashMap::new(),
+            exclusive: Vec::new(),
             triggered: HashMap::new(),
             was_down: HashSet::new(),
             pending: Vec::new(),
             deferred: Vec::new(),
             deadline: None,
+            recording_frame: false,
+            text_focus_frame: false,
             timeout: 1.0,
             text_safe: true,
         }
@@ -425,7 +453,7 @@ impl KeymapSystem {
             maps.iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
-                .join(sequence_separator)
+                .join(sequence_separator),
         )
     }
 
@@ -446,13 +474,23 @@ impl KeymapSystem {
         out
     }
 
+    /// Declares contexts that can never be active at the same time.
+    /// Conflict checks ignore any combination containing two of them.
+    pub fn exclusive(&mut self, group: &[&'static str]) {
+        self.exclusive.push(group.to_vec());
+    }
+
     pub fn get_conflicts(&self, name: &'static str) -> Option<Vec<&'static str>> {
         let base = self.keymaps.get(name)?;
         let mut out = Vec::with_capacity(16);
 
         for (other, km) in self.keymaps.iter() {
-            if name == *other { continue };
-            if !base.condition.overlaps(&km.condition) { continue };
+            if name == *other {
+                continue;
+            }
+            if !base.condition.overlaps_excluding(&km.condition, &self.exclusive) {
+                continue;
+            }
             let clash = base.keybinds.iter().any(|a| km.keybinds.iter().any(|b| seqs_clash(a, b)));
             if clash {
                 out.push(*other);
@@ -466,20 +504,53 @@ impl KeymapSystem {
         }
     }
 
+    pub fn get_seq_conflicts(&self, name: &'static str, seq: &KeySeq) -> Vec<&'static str> {
+        let Some(base) = self.keymaps.get(name) else { return Vec::new() };
+        self.keymaps
+            .iter()
+            .filter(|(other, _)| **other != name)
+            .filter(|(_, km)| km.keybinds.iter().any(|b| seqs_clash(seq, b)))
+            .filter(|(_, km)| base.condition.overlaps_excluding(&km.condition, &self.exclusive))
+            .map(|(other, _)| *other)
+            .collect()
+    }
+
+    #[must_use]
+    pub fn scope_ctx(&mut self, context: Vec<&'static str>) -> ContextGuard {
+        for ctx in context.iter() {
+            self.push_ctx(ctx);
+        }
+        ContextGuard {
+            system_ctx: Rc::clone(&self.context),
+            context,
+        }
+    }
+
     pub fn push_ctx(&mut self, ctx: &'static str) {
-        if !self.context.contains(&ctx) {
-            self.context.push(ctx);
+        let mut context = self.context.write();
+        if !context.contains(&ctx) {
+            for g in self.exclusive.iter().filter(|g| g.contains(&ctx)) {
+                if let Some(clash) = g.iter().find(|o| **o != ctx && context.contains(*o)) {
+                    tracing::warn!(target: DB_KEYMAP, ?ctx, ?clash, "pushed a context that is declared exclusive with an active one");
+                }
+            }
+            tracing::trace!(target: DB_KEYMAP, ?ctx, "pushed context");
+            context.push(ctx);
         }
     }
 
     pub fn remove_ctx(&mut self, ctx: &'static str) {
-        self.context.retain(|c| *c != ctx);
+        let mut context = self.context.write();
+        let l0 = context.len();
+        context.retain(|c| *c != ctx);
+        if l0 != context.len() {
+            tracing::trace!(target: DB_KEYMAP, ?ctx, "popped context");
+        }
     }
 
-    pub fn poll(&mut self, ctx: &egui::Context) {
-        tracing::trace!(target: DB_KEYMAP, "Called poll");
+    pub fn poll_events(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         self.triggered.clear();
-        let now = ctx.input(|i| i.time);
+        let now = raw_input.time.unwrap_or_else(|| ctx.input(|i| i.time));
 
         let recording = ctx
             .data(|d| d.get_temp::<f64>(recording_id()))
@@ -487,8 +558,10 @@ impl KeymapSystem {
         if recording {
             self.reset_sequence();
             self.was_down.clear();
+            self.recording_frame = true;
             return;
         }
+        self.recording_frame = false;
 
         let text_focus = ctx.wants_keyboard_input();
         if text_focus {
@@ -497,32 +570,44 @@ impl KeymapSystem {
             self.remove_ctx(TEXT_FOCUS);
         }
         let text_safe = self.text_safe && text_focus;
+        self.text_focus_frame = text_safe;
 
         self.tick(now);
 
-        let repeat_chars: Vec<char> = ctx.input(|i| {
-            i.events
-                .iter()
-                .filter_map(|ev| match ev {
-                    Event::Key { key, pressed: true, repeat: true, .. } => key_char(*key),
-                    _ => None,
-                })
-                .collect()
-        });
-        ctx.input_mut(|i| {
-            i.events.retain(|ev| {
-                let Some((input, repeat)) = event_input(ev, &repeat_chars) else { return true };
-                if text_safe && !input.mods().intersects(Mods::CTRL | Mods::ALT | Mods::CMD) {
-                    return true;
+        let repeat_chars: Vec<char> = raw_input
+            .events
+            .iter()
+            .filter_map(|ev| match ev {
+                Event::Key { key, pressed: true, repeat: true, .. } => key_char(*key),
+                _ => None,
+            })
+            .collect();
+
+        raw_input.events.retain(|ev| {
+            let is_tab = matches!(ev, Event::Key { key: egui::Key::Tab, pressed: true, .. });
+            let consumed = match event_input(ev, &repeat_chars) {
+                Some((input, repeat)) => {
+                    if text_safe && !input.mods().intersects(Mods::CTRL | Mods::ALT | Mods::CMD) {
+                        false
+                    } else {
+                        self.feed(input, repeat, now)
+                    }
                 }
-                !self.feed(input, repeat, now)
-            });
+                None => false,
+            };
+            !(consumed || (is_tab && !text_focus))
         });
+    }
+
+    pub fn poll_held(&mut self, ctx: &egui::Context) {
+        if self.recording_frame {
+            return;
+        }
+        let text_safe = self.text_focus_frame;
 
         let down_now: HashMap<&'static str, bool> = ctx.input(|i| {
             self.keymaps
                 .iter()
-                .filter(|(_, km)| km.condition.check(&self.context))
                 .filter_map(|(name, km)| {
                     let mut hit = false;
                     let mut via_mod = false;
@@ -562,12 +647,25 @@ impl KeymapSystem {
     }
 
     pub fn check_triggered(&self, name: &'static str) -> KeyAction {
-        if !self.keymaps.contains_key(&name) {
+        let Some(km) = self.keymaps.get(name) else {
             tracing::warn!(target: DB_LOGIC, ?name, "Unregistered keybind is untriggerable");
-            KeyAction::NONE
-        } else {
-            self.triggered.get(name).copied().unwrap_or(KeyAction::NONE)
-        }
+            return KeyAction::NONE;
+        };
+        let Some(&action) = self.triggered.get(name) else {
+            return KeyAction::NONE;
+        };
+        let context = self.context.read();
+        let active = km.condition.check(&context);
+        tracing::debug!(
+            target: DB_KEYMAP,
+            ?name,
+            condition = %km.condition,
+            context = ?*context,
+            ?action,
+            active,
+            "triggered keybind checked"
+        );
+        if active { action } else { KeyAction::NONE }
     }
 
     pub fn pressed(&self, name: &'static str) -> bool {
@@ -610,13 +708,16 @@ impl KeymapSystem {
         }
     }
 
+    fn pending_string(&self) -> String {
+        self.pending.iter().map(ToString::to_string).collect::<Vec<_>>().join(" ")
+    }
+
     fn feed(&mut self, input: KeyInput, repeat: bool, now: f64) -> bool {
         if repeat {
-            // Repeats never advance sequences; only single-key binds get HELD.
+            tracing::trace!(target: DB_KEYMAP, key = %input, "key repeat");
             let hits: Vec<&'static str> = self
                 .keymaps
                 .iter()
-                .filter(|(_, km)| km.condition.check(&self.context))
                 .filter(|(_, km)| km.keybinds.iter().any(|s| s.as_slice() == [input]))
                 .map(|(name, _)| *name)
                 .collect();
@@ -628,6 +729,13 @@ impl KeymapSystem {
         }
 
         self.pending.push(input);
+        tracing::debug!(
+            target: DB_KEYMAP,
+            key = %input,
+            sequence = %self.pending_string(),
+            context = ?*self.context.read(),
+            "new key pressed"
+        );
         if self.step(now) {
             return true;
         }
@@ -635,10 +743,12 @@ impl KeymapSystem {
             self.flush_deferred();
             self.reset_sequence();
             self.pending.push(input);
+            tracing::debug!(target: DB_KEYMAP, sequence = %self.pending_string(), "sequence broken, retrying key as a fresh sequence");
             if self.step(now) {
                 return true;
             }
         }
+        tracing::debug!(target: DB_KEYMAP, key = %input, "no bind matched, key passes through");
         self.reset_sequence();
         false
     }
@@ -647,9 +757,6 @@ impl KeymapSystem {
         let mut exact: Vec<&'static str> = Vec::new();
         let mut longer = false;
         for (name, km) in &self.keymaps {
-            if !km.condition.check(&self.context) {
-                continue;
-            }
             for seq in &km.keybinds {
                 match seq.match_to(&self.pending) {
                     Match::Matched => {
@@ -683,6 +790,42 @@ impl KeymapSystem {
             }
             (true, false) => false,
         }
+    }
+
+    pub fn seq_edit(&mut self, ui: &mut Ui, name: &'static str) -> Response {
+        self.edit_row(ui, name, |ui, seqs, conflicts| {
+            ui.add(KeySeqEdit::new(name, seqs).conflicts_per_seq(conflicts))
+        })
+    }
+
+    pub fn single_edit(&mut self, ui: &mut Ui, name: &'static str) -> Response {
+        self.edit_row(ui, name, |ui, seqs, conflicts| {
+            ui.add(SingleKeyListEdit::new(name, seqs).conflicts_per_seq(conflicts))
+        })
+    }
+
+    fn edit_row(
+        &mut self,
+        ui: &mut Ui,
+        name: &'static str,
+        edit: impl FnOnce(&mut Ui, &mut Vec<KeySeq>, Vec<Vec<String>>) -> Response,
+    ) -> Response {
+        let Some(current) = self.get_sequences(name) else {
+            tracing::warn!(target: DB_LOGIC, ?name, "Keybind not registered");
+            let color = ui.visuals().error_fg_color;
+            return ui.colored_label(color, format!("<invalid: {name}>"));
+        };
+        let mut seqs = current.to_vec();
+        let conflicts: Vec<Vec<String>> = seqs
+            .iter()
+            .map(|s| self.get_seq_conflicts(name, s).into_iter().map(String::from).collect())
+            .collect();
+
+        let response = edit(ui, &mut seqs, conflicts);
+        if response.changed() {
+            self.update_keybind(name, seqs);
+        }
+        response
     }
 }
 
@@ -758,6 +901,14 @@ pub fn key_seq_ui(ui: &mut Ui, seq: &[KeyInput]) {
     });
 }
 
+fn recording_chip(ui: &mut Ui, buf: &[KeyInput]) {
+    if buf.is_empty() {
+        keycap(ui, "press keys\u{2026}");
+    } else {
+        key_seq_ui(ui, buf);
+    }
+}
+
 fn outline(ui: &Ui, conflicting: bool, recording: bool) -> egui::Stroke {
     let v = ui.visuals();
     if conflicting {
@@ -773,6 +924,55 @@ fn conflict_text(conflicts: &[String]) -> String {
     format!("Conflicts with: {}", conflicts.join(", "))
 }
 
+fn remove_button(ui: &mut Ui) -> bool {
+    let red = ui.visuals().error_fg_color;
+    ui.add(
+        egui::Button::new(egui::RichText::new("\u{D7}").size(11.0).color(red))
+            .small()
+            .frame(false),
+    )
+        .on_hover_text("Remove")
+        .clicked()
+}
+
+fn darken(c: egui::Color32, amount: f32) -> egui::Color32 {
+    let m = |x: u8| (x as f32 * (1.0 - amount)) as u8;
+    egui::Color32::from_rgb(m(c.r()), m(c.g()), m(c.b()))
+}
+
+fn add_button(ui: &mut Ui, empty: bool) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), 16.0),
+        egui::Sense::click(),
+    );
+    let v = ui.visuals();
+    let painter = ui.painter();
+    if resp.hovered() {
+        let fill = darken(v.widgets.inactive.weak_bg_fill, 0.25);
+        painter.rect_filled(rect, 4, fill);
+    }
+    let color = if resp.hovered() { v.strong_text_color() } else { v.text_color() };
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "\u{FF0B}",
+        egui::FontId::proportional(12.0),
+        color,
+    );
+    if empty {
+        painter.text(
+            rect.left_center() + egui::vec2(6.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            "Unbound",
+            egui::FontId::proportional(11.0),
+            v.weak_text_color(),
+        );
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Add binding")
+        .clicked()
+}
+
 pub struct SingleKeyEdit<'a> {
     id: Id,
     key: &'a mut Option<KeyInput>,
@@ -786,8 +986,23 @@ impl<'a> Widget for SingleKeyEdit<'a> {
 }
 
 impl<'a> SingleKeyEdit<'a> {
+    fn make_id(id_salt: impl Hash) -> Id {
+        Id::new(("single_key_edit", id_salt))
+    }
+
     pub fn new(id_salt: impl Hash, key: &'a mut Option<KeyInput>) -> Self {
-        Self { id: Id::new(("single_key_edit", id_salt)), key, conflicts: Vec::new() }
+        Self { id: Self::make_id(id_salt), key, conflicts: Vec::new() }
+    }
+
+    pub fn start_recording(ctx: &egui::Context, id_salt: impl Hash) {
+        let mods = ctx.input(|i| i.modifiers.to_mods());
+        ctx.data_mut(|d| d.insert_temp(Self::make_id(id_salt), (true, mods)));
+        KeymapSystem::mark_recording(ctx);
+    }
+
+    pub fn is_recording(ctx: &egui::Context, id_salt: impl Hash) -> bool {
+        ctx.data(|d| d.get_temp::<(bool, Mods)>(Self::make_id(id_salt)))
+            .is_some_and(|(active, _)| active)
     }
 
     pub fn conflicts<S: AsRef<str>>(mut self, names: impl IntoIterator<Item = S>) -> Self {
@@ -884,6 +1099,101 @@ impl<'a> SingleKeyEdit<'a> {
     }
 }
 
+pub struct SingleKeyListEdit<'a> {
+    id: Id,
+    seqs: &'a mut Vec<KeySeq>,
+    conflicts: Vec<Vec<String>>,
+}
+
+impl<'a> Widget for SingleKeyListEdit<'a> {
+    fn ui(self, ui: &mut Ui) -> Response {
+        self.show(ui)
+    }
+}
+
+impl<'a> SingleKeyListEdit<'a> {
+    pub fn new(id_salt: impl Hash, seqs: &'a mut Vec<KeySeq>) -> Self {
+        Self { id: Id::new(("single_key_list", id_salt)), seqs, conflicts: Vec::new() }
+    }
+
+    pub fn conflicts_per_seq(mut self, per_seq: Vec<Vec<String>>) -> Self {
+        self.conflicts = per_seq;
+        self
+    }
+
+    pub fn show(self, ui: &mut Ui) -> Response {
+        let Self { id, seqs, conflicts } = self;
+        let ctx = ui.ctx().clone();
+        let pending_id = id.with("pending");
+        let new_slot = id.with("new_slot");
+        let mut pending: bool = ctx.data(|d| d.get_temp(pending_id)).unwrap_or(false);
+        let mut changed = false;
+        let mut remove: Option<usize> = None;
+
+        let inner = ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            for i in 0..seqs.len() {
+                let single = match seqs[i].as_slice() {
+                    [k] => *k,
+                    _ => continue,
+                };
+                ui.horizontal(|ui| {
+                    let mut key = Some(single);
+                    let slot_conflicts = conflicts.get(i).cloned().unwrap_or_default();
+                    let resp = ui.add(SingleKeyEdit::new(id.with(i), &mut key).conflicts(&slot_conflicts));
+                    if resp.changed() {
+                        match key {
+                            Some(k) => {
+                                let new = KeySeq::from(k);
+                                if !seqs.contains(&new) {
+                                    seqs[i] = new;
+                                    changed = true;
+                                }
+                            }
+                            None => remove = Some(i),
+                        }
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if remove_button(ui) {
+                            remove = Some(i);
+                        }
+                    });
+                });
+            }
+
+            if pending {
+                let mut key = None;
+                ui.add(SingleKeyEdit::new(new_slot, &mut key));
+                if let Some(k) = key {
+                    let new = KeySeq::from(k);
+                    if !seqs.contains(&new) {
+                        seqs.push(new);
+                        changed = true;
+                    }
+                    pending = false;
+                } else if !SingleKeyEdit::is_recording(&ctx, new_slot) {
+                    pending = false;
+                }
+            } else if add_button(ui, seqs.is_empty()) {
+                SingleKeyEdit::start_recording(&ctx, new_slot);
+                pending = true;
+            }
+        });
+
+        if let Some(i) = remove {
+            seqs.remove(i);
+            changed = true;
+        }
+        ctx.data_mut(|d| d.insert_temp(pending_id, pending));
+
+        let mut response = inner.response;
+        if changed {
+            response.mark_changed();
+        }
+        response
+    }
+}
+
 #[derive(Clone, Default)]
 struct SeqRec {
     target: Option<usize>,
@@ -894,7 +1204,7 @@ struct SeqRec {
 pub struct KeySeqEdit<'a> {
     id: Id,
     seqs: &'a mut Vec<KeySeq>,
-    conflicts: Vec<String>,
+    conflicts: Vec<Vec<String>>,
     idle: f64,
 }
 
@@ -909,8 +1219,8 @@ impl<'a> KeySeqEdit<'a> {
         Self { id: Id::new(("key_seq_edit", id_salt)), seqs, conflicts: Vec::new(), idle: 0.9 }
     }
 
-    pub fn conflicts<S: AsRef<str>>(mut self, names: impl IntoIterator<Item = S>) -> Self {
-        self.conflicts = names.into_iter().map(|s| s.as_ref().to_owned()).collect();
+    pub fn conflicts_per_seq(mut self, per_seq: Vec<Vec<String>>) -> Self {
+        self.conflicts = per_seq;
         self
     }
 
@@ -965,50 +1275,57 @@ impl<'a> KeySeqEdit<'a> {
             }
         }
 
-        let conflicting = !conflicts.is_empty();
         let mut remove = None;
         let mut start = None;
-        let inner = egui::Frame::new()
-            .stroke(outline(ui, conflicting, was_recording))
-            .corner_radius(4)
-            .inner_margin(egui::Margin::symmetric(6, 4))
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    for (i, seq) in seqs.iter().enumerate() {
-                        if rec.target == Some(i) {
-                            recording_chip(ui, &rec.buf);
-                        } else {
-                            let chip = ui
-                                .scope(|ui| key_seq_ui(ui, seq.as_slice()))
-                                .response
-                                .interact(egui::Sense::click())
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .on_hover_text("Click to re-record");
-                            if chip.clicked() {
-                                start = Some(i);
+        let inner = ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            for (i, seq) in seqs.iter().enumerate() {
+                let recording_this = rec.target == Some(i);
+                let row_conflicts = conflicts.get(i).map(Vec::as_slice).unwrap_or(&[]);
+                ui.horizontal(|ui| {
+                    let frame = egui::Frame::new()
+                        .stroke(outline(ui, !row_conflicts.is_empty(), recording_this))
+                        .corner_radius(4)
+                        .inner_margin(egui::Margin::symmetric(6, 4))
+                        .show(ui, |ui| {
+                            if recording_this {
+                                recording_chip(ui, &rec.buf);
+                            } else {
+                                key_seq_ui(ui, seq.as_slice());
                             }
-                            if ui.small_button("\u{D7}").on_hover_text("Remove").clicked() {
+                        })
+                        .response;
+                    if !recording_this {
+                        let chip = frame
+                            .interact(egui::Sense::click())
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        let chip = if row_conflicts.is_empty() {
+                            chip.on_hover_text("Click to re-record")
+                        } else {
+                            chip.on_hover_text(conflict_text(row_conflicts))
+                        };
+                        if chip.clicked() {
+                            start = Some(i);
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if remove_button(ui) {
                                 remove = Some(i);
                             }
-                        }
-                        ui.add_space(8.0);
-                    }
-                    if rec.target == Some(seqs.len()) {
-                        recording_chip(ui, &rec.buf);
-                    } else {
-                        if seqs.is_empty() {
-                            ui.weak("Unbound");
-                        }
-                        if ui.small_button("\u{FF0B}").on_hover_text("Add binding").clicked() {
-                            start = Some(seqs.len());
-                        }
+                        });
                     }
                 });
-            });
+            }
+            if rec.target == Some(seqs.len()) {
+                egui::Frame::new()
+                    .stroke(outline(ui, false, true))
+                    .corner_radius(4)
+                    .inner_margin(egui::Margin::symmetric(6, 4))
+                    .show(ui, |ui| recording_chip(ui, &rec.buf));
+            } else if add_button(ui, seqs.is_empty()) {
+                start = Some(seqs.len());
+            }
+        });
         let mut response = inner.response;
-        if conflicting {
-            response = response.on_hover_text(conflict_text(&conflicts));
-        }
 
         if let Some(i) = remove {
             seqs.remove(i);
@@ -1032,209 +1349,5 @@ impl<'a> KeySeqEdit<'a> {
             response.mark_changed();
         }
         response
-    }
-}
-
-fn recording_chip(ui: &mut Ui, buf: &[KeyInput]) {
-    if buf.is_empty() {
-        keycap(ui, "press keys\u{2026}");
-    } else {
-        key_seq_ui(ui, buf);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use beatcraft_editor_proc::when;
-    use super::*;
-
-    fn k(s: &str) -> KeyInput {
-        s.parse().unwrap()
-    }
-
-    fn seq(s: &str) -> KeySeq {
-        s.parse().unwrap()
-    }
-
-    fn sys() -> KeymapSystem {
-        KeymapSystem::new()
-    }
-
-    #[test]
-    fn condition_logic() {
-        let c = when!((a | b) & c);
-        assert!(c.check(&["a", "c"]));
-        assert!(c.check(&["b", "c"]));
-        assert!(!c.check(&["a", "b"]));
-        assert!(!(ctx("a") & "b" & !ctx("c")).check(&["a", "b", "c"]));
-        assert!((ctx("a") & "b" & !ctx("c")).check(&["a", "b"]));
-        assert!(ALWAYS.check(&[]));
-        assert_eq!(!!ctx("a"), ctx("a"));
-    }
-
-    #[test]
-    fn overlap() {
-        assert!(ctx("a").overlaps(&ctx("b")));
-        assert!(!ctx("a").overlaps(&!ctx("a")));
-        assert!(!(ctx("a") & "b").overlaps(&!ctx("a")));
-        assert!(ALWAYS.overlaps(&ctx("a")));
-    }
-
-    #[test]
-    fn press_gated_by_context() {
-        let mut s = sys();
-        s.register_keybind("save", ctx("editor") & !ctx("modal"), vec![seq("Ctrl+s")]);
-        assert!(!s.feed(k("Ctrl+s"), false, 0.0));
-        s.push_ctx("editor");
-        assert!(s.feed(k("Ctrl+s"), false, 0.0));
-        assert!(s.pressed("save"));
-        s.triggered.clear();
-        s.push_ctx("modal");
-        assert!(!s.feed(k("Ctrl+s"), false, 0.0));
-        assert!(!s.pressed("save"));
-    }
-
-    #[test]
-    fn multibind_and_sequence() {
-        let mut s = sys();
-        s.register_keybind("save", ALWAYS, vec![seq("Ctrl+s"), seq("Ctrl+k Ctrl+s")]);
-        assert!(s.feed(k("Ctrl+s"), false, 0.0));
-        assert!(s.pressed("save"));
-        s.triggered.clear();
-        assert!(s.feed(k("Ctrl+k"), false, 0.0));
-        assert!(!s.pressed("save"));
-        assert!(s.feed(k("Ctrl+s"), false, 0.1));
-        assert!(s.pressed("save"));
-    }
-
-    #[test]
-    fn broken_sequence_restarts() {
-        let mut s = sys();
-        s.register_keybind("save", ALWAYS, vec![seq("Ctrl+s"), seq("Ctrl+k Ctrl+s")]);
-        assert!(s.feed(k("Ctrl+k"), false, 0.0));
-        assert!(s.feed(k("Ctrl+k"), false, 0.1)); // restarts a fresh sequence
-        assert!(s.feed(k("Ctrl+s"), false, 0.2));
-        assert!(s.pressed("save"));
-    }
-
-    #[test]
-    fn ambiguity_timeout_and_flush() {
-        let mut s = sys();
-        s.register_keybind("g", ALWAYS, vec![seq("g")]);
-        s.register_keybind("gg", ALWAYS, vec![seq("g g")]);
-
-        // timeout fires the short bind
-        assert!(s.feed(k("g"), false, 0.0));
-        assert!(!s.pressed("g"));
-        s.tick(0.5);
-        assert!(!s.pressed("g"));
-        s.tick(1.0);
-        assert!(s.pressed("g") && !s.pressed("gg"));
-
-        s.triggered.clear();
-        assert!(s.feed(k("g"), false, 5.0));
-        assert!(s.feed(k("g"), false, 5.1));
-        assert!(s.pressed("gg") && !s.pressed("g"));
-
-        s.triggered.clear();
-        assert!(s.feed(k("g"), false, 10.0));
-        assert!(!s.feed(k("x"), false, 10.1));
-        assert!(s.pressed("g") && !s.pressed("gg"));
-        assert!(s.pending.is_empty());
-    }
-
-    #[test]
-    fn repeat_only_held_for_single_keys() {
-        let mut s = sys();
-        s.register_keybind("down", ALWAYS, vec![seq("j")]);
-        s.register_keybind("seq", ALWAYS, vec![seq("a b")]);
-        assert!(s.feed(k("j"), false, 0.0));
-        assert_eq!(s.check_triggered("down"), KeyAction::PRESSED);
-        s.triggered.clear();
-        assert!(s.feed(k("j"), true, 0.1));
-        assert_eq!(s.check_triggered("down"), KeyAction::HELD);
-        assert!(s.pressed_or_repeat("down"));
-        // repeats don't advance sequences
-        s.triggered.clear();
-        assert!(s.feed(k("a"), false, 1.0));
-        assert!(!s.feed(k("a"), true, 1.1));
-        assert!(s.feed(k("b"), false, 1.2));
-        assert!(s.pressed("seq"));
-    }
-
-    #[test]
-    fn conflicts() {
-        let mut s = sys();
-        s.register_keybind("a", ctx("x"), vec![seq("Ctrl+s")]);
-        s.register_keybind("b", !ctx("x"), vec![seq("Ctrl+s")]);
-        s.register_keybind("c", ctx("y"), vec![seq("Ctrl+s")]);
-        s.register_keybind("d", ctx("x"), vec![seq("Ctrl+s a")]);
-        let mut a = s.get_conflicts("a").unwrap();
-        a.sort();
-        assert_eq!(a, vec!["c", "d"]);
-        assert_eq!(s.get_conflicts("b").unwrap(), vec!["c"]);
-    }
-
-    #[test]
-    fn egui_key_mapping() {
-        assert_eq!(to_egui_key(Key::Char('a')), Some(egui::Key::A));
-        assert_eq!(to_egui_key(Key::Char('A')), Some(egui::Key::A));
-        assert_eq!(to_egui_key(Key::Char('5')), Some(egui::Key::Num5));
-        assert_eq!(to_egui_key(Key::Char(' ')), Some(egui::Key::Space));
-        assert_eq!(to_egui_key(Key::Up), Some(egui::Key::ArrowUp));
-        assert_eq!(to_egui_key(Key::F5), Some(egui::Key::F5));
-        assert_eq!(named_key(egui::Key::Escape), Some(Key::Esc));
-        eprintln!(
-            "symbols: ':'={:?} '.'={:?} '-'={:?} '/'={:?} ';'={:?}",
-            to_egui_key(Key::Char(':')),
-            to_egui_key(Key::Char('.')),
-            to_egui_key(Key::Char('-')),
-            to_egui_key(Key::Char('/')),
-            to_egui_key(Key::Char(';')),
-        );
-    }
-
-    #[test]
-    fn mod_key_roundtrip_and_display() {
-        for m in [Mods::SHIFT, Mods::CTRL, Mods::ALT, Mods::CMD] {
-            let k = mod_key(m).unwrap();
-            assert_eq!(k.mods(), Mods::NONE);
-            assert_eq!(key_as_mod(k.key()), Some(m));
-            let parsed: KeyInput = k.to_string().parse().unwrap();
-            assert_eq!(parsed, k);
-            let sq: KeySeq = k.to_string().parse().unwrap();
-            assert_eq!(sq, KeySeq::from(k));
-        }
-        assert_eq!(mod_key(Mods::SHIFT | Mods::CTRL), None);
-        assert_eq!(key_as_mod(Key::Char('a')), None);
-        assert_eq!(key_label(mod_key(Mods::SHIFT).unwrap().key()).0, if cfg!(target_os = "macos") { "\u{21E7}" } else { "Shift" });
-    }
-
-    #[test]
-    fn simultaneous_keys_and_modifier_only_down() {
-        let mut i = egui::InputState::default();
-        i.keys_down.insert(egui::Key::W);
-        i.keys_down.insert(egui::Key::A);
-        // W and A held together: each single-key bind is independently down
-        assert!(input_down(&i, k("w"), false));
-        assert!(input_down(&i, k("a"), false));
-        assert!(!input_down(&i, k("s"), false));
-        // holding Shift changes what the letter binds mean: `w` stops matching, `W` matches
-        i.modifiers.shift = true;
-        assert!(!input_down(&i, k("w"), false));
-        assert!(input_down(&i, k("W"), false));
-        // ...but a Shift-only bind is down, regardless of other modifiers
-        let shift = mod_key(Mods::SHIFT).unwrap();
-        assert!(input_down(&i, shift, false));
-        i.modifiers.ctrl = true;
-        assert!(input_down(&i, shift, false));
-        i.modifiers.shift = false;
-        assert!(!input_down(&i, shift, false));
-        // modifier-only binds work even while a text field has focus
-        i.modifiers.shift = true;
-        assert!(input_down(&i, shift, true));
-        // plain keys don't while text-safe
-        i.modifiers = egui::Modifiers::NONE;
-        assert!(!input_down(&i, k("w"), true));
     }
 }

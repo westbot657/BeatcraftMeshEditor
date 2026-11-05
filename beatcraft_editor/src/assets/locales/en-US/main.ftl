@@ -264,29 +264,20 @@ language-help =
     please open a PR at {$url}
     or contact {$discord} on discord
 
+#########################
 keygroup-general = Global
-key-toggle-wireframe = Toggle wireframe
-key-toggle-grid = Toggle grid
-key-toggle-render-style = Toggle VFX
-key-deselect = Deselect
+
 key-save = Save current project
 key-undo = Undo most recent change
 key-redo = Redo most recent change
 
-keygroup-mesh = Mesh editor
-key-toggle-vertices = Toggle vertices
-key-toggle-mesh-part-back = Cycle part backwards
-key-toggle-mesh-part-forward = Cycle part forwards
-key-toggle-edit-component = Toggle mesh component editing
-key-toggle-assembly-view = Toggle assembly view
-key-toggle-triangles = Create/Remove triangles
-key-flip-triangles = Flip selected triangle winding
-key-create-vertex = Spawn vertex
+key-copy = Copy
+key-cut = Cut
+key-paste = Paste
 
-keygroup-beatmap = Beatmap - Global
-key-toggle-map-playback = Play/Pause beatmap playback
-key-rotate-grid-left = Rotate placement grid left
-key-rotate-grid-right = Rotate placement grid right
+key-deselect = Deselect
+key-delete = Delete
+
 key-fly-forward = Move camera forward
 key-fly-backward = Move camera backward
 key-fly-left = Move camera left
@@ -294,10 +285,63 @@ key-fly-right = Move camera right
 key-fly-up = Move camera up
 key-fly-down = Move camera down
 
-keygroup-beatmap-primary-editing = Beatmap - Global Editing
+###########################
+keygroup-mesh = Mesh editor
 
+key-toggle-vertices = Toggle vertices
+key-toggle-wireframe = Toggle wireframe
+key-toggle-grid = Toggle grid
+key-toggle-render-style = Toggle VFX
+
+key-toggle-mesh-part-back = Cycle part backwards
+key-toggle-mesh-part-forward = Cycle part forwards
+key-toggle-edit-component = Toggle mesh component editing
+
+key-toggle-assembly-view = Toggle assembly view
+key-toggle-triangles = Create/Remove triangles
+key-flip-triangles = Flip selected triangle winding
+
+key-create-vertex = Spawn vertex
+
+###################################
+keygroup-beatmap = Beatmap - Global
+
+key-toggle-map-playback = Play/Pause beatmap playback
+key-rotate-grid-left = Rotate placement grid left
+key-rotate-grid-right = Rotate placement grid right
+
+key-tool-note = Note tool
+key-tool-bomb = Bomb tool
+key-tool-obstacle = Obstacle tool
+key-tool-chain = Chain note tool
+key-tool-arc = Arc tool
+key-tool-text = Obstacle text tool
+
+key-set-note-left = Set note type to left
+key-set-note-right = Set note type to right
+
+key-set-color-default = Set object color to default
+key-set-color-rgba = Set object color to RGBA
+key-set-color-gradient = Set object color to gradient
+
+key-cut-dir-ul = Set cut direction to up/left
+key-cut-dir-u = Set cut direction to up
+key-cut-dir-ur = Set cut direction to up/right
+key-cut-dir-l = Set cut direction to left
+key-cut-dir-dot = Set cut direction to dot
+key-cut-dir-r = Set cut direction to right
+key-cut-dir-dl = Set cut direction to down/left
+key-cut-dir-d = Set cut direction to down
+key-cut-dir-dr = Set cut direction to down/right
+
+key-place-object = Place object
+
+######################
 keygroup-debug = Debug
+
 key-rebuild-meshes = Rebuild texture atlas and meshes
+
+
 
 revert-keys-label = Revert current changes
 reset-keys-label = Reset to defaults

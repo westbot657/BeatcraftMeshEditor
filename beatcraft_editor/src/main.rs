@@ -10,7 +10,7 @@ use std::sync::mpsc;
 use clap::Parser;
 #[cfg(feature = "mesh-editor")]
 use eframe::glow::{self, HasContext};
-use egui::{Align2, Color32, ImageSource, Layout, Ui};
+use egui::{Align2, Color32, Context, ImageSource, Layout, RawInput, Ui};
 #[cfg(feature = "mesh-editor")]
 use egui::{Frame, Sense};
 use fluent_templates::LanguageIdentifier;
@@ -31,7 +31,7 @@ use self::widgets::MathDragValue;
 use fluent_templates::fluent_bundle::FluentValue;
 #[cfg(any(not(feature = "mesh-editor"), not(feature = "mapper")))]
 use crate::config::ProjectKind;
-use crate::keymap::KeymapSystem;
+use crate::keymap::{KeymapSystem, SingleKeyEdit};
 
 #[cfg(feature = "mapper")]
 pub mod beatmap;
@@ -153,7 +153,7 @@ impl RefDuper {
     /// mutable references to exist simultaneously
     /// SAFETY: attaches the lifetime to self for
     /// the illusion of safety
-    pub(crate) unsafe fn detach_ref<'a, T>(&'a self, t: &T) -> &'a T {
+    pub(crate) unsafe fn detach_ref<T>(&self, t: &T) -> &T {
         unsafe { &*(t as *const T) }
     }
 
@@ -162,16 +162,19 @@ impl RefDuper {
     /// SAFETY: attaches the lifetime to self for
     /// the illusion of safety
     #[allow(clippy::mut_from_ref)]
-    pub(crate) unsafe fn detach_mut_ref<'a, T>(&'a self, t: &mut T) -> &'a mut T {
+    pub(crate) unsafe fn detach_mut_ref<T>(&self, t: &mut T) -> &mut T {
         unsafe { &mut *(t as *mut T) }
     }
 }
 
 impl eframe::App for App {
+    fn raw_input_hook(&mut self, ctx: &Context, raw_input: &mut RawInput) {
+        self.data.keymaps.poll_events(ctx, raw_input);
+    }
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let gl = frame.gl().unwrap();
 
-        self.data.keymaps.poll(ctx);
+        self.data.keymaps.poll_held(ctx);
 
         if self.state.dirty {
             self.rebuild_meshes(gl);
@@ -234,11 +237,8 @@ impl eframe::App for App {
                 #[cfg(feature = "mesh-editor")]
                 editor::EditorContext::Model(model_editor_context) => match model_editor_context {
                     editor::ModelEditorContext::Environment => {
-                        self.data.keymaps.push_ctx("editor");
-                        self.data.keymaps.push_ctx("mesh");
+                        let _ = self.data.keymaps.scope_ctx(vec!["editor", "mesh"]);
                         self.draw_environment_editor(ctx, frame, shift, ctrl);
-                        self.data.keymaps.remove_ctx("editor");
-                        self.data.keymaps.remove_ctx("mesh");
                     }
                     editor::ModelEditorContext::Saber => todo!(),
                     editor::ModelEditorContext::Notes => todo!(),
@@ -246,11 +246,8 @@ impl eframe::App for App {
                 #[cfg(feature = "mapper")]
                 editor::EditorContext::Map(map_editor_context) => match map_editor_context {
                     editor::MapEditorContext::Beatmap => {
-                        self.data.keymaps.push_ctx("editor");
-                        self.data.keymaps.push_ctx("beatmap");
+                        let _ = self.data.keymaps.scope_ctx(vec!["editor", "beatmap"]);
                         self.draw_beatmap_editor(ctx, frame, shift, ctrl, alt);
-                        self.data.keymaps.remove_ctx("editor");
-                        self.data.keymaps.remove_ctx("beatmap");
                     }
                     editor::MapEditorContext::Lightshow => todo!(),
                     editor::MapEditorContext::Audio => todo!(),
@@ -374,16 +371,12 @@ impl App {
 
                                 macro_rules! key_row {
                                     ($id:literal -> $lang_key:literal ) => {
-                                        key_row!(root: $lang_key: {
-
-                                        })
+                                        key_row!(root: $id, $lang_key, single_edit)
                                     };
                                     ($id:literal => $lang_key:literal ) => {
-                                        key_row!(root: $lang_key: {
-
-                                        })
+                                        key_row!(root: $id, $lang_key, seq_edit)
                                     };
-                                    (root: $lang_key:literal : $widget:block) => {
+                                    (root: $id:literal, $lang_key:literal, $func:tt) => {
                                         ui.allocate_ui_with_layout(
                                             [ui.available_width(), 20.].into(),
                                             egui::Layout::left_to_right(egui::Align::Center),
@@ -398,7 +391,12 @@ impl App {
                                                 ui.allocate_ui_with_layout(
                                                     [ui.available_width() / 2. - 10., 15.].into(),
                                                     egui::Layout::left_to_right(egui::Align::Center),
-                                                    |ui| { $widget },
+                                                    |ui| {
+                                                        keymaps.$func(
+                                                            ui,
+                                                            $id,
+                                                        )
+                                                    },
                                                 );
                                             },
                                         );
@@ -406,27 +404,43 @@ impl App {
                                 }
 
                                 key_label!("keygroup-general");
-                                key_row!("toggle_wireframe" => "key-toggle-wireframe");
-                                key_row!("toggle_grid" => "key-toggle-grid");
-                                key_row!("toggle_render_style" => "key-toggle-render-style");
-                                key_row!("deselect" => "key-deselect");
                                 key_row!("save" => "key-save");
                                 key_row!("undo" => "key-undo");
                                 key_row!("redo" => "key-redo");
+                                key_row!("copy" => "key-copy");
+                                key_row!("cut" => "key-cut");
+                                key_row!("paste" => "key-paste");
+
+                                // key_row!("delete" => "key-delete");
+                                // key_row!("deselect" => "key-deselect");
+
+                                key_row!("camera-fly-forward" -> "key-fly-forward");
+                                key_row!("camera-fly-backward" -> "key-fly-backward");
+                                key_row!("camera-fly-left" -> "key-fly-left");
+                                key_row!("camera-fly-right" -> "key-fly-right");
+                                key_row!("camera-fly-up" -> "key-fly-up");
+                                key_row!("camera-fly-down" -> "key-fly-down");
+                                
+                                key_row!("toggle-render-style" => "key-toggle-render-style");
+                                key_row!("toggle-grid" => "key-toggle-grid");
 
                                 ui.add_space(20.);
 
                                 #[cfg(feature = "mesh-editor")]
                                 {
                                     key_label!("keygroup-mesh");
-                                    key_row!("toggle_vertices" => "key-toggle-vertices");
-                                    key_row!("toggle_mesh_part_back" => "key-toggle-mesh-part-back");
-                                    key_row!("toggle_mesh_part_forward" => "key-toggle-mesh-part-forward");
-                                    key_row!("toggle_edit_component" => "key-toggle-edit-component");
-                                    key_row!("toggle_assembly_view" => "key-toggle-assembly-view");
-                                    key_row!("create_or_remove_triangles" => "key-toggle-triangles");
-                                    key_row!("flip_triangles" => "key-flip-triangles");
-                                    key_row!("create_vertex" => "key-create-vertex");
+                                    key_row!("toggle-vertices" => "key-toggle-vertices");
+                                    key_row!("toggle-wireframe" => "key-toggle-wireframe");
+
+                                    key_row!("toggle-mesh-part-back" => "key-toggle-mesh-part-back");
+                                    key_row!("toggle-mesh-part-forward" => "key-toggle-mesh-part-forward");
+                                    key_row!("toggle-edit-component" => "key-toggle-edit-component");
+
+                                    key_row!("toggle-assembly-view" => "key-toggle-assembly-view");
+                                    key_row!("add-remove-triangles" => "key-toggle-triangles");
+                                    key_row!("flip-triangles" => "key-flip-triangles");
+
+                                    key_row!("create-vertex" => "key-create-vertex");
 
                                     ui.add_space(20.);
                                 }
@@ -434,21 +448,41 @@ impl App {
                                 #[cfg(feature = "mapper")]
                                 {
                                     key_label!("keygroup-beatmap");
-                                    key_row!("toggle_map_playback" => "key-toggle-map-playback");
-                                    key_row!("rotate_map_grid_left" => "key-rotate-grid-left");
-                                    key_row!("rotate_map_grid_right" => "key-rotate-grid-right");
-                                    key_row!("map_fly_forward" -> "key-fly-forward");
-                                    key_row!("map_fly_backward" -> "key-fly-backward");
-                                    key_row!("map_fly_left" -> "key-fly-left");
-                                    key_row!("map_fly_right" -> "key-fly-right");
-                                    key_row!("map_fly_up" -> "key-fly-up");
-                                    key_row!("map_fly_down" -> "key-fly-down");
+                                    key_row!("toggle-map-playback" => "key-toggle-map-playback");
+                                    key_row!("rotate-map-grid-left" => "key-rotate-grid-left");
+                                    key_row!("rotate-map-grid-right" => "key-rotate-grid-right");
+
+                                    key_row!("tool-note" -> "key-tool-note");
+                                    key_row!("tool-bomb" -> "key-tool-bomb");
+                                    key_row!("tool-obstacle" -> "key-tool-obstacle");
+                                    key_row!("tool-chain" -> "key-tool-chain");
+                                    key_row!("tool-arc" -> "key-tool-arc");
+                                    key_row!("tool-text" -> "key-tool-text");
+
+                                    key_row!("set-note-left" -> "key-set-note-left");
+                                    key_row!("set-note-right" -> "key-set-note-right");
+
+                                    key_row!("set-color-default" -> "key-set-color-default");
+                                    key_row!("set-color-rgba" -> "key-set-color-rgba");
+                                    key_row!("set-color-gradient" -> "key-set-color-gradient");
+
+                                    key_row!("cut-dir-ul" -> "key-cut-dir-ul");
+                                    key_row!("cut-dir-u" -> "key-cut-dir-u");
+                                    key_row!("cut-dir-ur" -> "key-cut-dir-ur");
+                                    key_row!("cut-dir-l" -> "key-cut-dir-l");
+                                    key_row!("cut-dir-dot" -> "key-cut-dir-dot");
+                                    key_row!("cut-dir-r" -> "key-cut-dir-r");
+                                    key_row!("cut-dir-dl" -> "key-cut-dir-dl");
+                                    key_row!("cut-dir-d" -> "key-cut-dir-d");
+                                    key_row!("cut-dir-dr" -> "key-cut-dir-dr");
+
+                                    key_row!("place-object" -> "key-place-object");
 
                                     ui.add_space(20.);
                                 }
 
                                 key_label!("keygroup-debug");
-                                key_row!("rebuild_meshes" => "key-rebuild-meshes");
+                                key_row!("rebuild-meshes" => "key-rebuild-meshes");
                             });
 
                         ui.separator();

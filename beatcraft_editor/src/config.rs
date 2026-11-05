@@ -114,6 +114,24 @@ impl KeymapSystem {
             };
         }
 
+        self.exclusive(&["mesh", "beatmap"]);
+        self.exclusive(&["part", "assembly", "view"]);
+        self.exclusive(&[
+            "hover-tool-panel",
+            "hover-note-type",
+            "hover-note-color",
+            "hover-cut-dir",
+            "hover-place-grid",
+        ]);
+        self.exclusive(&[
+            "hover-tool-panel",
+            "hover-note-type",
+            "hover-note-color",
+            "hover-cut-dir",
+            "hover-3d-region",
+        ]);
+
+        // General
         key!("save", when!(always), "Ctrl+s");
         key!("undo", when!(always), "Ctrl+z");
         key!("redo", when!(always), "Ctrl+Z", "Ctrl+y");
@@ -121,18 +139,29 @@ impl KeymapSystem {
         key!("copy", when!(always), "Ctrl+c");
         key!("cut", when!(always), "Ctrl+x");
         key!("paste", when!(always), "Ctrl+v");
+
+        // hidden
         key!("delete", when!(always), "Delete", "Backspace");
-        
         key!("deselect", when!(always), "Esc");
 
+        // General
+        key!("camera-fly-forward", when!("hover-3d-region"), "w");
+        key!("camera-fly-backward", when!("hover-3d-region"), "s");
+        key!("camera-fly-left", when!("hover-3d-region"), "a");
+        key!("camera-fly-right", when!("hover-3d-region"), "d");
+        key!("camera-fly-up", when!("hover-3d-region"), "e");
+        key!("camera-fly-down", when!("hover-3d-region"), "q");
+        
+        key!("toggle-render-style", when!(editor), "f");
+        key!("toggle-grid", when!(editor), "g");
+
+        // mesh editor
         key!("toggle-vertices", when!(editor & mesh), "v");
         key!("toggle-wireframe", when!(editor & mesh), "l");
-        key!("toggle-grid", when!(editor & mesh), "g");
-        key!("toggle-render-style", when!(editor & mesh), "f");
 
         key!("toggle-mesh-part-back", when!(editor & mesh & part), "Left");
         key!("toggle-mesh-part-forward", when!(editor & mesh & part), "Right");
-        key!("toggle-edit-component", when!(editor & mesh & (part | assembly)), "e");
+        key!("toggle-edit-component", when!(editor & mesh & (part | assembly)), "Tab");
 
         key!("toggle-assembly-view", when!(editor & mesh), "i");
         key!("add-remove-triangles", when!(editor & mesh & part), "n");
@@ -140,45 +169,39 @@ impl KeymapSystem {
 
         key!("create-vertex", when!(editor & mesh & part), "c");
 
+        // beatmap editor
         key!("toggle-map-playback", when!(editor & beatmap), "Space");
         key!("rotate-map-grid-left", when!(editor & beatmap), "Left");
         key!("rotate-map-grid-right", when!(editor & beatmap), "Right");
 
-        key!("camera-fly-forward", when!(!"block-camera-fly"), "w");
-        key!("camera-fly-backward", when!(!"block-camera-fly"), "s");
-        key!("camera-fly-left", when!(!"block-camera-fly"), "a");
-        key!("camera-fly-right", when!(!"block-camera-fly"), "d");
-        key!("camera-fly-up", when!(!"block-camera-fly"), "e");
-        key!("camera-fly-down", when!(!"block-camera-fly"), "q");
+        key!("tool-note", when!(editor & beatmap & "hover-tool-panel"), "q");
+        key!("tool-bomb", when!(editor & beatmap & "hover-tool-panel"), "w");
+        key!("tool-obstacle", when!(editor & beatmap & "hover-tool-panel"), "e");
+        key!("tool-chain", when!(editor & beatmap & "hover-tool-panel"), "a");
+        key!("tool-arc", when!(editor & beatmap & "hover-tool-panel"), "s");
+        key!("tool-text", when!(editor & beatmap & "hover-tool-panel"), "d");
 
+        key!("set-note-left", when!(editor & beatmap & "hover-note-type"), "q");
+        key!("set-note-right", when!(editor & beatmap & "hover-note-type"), "e");
+
+        key!("set-color-default", when!(editor & beatmap & "hover-note-color"), "q");
+        key!("set-color-rgba", when!(editor & beatmap & "hover-note-color"), "w");
+        key!("set-color-gradient", when!(editor & beatmap & "hover-note-color"), "e");
+
+        key!("cut-dir-ul", when!(editor & beatmap & "hover-cut-dir"), "q");
+        key!("cut-dir-u", when!(editor & beatmap & "hover-cut-dir"), "w");
+        key!("cut-dir-ur", when!(editor & beatmap & "hover-cut-dir"), "e");
+        key!("cut-dir-l", when!(editor & beatmap & "hover-cut-dir"), "a");
+        key!("cut-dir-dot", when!(editor & beatmap & "hover-cut-dir"), "s");
+        key!("cut-dir-r", when!(editor & beatmap & "hover-cut-dir"), "d");
+        key!("cut-dir-dl", when!(editor & beatmap & "hover-cut-dir"), "z");
+        key!("cut-dir-d", when!(editor & beatmap & "hover-cut-dir"), "x");
+        key!("cut-dir-dr", when!(editor & beatmap & "hover-cut-dir"), "c");
+
+        key!("place-object", when!(editor & beatmap & "hover-place-grid"), "t");
+
+        // debug
         key!("rebuild-meshes", when!(always), "Alt+r");
-
-        key!("tool-note", when!("hover-tool-panel"), "q");
-        key!("tool-bomb", when!("hover-tool-panel"), "w");
-        key!("tool-obstacle", when!("hover-tool-panel"), "e");
-        key!("tool-chain", when!("hover-tool-panel"), "a");
-        key!("tool-arc", when!("hover-tool-panel"), "s");
-        key!("tool-text", when!("hover-tool-panel"), "d");
-
-        key!("set-note-left", when!("hover-note-type"), "q");
-        key!("set-note-right", when!("hover-note-type"), "e");
-
-        key!("set-color-default", when!("hover-note-color"), "q");
-        key!("set-color-rgba", when!("hover-note-color"), "w");
-        key!("set-color-gradient", when!("hover-note-color"), "e");
-
-        key!("cut-dir-ul", when!("hover-cut-dir"), "q");
-        key!("cut-dir-u", when!("hover-cut-dir"), "w");
-        key!("cut-dir-ur", when!("hover-cut-dir"), "e");
-        key!("cut-dir-l", when!("hover-cut-dir"), "a");
-        key!("cut-dir-dot", when!("hover-cut-dir"), "s");
-        key!("cut-dir-r", when!("hover-cut-dir"), "d");
-        key!("cut-dir-dl", when!("hover-cut-dir"), "z");
-        key!("cut-dir-d", when!("hover-cut-dir"), "x");
-        key!("cut-dir-dr", when!("hover-cut-dir"), "c");
-
-        key!("place-object", when!("hover-place-grid"), "t");
-
     }
 }
 

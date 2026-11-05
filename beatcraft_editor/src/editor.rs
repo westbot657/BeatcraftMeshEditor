@@ -35,9 +35,9 @@ use crate::light_mesh::{
     LightMeshSnapshot,
 };
 use crate::render::{GpuMesh, InstanceData, LIGHT_COLORS, Renderer};
-use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, load_app_data, save_app_data};
+use crate::{editor, load_app_data, save_app_data, RefDuper, DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER};
 use bs_mapping_data::{AudioDataFile, InfoFile};
-use crate::keymap::KeymapSystem;
+use crate::keymap::{ContextGuard, KeymapSystem};
 
 #[derive(Copy, Clone)]
 pub struct Camera {
@@ -1530,6 +1530,32 @@ impl App {
         Ok(())
     }
 
+    fn get_context_scope(&mut self) -> Option<ContextGuard> {
+        match self.context {
+            #[cfg(feature = "mesh-editor")]
+            EditorContext::Model(model_editor_context) => {
+                let mut ctxs = match self.mode {
+                    EditorMode::View => vec!["editor", "view"],
+                    EditorMode::Assembly => vec!["editor", "assembly"],
+                    EditorMode::Edit => vec!["editor", "part"],
+                };
+                match model_editor_context {
+                    ModelEditorContext::Environment => ctxs.push("mesh"),
+                    ModelEditorContext::Saber => ctxs.push("saber"),
+                    ModelEditorContext::Notes => ctxs.push("notes"),
+                }
+                Some(self.data.keymaps.scope_ctx(ctxs))
+            },
+            #[cfg(feature = "mapper")]
+            EditorContext::Map(map_editor_context) => match map_editor_context {
+                MapEditorContext::Beatmap => Some(self.data.keymaps.scope_ctx(vec!["editor", "beatmap"])),
+                MapEditorContext::Lightshow => Some(self.data.keymaps.scope_ctx(vec!["editor", "lightshow"])),
+                MapEditorContext::Audio => Some(self.data.keymaps.scope_ctx(vec!["editor", "audio"])),
+            },
+            EditorContext::None => None,
+        }
+    }
+
     pub fn handle_keys(&mut self, ctx: &egui::Context, gl: &Context) -> (bool, bool, bool) {
         if self.block_input() {
             return (false, false, false);
@@ -1538,6 +1564,8 @@ impl App {
         if ctx.wants_keyboard_input() {
             return (false, false, false);
         }
+
+        let _scope = self.get_context_scope();
 
         let input = ctx.input(|i| i.clone());
         let ctrl = input.modifiers.ctrl;
@@ -1552,30 +1580,35 @@ impl App {
         }
 
         if ctx.input_mut(|i| self.data.keymaps.pressed("save")) {
-            #[cfg(feature = "mesh-editor")]
-            match self.mode {
-                EditorMode::View => {
-                    if let Err(e) = self.save_session() {
-                        self.state.status = "Failed to save session".into();
-                        eprintln!("Failed to save session:\n{e}");
-                        self.state.status_timer = 2.;
-                    } else {
-                        self.state.status = "[Saved]".into();
-                        self.state.title_content = Some("[Saved]".into());
-                        self.state.status_timer = 2.;
+            match self.context {
+                #[cfg(feature = "mesh-editor")]
+                EditorContext::Model(ModelEditorContext::Environment) => {
+                    match self.mode {
+                        EditorMode::View => {
+                            if let Err(e) = self.save_session() {
+                                self.state.status = "Failed to save session".into();
+                                eprintln!("Failed to save session:\n{e}");
+                                self.state.status_timer = 2.;
+                            } else {
+                                self.state.status = "[Saved]".into();
+                                self.state.title_content = Some("[Saved]".into());
+                                self.state.status_timer = 2.;
+                            }
+                        }
+                        EditorMode::Assembly | EditorMode::Edit => {
+                            if let Err(e) = self.save_current_mesh() {
+                                self.state.status = "Failed to save mesh".into();
+                                eprintln!("Failed to save mesh:\n{e}");
+                                self.state.status_timer = 2.;
+                            } else {
+                                self.state.status = "[Saved]".into();
+                                self.state.title_content = Some("[Saved]".into());
+                                self.state.status_timer = 2.;
+                            }
+                        }
                     }
                 }
-                EditorMode::Assembly | EditorMode::Edit => {
-                    if let Err(e) = self.save_current_mesh() {
-                        self.state.status = "Failed to save mesh".into();
-                        eprintln!("Failed to save mesh:\n{e}");
-                        self.state.status_timer = 2.;
-                    } else {
-                        self.state.status = "[Saved]".into();
-                        self.state.title_content = Some("[Saved]".into());
-                        self.state.status_timer = 2.;
-                    }
-                }
+                _ => {},
             }
         }
         if ctrl && input.key_pressed(Key::C) {
@@ -1776,6 +1809,9 @@ impl App {
             return;
         }
 
+        let _scope = self.get_context_scope();
+        let _scope2 = self.data.keymaps.scope_ctx(vec!["hover-3d-region"]);
+
         let rect = self.state.vp_rect;
         let w = rect.width();
         let h = rect.height();
@@ -1839,6 +1875,37 @@ impl App {
                 }
             }
 
+            let move_speed = if shift {
+                if alt { 0.0125 } else { 0.125 }
+            } else if alt {
+                0.75
+            } else {
+                0.25
+            };
+            let forward =
+                Vec2::from_angle(-self.cam().yaw - 90f32.to_radians()) * move_speed;
+            let right = Vec2::from_angle(-self.cam().yaw) * move_speed;
+            let forward = Vec3::new(forward.x, 0., forward.y);
+            let right = Vec3::new(right.x, 0., right.y);
+            if self.data.keymaps.down("camera-fly-forward") {
+                self.cam().target += forward;
+            }
+            if self.data.keymaps.down("camera-fly-backward") {
+                self.cam().target -= forward;
+            }
+            if self.data.keymaps.down("camera-fly-left") {
+                self.cam().target -= right;
+            }
+            if self.data.keymaps.down("camera-fly-right") {
+                self.cam().target += right;
+            }
+            if self.data.keymaps.down("camera-fly-up") {
+                self.cam().target.y += move_speed;
+            }
+            if self.data.keymaps.down("camera-fly-down") {
+                self.cam().target.y -= move_speed;
+            }
+
             #[allow(clippy::single_match)]
             match self.context {
                 #[cfg(feature = "mesh-editor")]
@@ -1847,7 +1914,7 @@ impl App {
                     let self2 = unsafe { rd.detach_mut_ref(self) };
                     if self.mode == EditorMode::Edit
                         && let Some(i) = &input
-                        && self.data.keymaps.pressed("create_vertex")
+                        && self.data.keymaps.pressed("create-vertex")
                         && !i.modifiers.ctrl
                         && let vp = self.cam().vp(w, h)
                         && let Some(part) = self.get_current_part_mut()
@@ -1860,39 +1927,6 @@ impl App {
                         let (orig, dir) = Self::unproject(Vec2::new(mx, my), Vec2::new(w, h), &vp);
                         part.vertices.indexed.push(orig + dir * 2.);
                         self.rebuild_meshes(gl);
-                    }
-                }
-                #[cfg(feature = "mapper")]
-                EditorContext::Map(MapEditorContext::Beatmap) => {
-                    let move_speed = if shift {
-                        if alt { 0.0125 } else { 0.125 }
-                    } else if alt {
-                        0.75
-                    } else {
-                        0.25
-                    };
-                    let forward =
-                        Vec2::from_angle(-self.cam().yaw - 90f32.to_radians()) * move_speed;
-                    let right = Vec2::from_angle(-self.cam().yaw) * move_speed;
-                    let forward = Vec3::new(forward.x, 0., forward.y);
-                    let right = Vec3::new(right.x, 0., right.y);
-                    if self.data.keymaps.pressed("camera-fly-forward") {
-                        self.cam().target += forward;
-                    }
-                    if self.data.keymaps.pressed("camera-fly-backward") {
-                        self.cam().target -= forward;
-                    }
-                    if self.data.keymaps.pressed("camera-fly-left") {
-                        self.cam().target -= right;
-                    }
-                    if self.data.keymaps.pressed("camera-fly-right") {
-                        self.cam().target += right;
-                    }
-                    if self.data.keymaps.pressed("camera-fly-up") {
-                        self.cam().target.y += move_speed;
-                    }
-                    if self.data.keymaps.pressed("camera-fly-down") {
-                        self.cam().target.y -= move_speed;
                     }
                 }
                 _ => {}
