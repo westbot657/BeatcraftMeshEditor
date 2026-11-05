@@ -356,133 +356,158 @@ impl App {
                             .max_width(ui.available_width())
                             .max_height(ui.available_height() - 100.)
                             .show(ui, |ui| {
-                                macro_rules! key_label {
-                                    ( $name:literal ) => {
-                                        ui.add_sized(
-                                            [ui.available_width(), 30.],
-                                            egui::Label::new(
-                                                egui::RichText::new(lang.get($name))
-                                                    .strong()
-                                                    .size(22.),
-                                            ),
-                                        );
-                                    };
+                                macro_rules! section {
+                                    ($ui:expr, $name:literal) => {{
+                                        $ui.add_space(20.);
+                                        $ui.label(egui::RichText::new(lang.get($name)).strong().size(26.));
+                                        $ui.separator();
+                                        $ui.add_space(4.);
+                                    }};
                                 }
 
-                                macro_rules! key_row {
-                                    ($id:literal -> $lang_key:literal ) => {
-                                        key_row!(root: $id, $lang_key, single_edit)
+                                macro_rules! group {
+                                    ($ui:expr, $name:literal) => {{
+                                        $ui.add_space(8.);
+                                        $ui.vertical_centered(|ui| {
+                                            ui.label(egui::RichText::new(lang.get($name)).strong().size(18.));
+                                        });
+                                        $ui.add_space(2.);
+                                    }};
+                                }
+
+                                macro_rules! row {
+                                    ($ui:expr, $id:literal -> $lang_key:literal) => {
+                                        row!(@ $ui, $id, $lang_key, single_edit)
                                     };
-                                    ($id:literal => $lang_key:literal ) => {
-                                        key_row!(root: $id, $lang_key, seq_edit)
+                                    ($ui:expr, $id:literal => $lang_key:literal) => {
+                                        row!(@ $ui, $id, $lang_key, seq_edit)
                                     };
-                                    (root: $id:literal, $lang_key:literal, $func:tt) => {
-                                        ui.allocate_ui_with_layout(
-                                            [ui.available_width(), 20.].into(),
-                                            egui::Layout::left_to_right(egui::Align::Center),
+                                    (@ $ui:expr, $id:literal, $lang_key:literal, $func:ident) => {{
+                                        let w = $ui.available_width();
+                                        $ui.allocate_ui_with_layout(
+                                            [w * 0.8, 20.].into(),
+                                            egui::Layout::left_to_right(egui::Align::Min),
                                             |ui| {
                                                 ui.allocate_ui_with_layout(
-                                                    [ui.available_width() / 2. - 10., 15.].into(),
+                                                    [w * 0.4, 20.].into(),
                                                     egui::Layout::right_to_left(egui::Align::Center),
                                                     |ui| {
-                                                        ui.add(egui::Label::new(lang.get($lang_key)));
+                                                        ui.label(lang.get($lang_key));
                                                     },
                                                 );
                                                 ui.allocate_ui_with_layout(
-                                                    [ui.available_width() / 2. - 10., 15.].into(),
-                                                    egui::Layout::left_to_right(egui::Align::Center),
+                                                    [w * 0.4, 20.].into(),
+                                                    egui::Layout::left_to_right(egui::Align::Min),
                                                     |ui| {
-                                                        keymaps.$func(
-                                                            ui,
-                                                            $id,
-                                                        )
+                                                        keymaps.$func(ui, $id);
                                                     },
                                                 );
                                             },
                                         );
+                                        $ui.add_space(4.);
+                                    }};
+                                }
+
+                                macro_rules! cols {
+                                    (|$l:ident, $r:ident| $body:block) => {
+                                        ui.columns(2, |cols| {
+                                            let [$l, $r] = cols else { return };
+                                            $body
+                                        });
                                     };
                                 }
 
-                                key_label!("keygroup-general");
-                                key_row!("save" => "key-save");
-                                key_row!("undo" => "key-undo");
-                                key_row!("redo" => "key-redo");
-                                key_row!("copy" => "key-copy");
-                                key_row!("cut" => "key-cut");
-                                key_row!("paste" => "key-paste");
+                                section!(ui, "keysection-global");
+                                cols!(|l, r| {
+                                    group!(l, "keygroup-general");
+                                    row!(l, "save" => "key-save");
+                                    row!(l, "undo" => "key-undo");
+                                    row!(l, "redo" => "key-redo");
+                                    row!(l, "copy" => "key-copy");
+                                    row!(l, "cut" => "key-cut");
+                                    row!(l, "paste" => "key-paste");
+                                    // row!(l, "delete" => "key-delete");
+                                    // row!(l, "deselect" => "key-deselect");
 
-                                // key_row!("delete" => "key-delete");
-                                // key_row!("deselect" => "key-deselect");
-
-                                key_row!("camera-fly-forward" -> "key-fly-forward");
-                                key_row!("camera-fly-backward" -> "key-fly-backward");
-                                key_row!("camera-fly-left" -> "key-fly-left");
-                                key_row!("camera-fly-right" -> "key-fly-right");
-                                key_row!("camera-fly-up" -> "key-fly-up");
-                                key_row!("camera-fly-down" -> "key-fly-down");
-                                
-                                key_row!("toggle-render-style" => "key-toggle-render-style");
-                                key_row!("toggle-grid" => "key-toggle-grid");
-
-                                ui.add_space(20.);
+                                    group!(r, "keygroup-camera");
+                                    row!(r, "camera-fly-forward" -> "key-fly-forward");
+                                    row!(r, "camera-fly-backward" -> "key-fly-backward");
+                                    row!(r, "camera-fly-left" -> "key-fly-left");
+                                    row!(r, "camera-fly-right" -> "key-fly-right");
+                                    row!(r, "camera-fly-up" -> "key-fly-up");
+                                    row!(r, "camera-fly-down" -> "key-fly-down");
+                                });
 
                                 #[cfg(feature = "mesh-editor")]
                                 {
-                                    key_label!("keygroup-mesh");
-                                    key_row!("toggle-vertices" => "key-toggle-vertices");
-                                    key_row!("toggle-wireframe" => "key-toggle-wireframe");
+                                    section!(ui, "keysection-mesh");
+                                    cols!(|l, r| {
+                                        group!(l, "keygroup-mesh-view");
+                                        row!(l, "toggle-vertices" => "key-toggle-vertices");
+                                        row!(l, "toggle-wireframe" => "key-toggle-wireframe");
+                                        row!(l, "toggle-grid" => "key-toggle-grid");
+                                        row!(l, "toggle-render-style" => "key-toggle-render-style");
+                                        row!(l, "toggle-assembly-view" => "key-toggle-assembly-view");
 
-                                    key_row!("toggle-mesh-part-back" => "key-toggle-mesh-part-back");
-                                    key_row!("toggle-mesh-part-forward" => "key-toggle-mesh-part-forward");
-                                    key_row!("toggle-edit-component" => "key-toggle-edit-component");
+                                        group!(r, "keygroup-mesh-parts");
+                                        row!(r, "toggle-mesh-part-back" => "key-toggle-mesh-part-back");
+                                        row!(r, "toggle-mesh-part-forward" => "key-toggle-mesh-part-forward");
+                                        row!(r, "toggle-edit-component" => "key-toggle-edit-component");
 
-                                    key_row!("toggle-assembly-view" => "key-toggle-assembly-view");
-                                    key_row!("add-remove-triangles" => "key-toggle-triangles");
-                                    key_row!("flip-triangles" => "key-flip-triangles");
-
-                                    key_row!("create-vertex" => "key-create-vertex");
-
-                                    ui.add_space(20.);
+                                        group!(r, "keygroup-mesh-geometry");
+                                        row!(r, "create-vertex" => "key-create-vertex");
+                                        row!(r, "add-remove-triangles" => "key-toggle-triangles");
+                                        row!(r, "flip-triangles" => "key-flip-triangles");
+                                    });
                                 }
 
                                 #[cfg(feature = "mapper")]
                                 {
-                                    key_label!("keygroup-beatmap");
-                                    key_row!("toggle-map-playback" => "key-toggle-map-playback");
-                                    key_row!("rotate-map-grid-left" => "key-rotate-grid-left");
-                                    key_row!("rotate-map-grid-right" => "key-rotate-grid-right");
+                                    section!(ui, "keysection-beatmap");
+                                    cols!(|l, r| {
+                                        group!(l, "keygroup-beatmap-playback");
+                                        row!(l, "toggle-map-playback" => "key-toggle-map-playback");
+                                        row!(l, "rotate-map-grid-left" => "key-rotate-grid-left");
+                                        row!(l, "rotate-map-grid-right" => "key-rotate-grid-right");
 
-                                    key_row!("tool-note" -> "key-tool-note");
-                                    key_row!("tool-bomb" -> "key-tool-bomb");
-                                    key_row!("tool-obstacle" -> "key-tool-obstacle");
-                                    key_row!("tool-chain" -> "key-tool-chain");
-                                    key_row!("tool-arc" -> "key-tool-arc");
-                                    key_row!("tool-text" -> "key-tool-text");
+                                        group!(l, "keygroup-beatmap-placement");
+                                        row!(l, "place-object" -> "key-place-object");
 
-                                    key_row!("set-note-left" -> "key-set-note-left");
-                                    key_row!("set-note-right" -> "key-set-note-right");
+                                        group!(l, "keygroup-beatmap-tools");
+                                        row!(l, "tool-note" -> "key-tool-note");
+                                        row!(l, "tool-bomb" -> "key-tool-bomb");
+                                        row!(l, "tool-obstacle" -> "key-tool-obstacle");
+                                        row!(l, "tool-chain" -> "key-tool-chain");
+                                        row!(l, "tool-arc" -> "key-tool-arc");
+                                        row!(l, "tool-text" -> "key-tool-text");
 
-                                    key_row!("set-color-default" -> "key-set-color-default");
-                                    key_row!("set-color-rgba" -> "key-set-color-rgba");
-                                    key_row!("set-color-gradient" -> "key-set-color-gradient");
+                                        group!(r, "keygroup-beatmap-note-type");
+                                        row!(r, "set-note-left" -> "key-set-note-left");
+                                        row!(r, "set-note-right" -> "key-set-note-right");
 
-                                    key_row!("cut-dir-ul" -> "key-cut-dir-ul");
-                                    key_row!("cut-dir-u" -> "key-cut-dir-u");
-                                    key_row!("cut-dir-ur" -> "key-cut-dir-ur");
-                                    key_row!("cut-dir-l" -> "key-cut-dir-l");
-                                    key_row!("cut-dir-dot" -> "key-cut-dir-dot");
-                                    key_row!("cut-dir-r" -> "key-cut-dir-r");
-                                    key_row!("cut-dir-dl" -> "key-cut-dir-dl");
-                                    key_row!("cut-dir-d" -> "key-cut-dir-d");
-                                    key_row!("cut-dir-dr" -> "key-cut-dir-dr");
+                                        group!(r, "keygroup-beatmap-note-color");
+                                        row!(r, "set-color-default" -> "key-set-color-default");
+                                        row!(r, "set-color-rgba" -> "key-set-color-rgba");
+                                        row!(r, "set-color-gradient" -> "key-set-color-gradient");
 
-                                    key_row!("place-object" -> "key-place-object");
-
-                                    ui.add_space(20.);
+                                        group!(r, "keygroup-beatmap-cut-direction");
+                                        row!(r, "cut-dir-ul" -> "key-cut-dir-ul");
+                                        row!(r, "cut-dir-u" -> "key-cut-dir-u");
+                                        row!(r, "cut-dir-ur" -> "key-cut-dir-ur");
+                                        row!(r, "cut-dir-l" -> "key-cut-dir-l");
+                                        row!(r, "cut-dir-dot" -> "key-cut-dir-dot");
+                                        row!(r, "cut-dir-r" -> "key-cut-dir-r");
+                                        row!(r, "cut-dir-dl" -> "key-cut-dir-dl");
+                                        row!(r, "cut-dir-d" -> "key-cut-dir-d");
+                                        row!(r, "cut-dir-dr" -> "key-cut-dir-dr");
+                                    });
                                 }
 
-                                key_label!("keygroup-debug");
-                                key_row!("rebuild-meshes" => "key-rebuild-meshes");
+                                section!(ui, "keysection-debug");
+                                cols!(|l, _r| {
+                                    group!(l, "keygroup-debug-render");
+                                    row!(l, "rebuild-meshes" => "key-rebuild-meshes");
+                                });
                             });
 
                         ui.separator();
@@ -503,6 +528,7 @@ impl App {
                             .add_sized([200., 20.], egui::Button::new(lang.get("reset-keys-label")))
                             .clicked()
                         {
+                            *keymaps = Default::default();
                             keymaps.init();
                         }
                     },

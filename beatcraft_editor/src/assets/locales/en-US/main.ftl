@@ -264,9 +264,33 @@ language-help =
     please open a PR at {$url}
     or contact {$discord} on discord
 
-#########################
-keygroup-general = Global
+## Major sections
+keysection-global = Global
+keysection-mesh = Mesh Editor
+keysection-beatmap = Beatmap Editor
+keysection-debug = Debug
 
+## Global
+keygroup-general = Global
+keygroup-camera = Camera
+
+## Mesh editor
+keygroup-mesh-view = View
+keygroup-mesh-parts = Parts & Components
+keygroup-mesh-geometry = Geometry
+
+## Beatmap editor
+keygroup-beatmap-tools = Beatmap editor tools
+keygroup-beatmap-playback = Playback & Grid
+keygroup-beatmap-placement = Placement
+keygroup-beatmap-note-type = Note type
+keygroup-beatmap-note-color = Note color
+keygroup-beatmap-cut-direction = Cut direction
+
+## Debug
+keygroup-debug-render = Visuals
+
+## Keys
 key-save = Save current project
 key-undo = Undo most recent change
 key-redo = Redo most recent change
@@ -285,13 +309,11 @@ key-fly-right = Move camera right
 key-fly-up = Move camera up
 key-fly-down = Move camera down
 
-###########################
-keygroup-mesh = Mesh editor
+key-toggle-render-style = Toggle VFX
+key-toggle-grid = Toggle grid
 
 key-toggle-vertices = Toggle vertices
 key-toggle-wireframe = Toggle wireframe
-key-toggle-grid = Toggle grid
-key-toggle-render-style = Toggle VFX
 
 key-toggle-mesh-part-back = Cycle part backwards
 key-toggle-mesh-part-forward = Cycle part forwards
@@ -303,12 +325,11 @@ key-flip-triangles = Flip selected triangle winding
 
 key-create-vertex = Spawn vertex
 
-###################################
-keygroup-beatmap = Beatmap - Global
-
 key-toggle-map-playback = Play/Pause beatmap playback
+
 key-rotate-grid-left = Rotate placement grid left
 key-rotate-grid-right = Rotate placement grid right
+key-place-object = Place object
 
 key-tool-note = Note tool
 key-tool-bomb = Bomb tool
@@ -333,11 +354,6 @@ key-cut-dir-r = Set cut direction to right
 key-cut-dir-dl = Set cut direction to down/left
 key-cut-dir-d = Set cut direction to down
 key-cut-dir-dr = Set cut direction to down/right
-
-key-place-object = Place object
-
-######################
-keygroup-debug = Debug
 
 key-rebuild-meshes = Rebuild texture atlas and meshes
 

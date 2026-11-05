@@ -241,6 +241,11 @@ fn key_char(key: egui::Key) -> Option<char> {
     }
 }
 
+
+fn clipboard_mods() -> Mods {
+    if cfg!(target_os = "macos") { Mods::CMD } else { Mods::CTRL }
+}
+
 pub fn key_input(event: &Event) -> Option<KeyInput> {
     match event {
         Event::Text(s) => {
@@ -249,7 +254,10 @@ pub fn key_input(event: &Event) -> Option<KeyInput> {
                 (Some(c), None) if !c.is_control() => Some(KeyInput::new(c, Mods::NONE)),
                 _ => None,
             }
-        }
+        },
+        Event::Copy => Some(KeyInput::new('c', clipboard_mods())),
+        Event::Cut => Some(KeyInput::new('x', clipboard_mods())),
+        Event::Paste(_) => Some(KeyInput::new('v', clipboard_mods())),
         Event::Key {
             key,
             pressed: true,
@@ -592,6 +600,9 @@ impl KeymapSystem {
             .collect();
 
         raw_input.events.retain(|ev| {
+            if text_focus && matches!(ev, Event::Copy | Event::Cut | Event::Paste(_)) {
+                return true;
+            }
             let is_tab = matches!(ev, Event::Key { key: egui::Key::Tab, pressed: true, .. });
             let consumed = match event_input(ev, &repeat_chars) {
                 Some((input, repeat)) => {
@@ -907,6 +918,19 @@ pub fn key_seq_ui(ui: &mut Ui, seq: &[KeyInput]) {
             key_input_ui(ui, *input);
         }
     });
+}
+
+fn commit_seq(seqs: &mut Vec<KeySeq>, idx: usize, buf: &[KeyInput]) -> bool {
+    let seq: KeySeq = buf.iter().copied().collect();
+    if seqs.contains(&seq) {
+        return false;
+    }
+    if idx < seqs.len() {
+        seqs[idx] = seq;
+    } else {
+        seqs.push(seq);
+    }
+    true
 }
 
 fn recording_chip(ui: &mut Ui, buf: &[KeyInput]) {
@@ -1269,15 +1293,7 @@ impl<'a> KeySeqEdit<'a> {
             }
             if let Some(idx) = rec.target {
                 if !rec.buf.is_empty() && now - rec.last > idle {
-                    let seq: KeySeq = rec.buf.iter().copied().collect();
-                    if !seqs.contains(&seq) {
-                        if idx < seqs.len() {
-                            seqs[idx] = seq;
-                        } else {
-                            seqs.push(seq);
-                        }
-                        changed = true;
-                    }
+                    changed |= commit_seq(seqs, idx, &rec.buf);
                     rec = SeqRec::default();
                 }
             }
@@ -1349,6 +1365,11 @@ impl<'a> KeySeqEdit<'a> {
             && ui.input(|i| i.pointer.any_pressed())
             && !response.contains_pointer()
         {
+            if let Some(idx) = rec.target {
+                if !rec.buf.is_empty() {
+                    changed |= commit_seq(seqs, idx, &rec.buf);
+                }
+            }
             rec = SeqRec::default();
         }
 
