@@ -112,6 +112,10 @@ impl KeymapSystem {
                     ]
                 );
             };
+            (hidden: $id:literal, $when:expr, $( $ks:literal ),+ $(,)? ) => {
+                key!($id, $when, $($ks),+);
+                self.hide_key($id)
+            };
         }
 
         self.exclusive(&["mesh", "beatmap"]);
@@ -141,8 +145,8 @@ impl KeymapSystem {
         key!("paste", when!(always), "Ctrl+v");
 
         // hidden
-        key!("delete", when!(always), "Delete", "Backspace");
-        key!("deselect", when!(always), "Esc");
+        key!(hidden: "delete", when!(always), "Delete", "Backspace");
+        key!(hidden: "deselect", when!(always), "Esc");
 
         // General
         key!("camera-fly-forward", when!("hover-3d-region"), "w");
@@ -151,7 +155,7 @@ impl KeymapSystem {
         key!("camera-fly-right", when!("hover-3d-region"), "d");
         key!("camera-fly-up", when!("hover-3d-region"), "e");
         key!("camera-fly-down", when!("hover-3d-region"), "q");
-        
+
         key!("toggle-render-style", when!(editor), "f");
         key!("toggle-grid", when!(editor), "g");
 

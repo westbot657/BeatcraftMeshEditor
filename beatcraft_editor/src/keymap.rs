@@ -342,6 +342,8 @@ pub struct KeymapSystem {
     keymaps: HashMap<&'static str, Keymap>,
     /// Groups of contexts that can never be active together (used by conflict checks).
     exclusive: Vec<Vec<&'static str>>,
+    /// list of hidden keys that can't be written to the config file.
+    hidden: Vec<&'static str>,
     /// What happened to each bind this frame. Rebuilt by `poll`.
     triggered: HashMap<&'static str, KeyAction>,
     /// Single-key binds that were held last frame (for release detection).
@@ -396,6 +398,7 @@ impl Default for KeymapSystem {
             context: Default::default(),
             keymaps: HashMap::new(),
             exclusive: Vec::new(),
+            hidden: Vec::new(),
             triggered: HashMap::new(),
             was_down: HashSet::new(),
             pending: Vec::new(),
@@ -423,6 +426,10 @@ impl KeymapSystem {
         if let Some(Keymap { condition, keybinds }) = self.keymaps.insert(name, map) {
             tracing::warn!(target: DB_LOGIC, ?name, ?keybinds, ?condition, "double-registered keybind, replacing sequences")
         }
+    }
+
+    pub fn hide_key(&mut self, key: &'static str) {
+        self.hidden.push(key);
     }
 
     pub fn update_keybind(&mut self, name: &'static str, keybinds: Vec<KeySeq>) {
@@ -469,6 +476,7 @@ impl KeymapSystem {
     pub fn get_map(&self) -> HashMap<String, Vec<KeySeq>> {
         let mut out = HashMap::new();
         for (name, Keymap { keybinds, .. }) in self.keymaps.iter() {
+            if self.hidden.contains(name) { continue };
             out.insert(name.to_string(), keybinds.clone());
         }
         out
