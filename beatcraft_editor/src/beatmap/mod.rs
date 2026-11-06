@@ -1208,6 +1208,11 @@ impl App {
                                             .renderer
                                             .beatmap
                                             .scroll(scroll.signum(), self.map_editor.scroll_step, self.map_editor.grid_snap);
+                                        if let Some(audio) = map.audio.as_ref() {
+                                            let beat = self.render.renderer.beatmap.beat();
+                                            let seconds = controller.runtime_data.beat_to_seconds(beat);
+                                            let _ = audio.seek(seconds);
+                                        }
                                     }
                                 }
                             }

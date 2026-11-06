@@ -1859,10 +1859,20 @@ impl App {
             if scroll != 0. {
                 if is_timeline_scroll {
                     #[cfg(feature = "mapper")]
-                    self.render
-                        .renderer
-                        .beatmap
-                        .scroll(scroll.signum(), self.map_editor.scroll_step, self.map_editor.grid_snap);
+                    {
+                        self.render
+                            .renderer
+                            .beatmap
+                            .scroll(scroll.signum(), self.map_editor.scroll_step, self.map_editor.grid_snap);
+                        if let Some(map) = self.map_editor.map.as_ref()
+                            && let Some((controller, _)) = map.controller.as_ref()
+                            && let Some(audio) = map.audio.as_ref()
+                        {
+                            let beat = self.render.renderer.beatmap.beat();
+                            let seconds = controller.runtime_data.beat_to_seconds(beat);
+                            let _ = audio.seek(seconds);
+                        }
+                    }
                 } else {
                     let factor = if scroll > 0. {
                         if shift { 0.44 } else { 0.88 }
