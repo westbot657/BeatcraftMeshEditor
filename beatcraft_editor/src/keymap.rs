@@ -5,10 +5,11 @@ use std::ops::{BitAnd, BitOr, Not};
 use std::rc::Rc;
 use std::time::Duration;
 use bitflags::bitflags;
-use egui::{Event, Id, Modifiers, Response, Ui, Widget};
+use egui::{Color32, Event, Id, Modifiers, Response, Ui, Widget};
 use keybinds::{Key, KeyInput, KeySeq, Match, Mods};
 use parking_lot::RwLock;
 use crate::{DB_KEYMAP, DB_LOGIC};
+use crate::beatmap::widgets::keybind_hint::HintPart;
 
 /// Use bitwise operators to build: | & !
 /// use check on the final object to check the built expression
@@ -930,21 +931,34 @@ pub fn key_seq_ui(ui: &mut Ui, seq: &[KeyInput]) {
     });
 }
 
-/// Paints a framed key sequence on `painter`'s layer, anchored at `pos` by `pivot`.
-/// Registers no area and no widgets, so nothing here can take hover or the cursor.
 pub fn paint_key_seq_hint(
     ctx: &egui::Context,
     painter: &egui::Painter,
     seq: &[KeyInput],
     pos: egui::Pos2,
     pivot: egui::Align2,
+    bg: Option<Color32>,
+) {
+    paint_hint_parts(ctx, painter, &[HintPart::Keys(seq)], pos, pivot, bg);
+}
+
+/// Paints a framed row of key sequences and plain text, anchored at `pos` by `pivot`.
+/// Registers no area and no widgets.
+pub fn paint_hint_parts(
+    ctx: &egui::Context,
+    painter: &egui::Painter,
+    parts: &[HintPart],
+    pos: egui::Pos2,
+    pivot: egui::Align2,
+    bg: Option<Color32>,
 ) {
     use std::sync::Arc;
 
     let style = ctx.style();
     let v = &style.visuals;
     let font = egui::TextStyle::Monospace.resolve(&style);
-    let (cap_pad, cap_gap, seq_gap, margin) = (egui::vec2(6.0, 2.0), 3.0, 6.0, 2.0);
+    let (cap_pad, cap_gap, seq_gap, part_gap, margin) =
+        (egui::vec2(6.0, 2.0), 3.0, 6.0, 8.0, 2.0);
 
     // (galley, is_keycap, gap before this item)
     let mut items: Vec<(Arc<egui::Galley>, bool, f32)> = Vec::new();
@@ -952,26 +966,54 @@ pub fn paint_key_seq_hint(
         painter.layout_no_wrap(s.to_owned(), font.clone(), color)
     };
 
-    for (i, input) in seq.iter().enumerate() {
-        if i > 0 {
-            items.push((text("\u{203A}", v.weak_text_color()), false, seq_gap));
-        }
-        let (label, implies_shift) = key_label(input.key());
-        let mut mods = input.mods();
-        if implies_shift {
-            mods |= Mods::SHIFT;
-        }
-        let mut first = i > 0;
-        for m in mod_labels(mods) {
-            let gap = if first { cap_gap } else { 0.0 };
-            items.push((text(m, v.text_color()), true, gap));
-            first = true;
-            if !cfg!(target_os = "macos") {
-                items.push((text("+", v.weak_text_color()), false, cap_gap));
+    for (pi, part) in parts.iter().enumerate() {
+        let start = items.len();
+        match part {
+            HintPart::Text(s) => {
+                items.push((text(s, v.text_color()), false, 0.0));
+            }
+            HintPart::Keys(seq) => {
+                for (i, input) in seq.iter().enumerate() {
+                    if i > 0 {
+                        items.push((text("\u{203A}", v.weak_text_color()), false, seq_gap));
+                    }
+                    let (label, implies_shift) = key_label(input.key());
+                    let mut mods = input.mods();
+                    if implies_shift {
+                        mods |= Mods::SHIFT;
+                    }
+                    let mut first = i > 0;
+                    for m in mod_labels(mods) {
+                        let gap = if first { cap_gap } else { 0.0 };
+                        items.push((text(m, v.text_color()), true, gap));
+                        first = true;
+                        if !cfg!(target_os = "macos") {
+                            items.push((text("+", v.weak_text_color()), false, cap_gap));
+                        }
+                    }
+                    let gap = if first { cap_gap } else { 0.0 };
+                    items.push((text(&label, v.text_color()), true, gap));
+                }
+            }
+            HintPart::Labels(labels) => {
+                for (i, label) in labels.iter().enumerate() {
+                    if i > 0 {
+                        items.push((text("+", v.weak_text_color()), false, cap_gap));
+                    }
+                    let gap = if i > 0 { cap_gap } else { 0.0 };
+                    items.push((text(label, v.text_color()), true, gap));
+                }
             }
         }
-        let gap = if first { cap_gap } else { 0.0 };
-        items.push((text(&label, v.text_color()), true, gap));
+        if pi > 0 {
+            if let Some(first) = items.get_mut(start) {
+                first.2 += part_gap;
+            }
+        }
+    }
+
+    if items.is_empty() {
+        return;
     }
 
     let content_h = items
@@ -986,7 +1028,9 @@ pub fn paint_key_seq_hint(
     let size = egui::vec2(content_w, content_h) + egui::Vec2::splat(margin * 2.0);
     let rect = pivot.anchor_size(pos, size);
 
-    painter.rect(rect, 4, v.window_fill, v.window_stroke, egui::StrokeKind::Inside);
+    if let Some(bg) = bg {
+        painter.rect(rect, 4, bg, egui::Stroke::new(1f32, bg), egui::StrokeKind::Inside);
+    }
 
     let mut x = rect.min.x + margin;
     let cy = rect.center().y;

@@ -169,8 +169,8 @@ impl<'c> CutDirectionSelector<'c> {
             }
 
             KeybindHint::new(dir.key_name(), rect, &response)
-                .gap(2.)
-                .placement(ExtensionCorner::Interior(Corner::BottomRight))
+                .gap(-5.)
+                .placement(ExtensionCorner::Interior(Corner::TopRight))
                 .always_visible(panel_hovered)
                 .scale(0.65)
                 .show(ui, self.keymap_system);

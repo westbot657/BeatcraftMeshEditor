@@ -5,7 +5,7 @@ use std::sync::mpsc;
 use std::thread;
 
 use eframe::glow::{self, Context, HasContext};
-use egui::{ImageSource, Ui};
+use egui::{Align, Align2, Color32, FontId, FontSelection, ImageSource, Pos2, Rect, RichText, TextStyle, TextWrapMode, Ui, WidgetText};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use rand::rngs::ThreadRng;
@@ -33,8 +33,9 @@ use bs_mapping_data::info_v2::{CharacteristicSetV2, DifficultyBeatmapV2};
 use bs_mapping_data::{ArcMidAnchorMode, AudioDataFile, BeatmapFile, Color, CutDirection, InfoFile, MapCharacteristic, MapDifficulty};
 
 use beatmap_core::{ArrowType, BeatmapController, GameObject, HitBox, ObjectType, RuntimeData};
+use crate::beatmap::widgets::bar_slider::BarSlider;
 use crate::beatmap::widgets::cut_direction_selector::{CutDirectionSelector, SelectorLayout};
-use crate::beatmap::widgets::keybind_hint::{Corner, ExtensionAxis, ExtensionCorner, KeybindHint};
+use crate::beatmap::widgets::keybind_hint::{Corner, ExtensionAxis, ExtensionCorner, HintItem, KeybindHint, KeybindHintList};
 
 pub mod data;
 pub mod event;
@@ -931,6 +932,19 @@ fn format_time(seconds: f32) -> String {
     format!("{hours:>02}:{minutes:>02}:{rem:06.3}")
 }
 
+pub fn paint_text_centered(ui: &Ui, center: Pos2, text: impl Into<RichText>) -> Rect {
+    let galley = WidgetText::from(text.into()).into_galley(
+        ui,
+        Some(TextWrapMode::Extend), // never wrap
+        f32::INFINITY,
+        TextStyle::Body,
+    );
+    let rect = Align2::CENTER_CENTER.anchor_size(center, galley.size());
+    ui.painter()
+        .galley(rect.min, galley, ui.visuals().text_color());
+    rect
+}
+
 impl App {
     fn await_beatmap_open(&mut self) {
         tracing::debug!(target: DB_LOGIC, "Spawning thread for opening beatmap project");
@@ -1170,21 +1184,134 @@ impl App {
                         None => {
                             // No difficulty selected
                         },
-                        Some((controller, data)) => {
+                        Some((controller, _data)) => {
                             // In editor
 
-                            if let Some(audio) = map.audio.as_ref()
-                                && let Some(len) = audio.length_seconds()
-                            {
-                                let t = audio.position_seconds();
-                                let time = format!("{} / {}", format_time(t), format_time(len));
-                                ui.label(time);
-                            }
+                            ui.allocate_ui_with_layout(
+                                [ui.available_width(), 60.].into(),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    if let Some(audio) = map.audio.as_ref()
+                                        && let Some(len) = audio.length_seconds()
+                                    {
+                                        let t = audio.position_seconds();
+                                        let time = format!("{} / {}", format_time(t), format_time(len));
+                                        let beat = format!("{:08.3} / {:08.3}", controller.runtime_data.seconds_to_beat(t), controller.runtime_data.seconds_to_beat(len));
+                                        let beat = self.data.locale.get_with_args(
+                                            "beat-label",
+                                            &[
+                                                ("fract".into(), beat.into())
+                                            ].into()
+                                        );
+                                        let center = ui.max_rect().center() - egui::vec2(0., 12.);
+                                        let beat_pos = center + egui::vec2(275., 0.);
+                                        paint_text_centered(ui, center, time);
+                                        paint_text_centered(ui, beat_pos, beat);
 
-                            ui.add_space(5.);
+                                        let speed_pos = center + egui::vec2(-250., -2.);
+                                        let speed_rect = Rect::from_center_size(speed_pos, egui::vec2(250., 18.));
+                                        let spd = (self.state.playback_speed * 100.) as u32;
+                                        let mut speed = spd;
+                                        let speed_resp = ui.put(
+                                            speed_rect,
+                                            BarSlider::new(&mut speed, 0..=200)
+                                                .length(225.)
+                                                .show_value(true)
+                                                .bg_color(Color32::from_gray(0x30))
+                                                .fill_color(Color32::from_gray(0x50))
+                                                .font(FontId::monospace(15.))
+                                                .decimals(0)
+                                                .suffix("%")
+                                        );
+                                        if speed != spd {
+                                            let spd = speed as f32 / 100.;
+                                            self.state.playback_speed = spd;
+                                            if let Some(audio) = map.audio.as_ref()
+                                            {
+                                                audio.set_speed(spd);
+                                            }
+                                        }
+                                        KeybindHintList::new(
+                                            vec![HintItem::text(self.data.locale.get("playback-speed").to_string())],
+                                            speed_rect, &speed_resp
+                                        )
+                                            .placement(ExtensionCorner::Exterior(if speed >= 100 { Corner::BottomLeft } else { Corner::BottomRight }, ExtensionAxis::Vertical))
+                                            .gap(-10.)
+                                            .scale(0.8)
+                                            .background(Color32::from_gray(0x20))
+                                            .invert_visibility(true)
+                                            .show(ui, &self.data.keymaps);
+
+
+                                        let spacing_pos = center + egui::vec2(-525., -2.);
+                                        let spacing_rect = Rect::from_center_size(spacing_pos, egui::vec2(250., 18.));
+                                        let def = self
+                                            .data
+                                            .locale
+                                            .get_with_args("default-value", &[("value".into(), 8.into())].into());
+                                        let spacing_resp = ui.put(
+                                            spacing_rect,
+                                            BarSlider::new(&mut self.render.renderer.beatmap.beat_spacing, 1f32..=20f32)
+                                                .step_by(0.25)
+                                                .length(225.)
+                                                .show_value(true)
+                                                .bg_color(Color32::from_gray(0x30))
+                                                .fill_color(Color32::from_gray(0x50))
+                                                .font(FontId::monospace(15.))
+                                                .decimals(2)
+                                        ).on_hover_text(def);
+
+                                        KeybindHintList::new(
+                                            vec![HintItem::text(self.data.locale.get("grid-spacing").to_string())],
+                                            spacing_rect, &spacing_resp
+                                        )
+                                            .placement(ExtensionCorner::Exterior(if self.render.renderer.beatmap.beat_spacing >= 10.5 { Corner::BottomLeft } else { Corner::BottomRight }, ExtensionAxis::Vertical))
+                                            .gap(-10.)
+                                            .scale(0.8)
+                                            .background(Color32::from_gray(0x20))
+                                            .invert_visibility(true)
+                                            .show(ui, &self.data.keymaps);
+
+                                        let volume_pos = center + egui::vec2(525., -2.);
+                                        let volume_rect = Rect::from_center_size(volume_pos, egui::vec2(250., 18.));
+                                        let vol = (self.data.audio_volume * 100.) as u32;
+                                        let mut volume = vol;
+                                        let vol_resp = ui.put(
+                                            volume_rect,
+                                            BarSlider::new(&mut volume, 0..=100)
+                                                .length(225.)
+                                                .show_value(true)
+                                                .bg_color(Color32::from_gray(0x30))
+                                                .fill_color(Color32::from_gray(0x50))
+                                                .font(FontId::monospace(15.))
+                                                .decimals(0)
+                                                .suffix("%")
+                                        );
+                                        if volume != vol {
+                                            let vol = volume as f32 / 100.;
+                                            self.data.audio_volume = vol;
+                                            if let Some(audio) = map.audio.as_ref()
+                                            {
+                                                audio.set_volume(vol);
+                                            }
+                                        }
+                                        KeybindHintList::new(
+                                            vec![HintItem::text(self.data.locale.get("audio-volume").to_string())],
+                                            volume_rect, &vol_resp
+                                        )
+                                            .placement(ExtensionCorner::Exterior(if volume >= 50 { Corner::BottomLeft } else { Corner::BottomRight }, ExtensionAxis::Vertical))
+                                            .gap(-10.)
+                                            .scale(0.8)
+                                            .background(Color32::from_gray(0x20))
+                                            .invert_visibility(true)
+                                            .show(ui, &self.data.keymaps);
+
+                                    }
+                                }
+                            );
 
                             let mut rect = ui.available_rect_before_wrap();
-                            rect.set_height(50.);
+                            rect.set_height(75.);
 
                             let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
 
@@ -1204,11 +1331,13 @@ impl App {
                                                 .spectrogram_zoom(scroll, cursor);
                                         }
                                     } else {
-                                        self.render
-                                            .renderer
-                                            .beatmap
-                                            .scroll(scroll.signum(), self.map_editor.scroll_step, self.map_editor.grid_snap);
-                                        if let Some(audio) = map.audio.as_ref() {
+                                        if let Some(audio) = map.audio.as_ref()
+                                            && let Some(length) = audio.length_seconds()
+                                        {
+                                            self.render
+                                                .renderer
+                                                .beatmap
+                                                .scroll(scroll.signum(), self.map_editor.scroll_step, self.map_editor.grid_snap, controller.runtime_data.seconds_to_beat(length) as f64);
                                             let beat = self.render.renderer.beatmap.beat();
                                             let seconds = controller.runtime_data.beat_to_seconds(beat);
                                             let _ = audio.seek(seconds);
@@ -1258,54 +1387,25 @@ impl App {
                                 )),
                             });
 
+                            KeybindHintList::new(
+                                vec![
+                                    HintItem::text("Seek:"),
+                                    HintItem::fake(&["Scroll"]),
+                                    HintItem::text("|"),
+                                    HintItem::fake(&["Left Mouse"]),
+                                    HintItem::text("Zoom:"),
+                                    HintItem::fake(&["Alt", "Scroll"])
+                                ],
+                                rect, &resp
+                            )
+                                .placement(ExtensionCorner::Interior(Corner::TopRight))
+                                .gap(10.)
+                                .scale(0.75)
+                                .background(Color32::from_rgba_premultiplied(0, 0, 0, 160))
+                                .show(ui, &self.data.keymaps);
+
                             ui.add_space(5.);
 
-                            let vol = (self.data.audio_volume * 100.) as u32;
-                            let mut volume = vol;
-                            ui.add_sized(
-                                [150., 20.],
-                                egui::Slider::new(&mut volume, 0..=100)
-                                    .suffix("%")
-                                    .text(self.data.locale.get("audio-volume")),
-                            );
-                            if volume != vol {
-                                let vol = volume as f32 / 100.;
-                                self.data.audio_volume = vol;
-                                if let Some(audio) = map.audio.as_ref()
-                                {
-                                    audio.set_volume(vol);
-                                }
-                            }
-
-                            let spd = (self.state.playback_speed * 100.) as u32;
-                            let mut speed = spd;
-                            ui.add_sized(
-                                [150., 20.],
-                                egui::Slider::new(&mut speed, 0..=200)
-                                    .suffix("%")
-                                    .text(self.data.locale.get("playback-speed")),
-                            );
-                            if speed != spd {
-                                let spd = speed as f32 / 100.;
-                                self.state.playback_speed = spd;
-                                if let Some(audio) = map.audio.as_ref()
-                                {
-                                    audio.set_speed(spd);
-                                }
-                            }
-
-                            let def = self
-                                .data
-                                .locale
-                                .get_with_args("default-value", &[("value".into(), 8.into())].into());
-
-                            ui.add_sized(
-                                [150., 20.],
-                                egui::Slider::new(&mut self.render.renderer.beatmap.beat_spacing, 1f32..=20f32)
-                                    .step_by(0.25)
-                                    .text(self.data.locale.get("grid-spacing")),
-                            )
-                                .on_hover_text(def);
                         }
                     }
                 }
@@ -1390,7 +1490,8 @@ impl App {
                             for (name, rect) in hint_rects {
                                 KeybindHint::new(name, rect, &panel.response)
                                     .gap(4.)
-                                    .placement(ExtensionCorner::Interior(Corner::BottomRight))
+                                    .scale(0.75)
+                                    .placement(ExtensionCorner::Interior(Corner::TopRight))
                                     .show(ui, &self.data.keymaps);
                             }
 

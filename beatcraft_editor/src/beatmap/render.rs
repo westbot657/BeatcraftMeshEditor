@@ -232,23 +232,23 @@ impl BeatmapRenderer {
 
     /// `direction`: -1. or 1. (or 0.)
     /// `step`: 0.0+
-    pub fn scroll(&mut self, direction: f32, step: f32, snap: bool) {
-        let (b, o) = &mut self.beat_offset;
+    pub fn scroll(&mut self, direction: f32, step: f32, snap: bool, max_beat: f64) {
+        let (beat, offset) = &mut self.beat_offset;
 
         let step = step * direction;
 
-        let total = (*b as f64 + *o as f64 + step as f64).max(0.0);
+        let total = (*beat as f64 + *offset as f64 + step as f64).clamp(0.0, max_beat);
 
-        let mut new_b = total.floor();
-        let mut new_f = (total - new_b) as f32;
+        let mut new_beat = total.floor();
+        let mut new_offset = (total - new_beat) as f32;
 
-        if new_f >= 1.0 {
-            new_b += 1.0;
-            new_f = 0.0;
+        if new_offset >= 1.0 {
+            new_beat += 1.0;
+            new_offset = 0.0;
         }
 
-        *b = new_b.min(u16::MAX as f64) as u16;
-        *o = new_f;
+        *beat = new_beat.min(u16::MAX as f64) as u16;
+        *offset = new_offset;
         if snap {
             self.snap_to_grid(step);
         }

@@ -357,8 +357,6 @@ key-cut-dir-dr = Set cut direction to down/right
 
 key-rebuild-meshes = Rebuild texture atlas and meshes
 
-
-
 revert-keys-label = Revert current changes
 reset-keys-label = Reset to defaults
 
@@ -374,4 +372,5 @@ tooltip-beatmap_editor-place-gradient-color-disabled =
 tooltip-beatmap_editor-place-cut_offset-disabled =
     Click the toggle to enable rotation offset
 
+beat-label = Beat: {$fract}
 
