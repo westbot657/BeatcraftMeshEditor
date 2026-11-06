@@ -379,7 +379,8 @@ pub struct ContextGuard {
 impl Drop for ContextGuard {
     fn drop(&mut self) {
         let mut guard = self.system_ctx.write();
-        guard.retain(|c| !self.context.contains(c))
+        guard.retain(|c| !self.context.contains(c));
+        tracing::trace!(target: DB_KEYMAP, dropped = ?self.context, current = ?&*guard, "dropped contexts");
     }
 }
 
@@ -531,6 +532,8 @@ impl KeymapSystem {
             .collect()
     }
 
+    /// WARNING: do not bind to `_`, bind to something like `_scope`, `_guard`, etc.
+    /// `_` drops instantly, while `_x` drops at the end of scope.
     #[must_use]
     pub fn scope_ctx(&mut self, context: Vec<&'static str>) -> ContextGuard {
         for ctx in context.iter() {
@@ -550,8 +553,9 @@ impl KeymapSystem {
                     tracing::warn!(target: DB_KEYMAP, ?ctx, ?clash, "pushed a context that is declared exclusive with an active one");
                 }
             }
-            tracing::trace!(target: DB_KEYMAP, ?ctx, "pushed context");
             context.push(ctx);
+            tracing::trace!(target: DB_KEYMAP, ?ctx, ?context, "pushed context");
+
         }
     }
 
@@ -665,6 +669,12 @@ impl KeymapSystem {
         ctx.data_mut(|d| d.insert_temp(recording_id(), now));
     }
 
+    pub fn is_active(&self, name: &'static str) -> bool {
+        self.keymaps
+            .get(name)
+            .is_some_and(|km| km.condition.check(&self.context.read()))
+    }
+
     pub fn check_triggered(&self, name: &'static str) -> KeyAction {
         let Some(km) = self.keymaps.get(name) else {
             tracing::warn!(target: DB_LOGIC, ?name, "Unregistered keybind is untriggerable");
@@ -704,7 +714,7 @@ impl KeymapSystem {
     }
 
     fn trigger(&mut self, name: &'static str, action: KeyAction) {
-        tracing::debug!(target: DB_KEYMAP, ?name, ?action, "key triggered");
+        tracing::trace!(target: DB_KEYMAP, ?name, ?action, "key triggered");
         *self.triggered.entry(name).or_insert(KeyAction::NONE) |= action;
     }
 
@@ -918,6 +928,90 @@ pub fn key_seq_ui(ui: &mut Ui, seq: &[KeyInput]) {
             key_input_ui(ui, *input);
         }
     });
+}
+
+/// Paints a framed key sequence on `painter`'s layer, anchored at `pos` by `pivot`.
+/// Registers no area and no widgets, so nothing here can take hover or the cursor.
+pub fn paint_key_seq_hint(
+    ctx: &egui::Context,
+    painter: &egui::Painter,
+    seq: &[KeyInput],
+    pos: egui::Pos2,
+    pivot: egui::Align2,
+) {
+    use std::sync::Arc;
+
+    let style = ctx.style();
+    let v = &style.visuals;
+    let font = egui::TextStyle::Monospace.resolve(&style);
+    let (cap_pad, cap_gap, seq_gap, margin) = (egui::vec2(6.0, 2.0), 3.0, 6.0, 2.0);
+
+    // (galley, is_keycap, gap before this item)
+    let mut items: Vec<(Arc<egui::Galley>, bool, f32)> = Vec::new();
+    let text = |s: &str, color: egui::Color32| {
+        painter.layout_no_wrap(s.to_owned(), font.clone(), color)
+    };
+
+    for (i, input) in seq.iter().enumerate() {
+        if i > 0 {
+            items.push((text("\u{203A}", v.weak_text_color()), false, seq_gap));
+        }
+        let (label, implies_shift) = key_label(input.key());
+        let mut mods = input.mods();
+        if implies_shift {
+            mods |= Mods::SHIFT;
+        }
+        let mut first = i > 0;
+        for m in mod_labels(mods) {
+            let gap = if first { cap_gap } else { 0.0 };
+            items.push((text(m, v.text_color()), true, gap));
+            first = true;
+            if !cfg!(target_os = "macos") {
+                items.push((text("+", v.weak_text_color()), false, cap_gap));
+            }
+        }
+        let gap = if first { cap_gap } else { 0.0 };
+        items.push((text(&label, v.text_color()), true, gap));
+    }
+
+    let content_h = items
+        .iter()
+        .map(|(g, cap, _)| g.size().y + if *cap { cap_pad.y * 2.0 } else { 0.0 })
+        .fold(0.0, f32::max);
+    let content_w: f32 = items
+        .iter()
+        .map(|(g, cap, gap)| g.size().x + if *cap { cap_pad.x * 2.0 } else { 0.0 } + gap)
+        .sum();
+
+    let size = egui::vec2(content_w, content_h) + egui::Vec2::splat(margin * 2.0);
+    let rect = pivot.anchor_size(pos, size);
+
+    painter.rect(rect, 4, v.window_fill, v.window_stroke, egui::StrokeKind::Inside);
+
+    let mut x = rect.min.x + margin;
+    let cy = rect.center().y;
+    for (galley, cap, gap) in items {
+        x += gap;
+        let gs = galley.size();
+        if cap {
+            let cap_rect = egui::Rect::from_min_size(
+                egui::pos2(x, cy - (gs.y + cap_pad.y * 2.0) / 2.0),
+                gs + cap_pad * 2.0,
+            );
+            painter.rect(
+                cap_rect,
+                4,
+                v.widgets.inactive.weak_bg_fill,
+                v.widgets.noninteractive.bg_stroke,
+                egui::StrokeKind::Inside,
+            );
+            painter.galley(cap_rect.min + cap_pad, galley, v.text_color());
+            x = cap_rect.max.x;
+        } else {
+            painter.galley(egui::pos2(x, cy - gs.y / 2.0), galley, v.text_color());
+            x += gs.x;
+        }
+    }
 }
 
 fn commit_seq(seqs: &mut Vec<KeySeq>, idx: usize, buf: &[KeyInput]) -> bool {

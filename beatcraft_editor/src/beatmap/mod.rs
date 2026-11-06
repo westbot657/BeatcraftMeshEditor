@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -9,7 +9,7 @@ use egui::{ImageSource, Ui};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use rand::rngs::ThreadRng;
-use beatcraft_audiolib::{Audio, AudioError, AudioMode, AudioSystem, NativeOpenAL};
+use beatcraft_audiolib::{Audio, AudioError, AudioSystem, NativeOpenAL};
 use beatcraft_editor_proc::hex;
 use crate::config::ProjectType;
 use crate::data::map_editing::{EditingData, GlobalEditingData, ObjectSource};
@@ -20,7 +20,7 @@ use crate::editor::{
 };
 use crate::light_mesh::LightMesh;
 use crate::render::{GpuMesh, GridType, InstanceData, MeshDrawCall, Renderer};
-use crate::widgets::ImageCard;
+use crate::widgets::{ImageCard, MathDragValue};
 use crate::{
     DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, MISSING_EDITOR_ICON, RefDuper, UnsafeMutRef, editor,
     get_data_folder,
@@ -34,6 +34,7 @@ use bs_mapping_data::{ArcMidAnchorMode, AudioDataFile, BeatmapFile, Color, CutDi
 
 use beatmap_core::{ArrowType, BeatmapController, GameObject, HitBox, ObjectType, RuntimeData};
 use crate::beatmap::widgets::cut_direction_selector::{CutDirectionSelector, SelectorLayout};
+use crate::beatmap::widgets::keybind_hint::{Corner, ExtensionAxis, ExtensionCorner, KeybindHint};
 
 pub mod data;
 pub mod event;
@@ -184,6 +185,18 @@ impl PlacementObjectType {
             Self::Text,
         ].into_iter()
     }
+
+    pub fn key_name(&self) -> &'static str {
+        match self {
+            Self::ColorNote => "tool-note",
+            Self::BombNote => "tool-bomb",
+            Self::Obstacle => "tool-obstacle",
+            Self::Chain => "tool-chain",
+            Self::Arc => "tool-arc",
+            Self::Text => "tool-text",
+        }
+    }
+
 }
 
 impl Display for PlacementObjectType {
@@ -670,7 +683,7 @@ impl BeatmapEditor {
 
         let mut audio = None;
         if let Some(path) = audio_path {
-            let ad = Audio::new(s, &map.join(path), AudioMode::Full)?;
+            let ad = Audio::new(s, &map.join(path))?;
             ad.set_volume(volume);
             audio = Some(ad);
         }
@@ -766,44 +779,56 @@ fn note_color_selector<'c>(
     width: f32,
     w2: f32,
     w3: f32,
-    mut data: NoteColorRef<'c>
+    mut data: NoteColorRef<'c>,
+    enable_gradient: bool,
 ) {
-    // Left/Right selector
-    // Color selector
-    // -----------------
-    // rotation selector
     let left_str = app.data.locale.get("button-beatmap_editor-place-left").to_string();
     let right_str = app.data.locale.get("button-beatmap_editor-place-right").to_string();
 
-    ui.horizontal(|ui| {
-        if ui.add_sized(
+    let mut hovered = false;
+    let mut rects = Vec::new();
+
+    let row = ui.horizontal(|ui| {
+        let r = ui.add_sized(
             [w2, 20.],
-            egui::Button::new(left_str)
-                .selected(*data.note_type == Color::Red)
-        ).clicked() {
+            egui::Button::new(left_str).selected(*data.note_type == Color::Red),
+        );
+        hovered |= r.hovered();
+        rects.push(("set-note-left", r.rect));
+        if r.clicked() {
             *data.note_type = Color::Red;
         }
 
-        if ui.add_sized(
+        let r = ui.add_sized(
             [w2, 20.],
-            egui::Button::new(right_str)
-                .selected(*data.note_type == Color::Blue)
-        ).clicked() {
+            egui::Button::new(right_str).selected(*data.note_type == Color::Blue),
+        );
+        hovered |= r.hovered();
+        rects.push(("set-note-right", r.rect));
+        if r.clicked() {
             *data.note_type = Color::Blue;
         }
-
     });
+    hovered |= row.response.hovered();
+
+    for (name, rect) in rects {
+        KeybindHint::new(name, rect, &row.response)
+            .placement(ExtensionCorner::Exterior(Corner::TopRight, ExtensionAxis::Vertical))
+            .gap(-10.)
+            .scale(0.75)
+            .show(ui, &app.data.keymaps);
+    }
+
+    if hovered {
+        app.check_note_type_bind(data.note_type)
+    }
 
     let obj = match *data.note_type {
         Color::Red => data.left(),
-        Color::Blue => data.right()
+        Color::Blue => data.right(),
     };
 
-    object_color_selector(
-        app, ui,
-        width, w3,
-        obj
-    );
+    object_color_selector(app, ui, width, w3, obj, enable_gradient);
 }
 
 fn object_color_selector<'c>(
@@ -812,8 +837,8 @@ fn object_color_selector<'c>(
     width: f32,
     w3: f32,
     obj: ObjectColorRef<'c>,
+    enable_gradient: bool,
 ) {
-
     let color_str = app.data.locale.get("label-beatmap_editor-place-color").to_string();
 
     let default_color_str = app.data.locale.get("button-beatmap_editor-place-default-color").to_string();
@@ -821,45 +846,68 @@ fn object_color_selector<'c>(
     let gradient_str = app.data.locale.get("button-beatmap_editor-place-gradient-color").to_string();
     let gradient_tooltip = app.data.locale.get("tooltip-beatmap_editor-place-gradient-color-disabled").to_string();
 
+    let mut hovered = false;
+    let mut rects = Vec::new();
+
     ui.label(color_str);
 
-    ui.horizontal(|ui| {
-        if ui.add_sized(
+    let row = ui.horizontal(|ui| {
+        let r = ui.add_sized(
             [w3, 20.],
-            egui::Button::new(default_color_str)
-                .selected(*obj.mode == ColorMode::Default)
-        ).clicked() {
+            egui::Button::new(default_color_str).selected(*obj.mode == ColorMode::Default),
+        );
+        hovered |= r.hovered();
+        rects.push(("set-color-default", r.rect));
+        if r.clicked() {
             *obj.mode = ColorMode::Default;
         }
 
-        if ui.add_sized(
+        let r = ui.add_sized(
             [w3, 20.],
-            egui::Button::new(rgba_str)
-                .selected(*obj.mode == ColorMode::Color)
-        ).clicked() {
+            egui::Button::new(rgba_str).selected(*obj.mode == ColorMode::Color),
+        );
+        hovered |= r.hovered();
+        rects.push(("set-color-rgba", r.rect));
+        if r.clicked() {
             *obj.mode = ColorMode::Color;
         }
 
-        ui.add_enabled_ui(
-            false,
-            |ui| {
-                if ui.add_sized(
+        let g = ui.add_enabled_ui(false, |ui| {
+            let r = ui
+                .add_sized(
                     [w3, 20.],
-                    egui::Button::new(gradient_str)
-                        .selected(*obj.mode == ColorMode::Gradient)
-                ).on_disabled_hover_text(gradient_tooltip).clicked() {
-                    *obj.mode = ColorMode::Gradient;
-                }
+                    egui::Button::new(gradient_str).selected(*obj.mode == ColorMode::Gradient),
+                )
+                .on_disabled_hover_text(gradient_tooltip);
+            if r.clicked() {
+                *obj.mode = ColorMode::Gradient;
             }
-        );
-
+            r.rect
+        });
+        hovered |= g.response.hovered();
+        if enable_gradient {
+            rects.push(("set-color-gradient", g.inner));
+        }
     });
+    hovered |= row.response.hovered();
+
+    for (name, rect) in rects {
+        KeybindHint::new(name, rect, &row.response)
+            .placement(ExtensionCorner::Exterior(Corner::TopRight, ExtensionAxis::Vertical))
+            .gap(-10.)
+            .scale(0.75)
+            .show(ui, &app.data.keymaps);
+    }
+
+    if hovered {
+        app.check_object_color_bind(obj.mode, enable_gradient);
+    }
 
     match *obj.mode {
         ColorMode::Default => {
             let padding = ui.spacing().item_spacing.y;
             ui.add_space(20. + padding);
-        },
+        }
         ColorMode::Color => {
             let rgba = obj.color;
             let mut col = egui::Rgba::from_rgba_premultiplied(rgba.x, rgba.y, rgba.z, rgba.w);
@@ -868,11 +916,19 @@ fn object_color_selector<'c>(
             egui::color_picker::color_edit_button_rgba(ui, &mut col, egui::color_picker::Alpha::OnlyBlend);
             ui.spacing_mut().interact_size = spacing;
             *rgba = Vec4::new(col.r(), col.g(), col.b(), col.a())
-        },
+        }
         ColorMode::Gradient => {
             // TODO: dropdown selector
-        },
+        }
     }
+}
+
+fn format_time(seconds: f32) -> String {
+    let rem = seconds % 60.;
+    let minutes = seconds as u32 / 60;
+    let hours = minutes / 60;
+    let minutes = minutes % 60;
+    format!("{hours:>02}:{minutes:>02}:{rem:06.3}")
 }
 
 impl App {
@@ -917,6 +973,58 @@ impl App {
                 RoutineAction::Remove
             }
         }));
+    }
+
+    fn check_tool_keybinds(&mut self, tool: &mut PlacementObjectType) {
+        let _scope = self.data.keymaps.scope_ctx(vec!["hover-tool-panel"]);
+        for t in PlacementObjectType::iter_all() {
+            if self.data.keymaps.pressed(t.key_name()) {
+                *tool = t;
+            }
+        }
+    }
+
+    fn check_cut_dir_bind(&mut self, cut_dir: &mut CutDirection) {
+        let _scope = self.data.keymaps.scope_ctx(vec!["hover-cut-dir"]);
+        const DIRS: [(&'static str, CutDirection); 9] = [
+            ("cut-dir-ul", CutDirection::UpLeft),
+            ("cut-dir-u", CutDirection::Up),
+            ("cut-dir-ur", CutDirection::UpRight),
+            ("cut-dir-l", CutDirection::Left),
+            ("cut-dir-dot", CutDirection::Dot),
+            ("cut-dir-r", CutDirection::Right),
+            ("cut-dir-dl", CutDirection::DownLeft),
+            ("cut-dir-d", CutDirection::Down),
+            ("cut-dir-dr", CutDirection::DownRight),
+        ];
+        for (key, dir) in DIRS {
+            if self.data.keymaps.pressed(key) {
+                *cut_dir = dir;
+            }
+        }
+    }
+
+    fn check_note_type_bind(&mut self, color: &mut Color) {
+        let _scope = self.data.keymaps.scope_ctx(vec!["hover-note-type"]);
+        if self.data.keymaps.pressed("set-note-left") {
+            *color = Color::Red;
+        }
+        if self.data.keymaps.pressed("set-note-right") {
+            *color = Color::Blue;
+        }
+    }
+
+    fn check_object_color_bind(&mut self, mode: &mut ColorMode, enable_gradient: bool) {
+        let _scope = self.data.keymaps.scope_ctx(vec!["hover-note-color"]);
+        if self.data.keymaps.pressed("set-color-default") {
+            *mode = ColorMode::Default;
+        }
+        if self.data.keymaps.pressed("set-color-rgba") {
+            *mode = ColorMode::Color;
+        }
+        if enable_gradient && self.data.keymaps.pressed("set-color-gradient") {
+            *mode = ColorMode::Gradient;
+        }
     }
 
     pub fn draw_beatmap_editor(
@@ -1050,136 +1158,154 @@ impl App {
         });
 
         egui::TopBottomPanel::bottom("scrub_controls")
-            .exact_height(150.)
+            .exact_height(200.)
             .resizable(false)
             .show(ctx, |ui| {
-                ui.add_space(5.);
+                let s = unsafe { UnsafeMutRef::new(self) };
+                match self.map_editor.map.as_ref() {
+                    None => {
+                        // No map selected
+                    }
+                    Some(map) => match map.controller.as_ref() {
+                        None => {
+                            // No difficulty selected
+                        },
+                        Some((controller, data)) => {
+                            // In editor
 
-                let mut rect = ui.available_rect_before_wrap();
-                rect.set_height(50.);
+                            if let Some(audio) = map.audio.as_ref()
+                                && let Some(len) = audio.length_seconds()
+                            {
+                                let t = audio.position_seconds();
+                                let time = format!("{} / {}", format_time(t), format_time(len));
+                                ui.label(time);
+                            }
 
-                let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
+                            ui.add_space(5.);
 
-                if resp.hovered() {
-                    let scroll = ctx.input(|i| i.raw_scroll_delta.y);
-                    if scroll != 0.0 {
-                        if alt {
-                            if let Some(map) = self.map_editor.map.as_ref()
-                                && let Some((controller, _)) = map.controller.as_ref()
+                            let mut rect = ui.available_rect_before_wrap();
+                            rect.set_height(50.);
+
+                            let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
+
+                            if resp.hovered() {
+                                let scroll = ctx.input(|i| i.raw_scroll_delta.y);
+                                if scroll != 0.0 {
+                                    if alt {
+                                        if let Some(audio) = map.audio.as_ref()
+                                            && let Some(length_secs) = audio.length_seconds()
+                                        {
+                                            let length_beats =
+                                                controller.runtime_data.seconds_to_beat(length_secs);
+                                            let cursor = self.render.renderer.beatmap.beat() / length_beats;
+                                            self.render
+                                                .renderer
+                                                .beatmap
+                                                .spectrogram_zoom(scroll, cursor);
+                                        }
+                                    } else {
+                                        self.render
+                                            .renderer
+                                            .beatmap
+                                            .scroll(scroll.signum(), self.map_editor.scroll_step, self.map_editor.grid_snap);
+                                    }
+                                }
+                            }
+
+                            if (resp.clicked() || resp.dragged())
+                                && let Some(pos) = resp.interact_pointer_pos()
                                 && let Some(audio) = map.audio.as_ref()
                                 && let Some(length_secs) = audio.length_seconds()
                             {
-                                let length_beats =
-                                    controller.runtime_data.seconds_to_beat(length_secs);
-                                let cursor = self.render.renderer.beatmap.beat() / length_beats;
-                                self.render
-                                    .renderer
-                                    .beatmap
-                                    .spectrogram_zoom(scroll, cursor);
+                                let frac_x = ((pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
+
+                                let (start, end) = self.render.renderer.beatmap.spectrogram_range();
+                                let u = start + (end - start) * frac_x;
+                                let seek_secs = length_secs * u;
+                                let beat = controller.runtime_data.seconds_to_beat(seek_secs);
+
+                                let _ = audio.seek(seek_secs);
+                                self.render.renderer.beatmap.seek(beat);
                             }
-                        } else {
-                            self.render
-                                .renderer
-                                .beatmap
-                                .scroll(scroll.signum(), self.map_editor.scroll_step, self.map_editor.grid_snap);
+
+                            ui.painter().add(egui::PaintCallback {
+                                rect,
+                                callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
+                                    move |_info, painter| {
+                                        if let Some(map) = s.map_editor.map.as_ref()
+                                            && let Some((controller, _)) = map.controller.as_ref()
+                                            && let Some(audio) = map.audio.as_ref()
+                                            && let Some(length) = audio.length_seconds()
+                                        {
+                                            let gl = painter.gl();
+                                            let sec = controller
+                                                .runtime_data
+                                                .beat_to_seconds(s.render.renderer.beatmap.beat());
+                                            s.render.renderer.beatmap.render_spectrogram_ui(
+                                                &mut s.ref_mut().render.renderer,
+                                                gl,
+                                                audio,
+                                                sec,
+                                                length,
+                                            );
+                                        }
+                                    },
+                                )),
+                            });
+
+                            ui.add_space(5.);
+
+                            let vol = (self.data.audio_volume * 100.) as u32;
+                            let mut volume = vol;
+                            ui.add_sized(
+                                [150., 20.],
+                                egui::Slider::new(&mut volume, 0..=100)
+                                    .suffix("%")
+                                    .text(self.data.locale.get("audio-volume")),
+                            );
+                            if volume != vol {
+                                let vol = volume as f32 / 100.;
+                                self.data.audio_volume = vol;
+                                if let Some(audio) = map.audio.as_ref()
+                                {
+                                    audio.set_volume(vol);
+                                }
+                            }
+
+                            let spd = (self.state.playback_speed * 100.) as u32;
+                            let mut speed = spd;
+                            ui.add_sized(
+                                [150., 20.],
+                                egui::Slider::new(&mut speed, 0..=200)
+                                    .suffix("%")
+                                    .text(self.data.locale.get("playback-speed")),
+                            );
+                            if speed != spd {
+                                let spd = speed as f32 / 100.;
+                                self.state.playback_speed = spd;
+                                if let Some(audio) = map.audio.as_ref()
+                                {
+                                    audio.set_speed(spd);
+                                }
+                            }
+
+                            let def = self
+                                .data
+                                .locale
+                                .get_with_args("default-value", &[("value".into(), 8.into())].into());
+
+                            ui.add_sized(
+                                [150., 20.],
+                                egui::Slider::new(&mut self.render.renderer.beatmap.beat_spacing, 1f32..=20f32)
+                                    .step_by(0.25)
+                                    .text(self.data.locale.get("grid-spacing")),
+                            )
+                                .on_hover_text(def);
                         }
                     }
                 }
 
-                if (resp.clicked() || resp.dragged())
-                    && let Some(pos) = resp.interact_pointer_pos()
-                    && let Some(map) = self.map_editor.map.as_ref()
-                    && let Some((controller, _)) = map.controller.as_ref()
-                    && let Some(audio) = map.audio.as_ref()
-                    && let Some(length_secs) = audio.length_seconds()
-                {
-                    let frac_x = ((pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
 
-                    let (start, end) = self.render.renderer.beatmap.spectrogram_range();
-                    let u = start + (end - start) * frac_x;
-                    let seek_secs = length_secs * u;
-                    let beat = controller.runtime_data.seconds_to_beat(seek_secs);
-
-                    let _ = audio.seek(seek_secs);
-                    self.render.renderer.beatmap.seek(beat);
-                }
-
-                let s = unsafe { UnsafeMutRef::new(self) };
-                ui.painter().add(egui::PaintCallback {
-                    rect,
-                    callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
-                        move |_info, painter| {
-                            if let Some(map) = s.map_editor.map.as_ref()
-                                && let Some((controller, _)) = map.controller.as_ref()
-                                && let Some(audio) = map.audio.as_ref()
-                                && let Some(length) = audio.length_seconds()
-                            {
-                                let gl = painter.gl();
-                                let sec = controller
-                                    .runtime_data
-                                    .beat_to_seconds(s.render.renderer.beatmap.beat());
-                                s.render.renderer.beatmap.render_spectrogram_ui(
-                                    &mut s.ref_mut().render.renderer,
-                                    gl,
-                                    audio,
-                                    sec,
-                                    length,
-                                );
-                            }
-                        },
-                    )),
-                });
-
-                ui.add_space(5.);
-
-                let vol = (self.data.audio_volume * 100.) as u32;
-                let mut volume = vol;
-                ui.add_sized(
-                    [150., 20.],
-                    egui::Slider::new(&mut volume, 0..=100)
-                        .suffix("%")
-                        .text(self.data.locale.get("audio-volume")),
-                );
-                if volume != vol {
-                    let vol = volume as f32 / 100.;
-                    self.data.audio_volume = vol;
-                    if let Some(map) = self.map_editor.map.as_ref()
-                        && let Some(audio) = map.audio.as_ref()
-                    {
-                        audio.set_volume(vol);
-                    }
-                }
-
-                let spd = (self.state.playback_speed * 100.) as u32;
-                let mut speed = spd;
-                ui.add_sized(
-                    [150., 20.],
-                    egui::Slider::new(&mut speed, 0..=200)
-                        .suffix("%")
-                        .text(self.data.locale.get("playback-speed")),
-                );
-                if speed != spd {
-                    let spd = speed as f32 / 100.;
-                    self.state.playback_speed = spd;
-                    if let Some(map) = self.map_editor.map.as_ref()
-                        && let Some(audio) = map.audio.as_ref()
-                    {
-                        audio.set_speed(spd);
-                    }
-                }
-
-                let def = self
-                    .data
-                    .locale
-                    .get_with_args("default-value", &[("value".into(), 8.into())].into());
-
-                ui.add_sized(
-                    [150., 20.],
-                    egui::Slider::new(&mut self.render.renderer.beatmap.beat_spacing, 1f32..=20f32)
-                        .step_by(0.25)
-                        .text(self.data.locale.get("grid-spacing")),
-                )
-                .on_hover_text(def);
             });
 
         egui::SidePanel::left("left_panel")
@@ -1211,7 +1337,9 @@ impl App {
                                 + TOOL_SIZE * TOOL_ROWS as f32
                                 + TOOL_PADDING * (TOOL_ROWS - 1) as f32;
 
-                            ui.allocate_ui_with_layout(
+                            let mut hint_rects: Vec<(&'static str, egui::Rect)> = Vec::new();
+
+                            let panel = ui.allocate_ui_with_layout(
                                 [T_WIDTH, T_HEIGHT].into(),
                                 egui::Layout::top_down(egui::Align::Min),
                                 |ui| {
@@ -1230,7 +1358,9 @@ impl App {
                                         );
                                         let rect = egui::Rect::from_min_size(pos, egui::Vec2::splat(TOOL_SIZE));
 
-                                        let response = ui.allocate_rect(rect, egui::Sense::click()).on_hover_text(tool.display_name());
+                                        let response = ui
+                                            .allocate_rect(rect, egui::Sense::click())
+                                            .on_hover_text(tool.display_name());
 
                                         let bg = if tool == current {
                                             egui::Color32::from_gray(60)
@@ -1246,9 +1376,22 @@ impl App {
                                         if response.clicked() {
                                             current = tool;
                                         }
+
+                                        hint_rects.push((tool.key_name(), rect));
                                     }
                                 },
                             );
+
+                            for (name, rect) in hint_rects {
+                                KeybindHint::new(name, rect, &panel.response)
+                                    .gap(4.)
+                                    .placement(ExtensionCorner::Interior(Corner::BottomRight))
+                                    .show(ui, &self.data.keymaps);
+                            }
+
+                            if panel.response.contains_pointer() {
+                                self.check_tool_keybinds(&mut current);
+                            }
 
                             self.map_editor.selected_placement_type = current;
 
@@ -1274,6 +1417,7 @@ impl App {
                                         self, ui,
                                         width, w2, w3,
                                         placement_data.color_note.note_colors(),
+                                        false,
                                     );
 
                                     ui.add_space(10.);
@@ -1281,26 +1425,33 @@ impl App {
 
                                     let is_dot = self.map_editor.placement_data.color_note.cut_direction == CutDirection::Dot;
 
-                                    ui.add_sized(
+                                    let disabled_text = self.data.locale.get("tooltip-beatmap_editor-place-cut_offset-disabled").to_string();
+
+                                    if ui.add_sized(
                                         [width, width/2.],
                                         CutDirectionSelector::new(
                                             &mut placement_data.color_note.cut_direction,
                                             &mut placement_data.color_note.use_cut_offset,
                                             SelectorLayout::Horizontal,
+                                            &self.data.keymaps,
+                                        ).on_disable_hover_text(
+                                            disabled_text
                                         ).cut_offset(
                                             &mut placement_data.color_note.cut_offset,
                                         ).image(if is_dot { COLOR_NOTE_DOT_BRIGHT.clone() } else { COLOR_NOTE_BRIGHT.clone() })
-                                    );
-
-                                }
+                                    ).hovered() {
+                                        self.check_cut_dir_bind(&mut placement_data.color_note.cut_direction);
+                                    }
+                                },
                                 PlacementObjectType::BombNote => {
                                     // color selector
                                     object_color_selector(
                                         self, ui,
                                         width, w3,
                                         placement_data.bomb.object_color(),
+                                        false,
                                     );
-                                }
+                                },
                                 PlacementObjectType::Obstacle => {
                                     // color selector
                                     // --------------
@@ -1311,8 +1462,9 @@ impl App {
                                         self, ui,
                                         width, w3,
                                         placement_data.obstacle.object_color(),
+                                        false,
                                     );
-                                }
+                                },
                                 PlacementObjectType::Chain => {
                                     // left/right selector
                                     // color selector
@@ -1323,8 +1475,9 @@ impl App {
                                         self, ui,
                                         width, w2, w3,
                                         placement_data.chain.note_colors(),
+                                        false,
                                     );
-                                }
+                                },
                                 PlacementObjectType::Arc => {
                                     // left/right selector
                                     // color selector
@@ -1336,8 +1489,9 @@ impl App {
                                         self, ui,
                                         width, w2, w3,
                                         placement_data.arc.note_colors(),
+                                        false,
                                     );
-                                }
+                                },
                                 PlacementObjectType::Text => {
                                     // color/gradient selector
                                     // -----------------------
@@ -1350,9 +1504,38 @@ impl App {
                                     // scale
                                     // rotation
                                     // duration
-                                }
+                                },
                             }
 
+                            ui.add_space(ui.available_height() - 45.);
+                            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                                ui.add_space(5.);
+                                egui::ScrollArea::horizontal().show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.set_width(ui.available_width());
+                                        let target = &mut self.cam().target;
+                                        let spacing = ui.spacing().item_spacing.x;
+                                        let width = (ui.available_width() - spacing * 2.0) / 3.0;
+                                        let mut vars = HashMap::new();
+                                        vars.insert("x".to_string(), target.x);
+                                        vars.insert("y".to_string(), target.y);
+                                        vars.insert("z".to_string(), target.z);
+                                        ui.add_sized(
+                                            [width, 20.],
+                                            MathDragValue::new(&mut target.x, &mut vars).speed(0.01),
+                                        );
+                                        ui.add_sized(
+                                            [width, 20.],
+                                            MathDragValue::new(&mut target.y, &mut vars).speed(0.01),
+                                        );
+                                        ui.add_sized(
+                                            [width, 20.],
+                                            MathDragValue::new(&mut target.z, &mut vars).speed(0.01),
+                                        );
+                                    });
+                                    ui.label(self.data.locale.get("camera-pivot"));
+                                });
+                            });
                         }
                     }
                 }

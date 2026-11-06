@@ -371,5 +371,7 @@ button-beatmap_editor-place-gradient-color = Gradient
 tooltip-beatmap_editor-place-gradient-color-disabled =
     Gradient is only available within templates
 
+tooltip-beatmap_editor-place-cut_offset-disabled =
+    Click the toggle to enable rotation offset
 
 

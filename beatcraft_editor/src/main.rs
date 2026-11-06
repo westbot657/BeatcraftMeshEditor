@@ -237,7 +237,7 @@ impl eframe::App for App {
                 #[cfg(feature = "mesh-editor")]
                 editor::EditorContext::Model(model_editor_context) => match model_editor_context {
                     editor::ModelEditorContext::Environment => {
-                        let _ = self.data.keymaps.scope_ctx(vec!["editor", "mesh"]);
+                        let _scope = self.data.keymaps.scope_ctx(vec!["editor", "mesh"]);
                         self.draw_environment_editor(ctx, frame, shift, ctrl);
                     }
                     editor::ModelEditorContext::Saber => todo!(),
@@ -246,7 +246,7 @@ impl eframe::App for App {
                 #[cfg(feature = "mapper")]
                 editor::EditorContext::Map(map_editor_context) => match map_editor_context {
                     editor::MapEditorContext::Beatmap => {
-                        let _ = self.data.keymaps.scope_ctx(vec!["editor", "beatmap"]);
+                        let _scope = self.data.keymaps.scope_ctx(vec!["editor", "beatmap"]);
                         self.draw_beatmap_editor(ctx, frame, shift, ctrl, alt);
                     }
                     editor::MapEditorContext::Lightshow => todo!(),

@@ -446,30 +446,14 @@ pub enum TaskAction {
     Remove,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum AudioMode {
-    Stream,
-    Full,
-}
-
 #[derive(Debug)]
-enum AudioSource {
-    Stream {
-        loaded_ranges: Arc<RwLock<Vec<(usize, usize)>>>,
-        seek_target: Arc<RwLock<Option<usize>>>,
-        playback_position: usize,
-        free_buffers: Vec<u32>,
-        queued_sizes: VecDeque<usize>,
-        played_samples: Arc<RwLock<usize>>,
-    },
-    Full {
-        load_position: Arc<RwLock<usize>>,
-        playback_position: usize,
-        free_buffers: Vec<u32>,
-        all_buffers: Vec<u32>,
-        queued_sizes: VecDeque<usize>,
-        played_samples: Arc<RwLock<usize>>,
-    },
+struct AudioSource {
+    load_position: Arc<RwLock<usize>>,
+    playback_position: usize,
+    free_buffers: Vec<u32>,
+    all_buffers: Vec<u32>,
+    queued_sizes: VecDeque<usize>,
+    played_samples: Arc<RwLock<usize>>,
 }
 
 #[cfg(feature = "spectrogram")]
@@ -514,357 +498,185 @@ impl<Al: AlInterface> Audio<Al> {
     pub fn new(
         audio_sys: &mut AudioSystem<Al>,
         path: &Path,
-        mode: AudioMode,
     ) -> Result<Arc<Self>, AudioError> {
         #[cfg(feature = "tracing")]
         let span = tracing::debug_span!("audio init");
         #[cfg(feature = "tracing")]
         let _guard = span.enter();
-        match mode {
-            AudioMode::Stream => {
-                let audio_info = AudioSystem::<Al>::open_decoder(path)?;
-                let data: Arc<RwLock<Vec<i16>>> = Arc::default();
-                let sections: Arc<RwLock<Vec<(usize, usize)>>> = Arc::default();
-                let pb_cursor: Arc<RwLock<usize>> = Arc::default();
-                let seek_target = Arc::new(RwLock::new(None));
+        #[cfg(feature = "tracing")]
+        tracing::debug!(target: DB_AUDIO, ?path, "Loading file in Full mode.");
+        let data = Arc::new(RwLock::new(Vec::new()));
+        let mut audio_info = AudioSystem::<Al>::open_decoder(path)?;
+        let channels = audio_info.channels;
+        let sample_rate = audio_info.sample_rate;
 
-                let mut buffers = vec![0u32; FULL_BUFFER_COUNT];
-                unsafe {
-                    Al::gen_buffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr());
-                }
-                check_al_error("after alGenBuffers");
-                #[cfg(feature = "tracing")]
-                tracing::debug!(target: DB_AUDIO, "Generated {} AL buffers for streaming", FULL_BUFFER_COUNT);
+        let load_pos = Arc::new(RwLock::new(0));
 
-                let source = Arc::new(RwLock::new(AudioSource::Stream {
-                    loaded_ranges: Arc::clone(&sections),
-                    seek_target: Arc::clone(&seek_target),
-                    playback_position: 0,
-                    free_buffers: buffers,
-                    queued_sizes: VecDeque::new(),
-                    played_samples: Arc::default(),
-                }));
-                let loaded = Arc::new(RwLock::new(true));
-
-                let mut src_handle = [0];
-                unsafe {
-                    Al::gen_sources(1, src_handle.as_mut_ptr());
-                }
-                let [src_handle] = src_handle;
-
-                let mut fx_filter = [0];
-                unsafe { Al::gen_filters(1, fx_filter.as_mut_ptr()) };
-                let [fx_filter] = fx_filter;
-
-                unsafe {
-                    Al::filter_i(fx_filter, al::AL_FILTER_TYPE, al::AL_FILTER_LOWPASS);
-                    Al::filter_f(fx_filter, al::AL_LOWPASS_GAIN, 1.);
-                    Al::filter_f(fx_filter, al::AL_LOWPASS_GAINHF, 0.1);
-                }
-
-                let decode_finished: Arc<RwLock<bool>> = Arc::default();
-                let sample_count = Arc::new(RwLock::new(audio_info.sample_count));
-                let spec_data = Arc::clone(&data);
-                let spec_cursor = Arc::clone(&pb_cursor);
-                let sample_rate = audio_info.sample_rate;
-                let dcf2 = Arc::clone(&decode_finished);
-                #[cfg(feature = "spectrogram")]
-                let (
-                    spectrogram_tex_data,
-                    spectrogram_columns_done,
-                    spectrogram_freq_bins,
-                    spectrogram_finished,
-                    spectrogram_hop,
-                ) = Self::spawn_spectrogram_task(
-                    audio_sys,
-                    spec_data,
-                    spec_cursor,
-                    decode_finished,
-                    audio_info.channels,
-                    sample_rate,
-                );
-
-                let data2 = Arc::clone(&data);
-                let loaded2 = Arc::clone(&loaded);
-                let mut audio_info2 = AudioSystem::<Al>::open_decoder(path)?;
-                let df2 = Arc::new(RwLock::new(0));
-                let sc2 = Arc::clone(&sample_count);
-                audio_sys.add_task(Box::new(move || {
-                    Self::decode_task_loop(
-                        &data2,
-                        &sections,
-                        &pb_cursor,
-                        &seek_target,
-                        &loaded2,
-                        audio_info.channels,
-                        &mut audio_info2,
-                        &sc2,
-                        &df2,
-                        &dcf2,
-                    )
-                }));
-
-                let audio = Arc::new(Self {
-                    data,
-                    sample_count,
-                    source,
-                    loaded,
-                    pending_play: Arc::new(RwLock::new(false)),
-                    src_handle,
-                    channels: audio_info.channels,
-                    sample_rate: audio_info.sample_rate,
-                    fx_filter,
-                    #[cfg(feature = "spectrogram")]
-                    spectrogram_columns_done,
-                    #[cfg(feature = "spectrogram")]
-                    spectrogram_freq_bins,
-                    #[cfg(feature = "spectrogram")]
-                    spectrogram_tex_data,
-                    #[cfg(feature = "spectrogram")]
-                    spectrogram_hop,
-                    #[cfg(feature = "spectrogram")]
-                    spectrogram_finished,
-                    #[cfg(feature = "spectrogram")]
-                    spectrogram_gl_cache: RwLock::default(),
-                    #[cfg(feature = "spectrogram")]
-                    gl: Arc::clone(&audio_sys.gl),
-                    _phantom_data: PhantomData,
-                });
-
-                audio_sys.audio_refs.push(Arc::clone(&audio));
-
-                Ok(audio)
-            }
-            AudioMode::Full => {
-                #[cfg(feature = "tracing")]
-                tracing::debug!(target: DB_AUDIO, ?path, "Loading file in Full mode.");
-                let data = Arc::new(RwLock::new(Vec::new()));
-                let mut audio_info = AudioSystem::<Al>::open_decoder(path)?;
-                let channels = audio_info.channels;
-                let sample_rate = audio_info.sample_rate;
-
-                let load_pos = Arc::new(RwLock::new(0));
-
-                let mut src_handle = [0];
-                unsafe {
-                    Al::gen_sources(1, src_handle.as_mut_ptr());
-                }
-                let [src_handle] = src_handle;
-                check_al_error("after alGenSources");
-
-                let mut buffers = vec![0u32; FULL_BUFFER_COUNT];
-                unsafe {
-                    Al::gen_buffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr());
-                }
-                check_al_error("after alGenBuffers");
-                #[cfg(feature = "tracing")]
-                tracing::debug!(target: DB_AUDIO, "Generated {} AL buffers for full-streaming", FULL_BUFFER_COUNT);
-
-                let source = Arc::new(RwLock::new(AudioSource::Full {
-                    load_position: Arc::clone(&load_pos),
-                    playback_position: 0,
-                    free_buffers: buffers.clone(),
-                    all_buffers: buffers,
-                    queued_sizes: VecDeque::new(),
-                    played_samples: Arc::default(),
-                }));
-
-                let loaded = Arc::new(RwLock::new(true));
-
-                let mut fx_filter = [0];
-                unsafe { Al::gen_filters(1, fx_filter.as_mut_ptr()) };
-                let [fx_filter] = fx_filter;
-                unsafe {
-                    Al::filter_i(fx_filter, al::AL_FILTER_TYPE, al::AL_FILTER_LOWPASS);
-                    Al::filter_f(fx_filter, al::AL_LOWPASS_GAIN, 1.);
-                    Al::filter_f(fx_filter, al::AL_LOWPASS_GAINHF, 0.1);
-                }
-
-                let sample_count = Arc::new(RwLock::new(audio_info.sample_count));
-
-                let decode_finished: Arc<RwLock<bool>> = Arc::default();
-
-                let data2 = Arc::clone(&data);
-                let decode_cursor = Arc::clone(&load_pos);
-                let loaded2 = Arc::clone(&loaded);
-                let sc2 = Arc::clone(&sample_count);
-                let dcf2 = Arc::clone(&decode_finished);
-                let df2 = Arc::new(RwLock::new(0));
-                audio_sys.add_task(Box::new(move || {
-                    Self::load_full(
-                        &data2,
-                        &loaded2,
-                        &load_pos,
-                        &mut audio_info,
-                        &sc2,
-                        &df2,
-                        &dcf2,
-                    )
-                }));
-
-                #[cfg(feature = "spectrogram")]
-                let (
-                    spectrogram_tex_data,
-                    spectrogram_columns_done,
-                    spectrogram_freq_bins,
-                    spectrogram_finished,
-                    spectrogram_hop,
-                ) = Self::spawn_spectrogram_task(
-                    audio_sys,
-                    Arc::clone(&data),
-                    decode_cursor,
-                    decode_finished,
-                    channels,
-                    sample_rate,
-                );
-
-                let audio = Arc::new(Self {
-                    data,
-                    sample_count,
-                    source,
-                    loaded,
-                    pending_play: Arc::new(RwLock::new(false)),
-                    src_handle,
-                    channels,
-                    sample_rate,
-                    fx_filter,
-                    #[cfg(feature = "spectrogram")]
-                    spectrogram_tex_data,
-                    #[cfg(feature = "spectrogram")]
-                    spectrogram_columns_done,
-                    #[cfg(feature = "spectrogram")]
-                    spectrogram_freq_bins,
-                    #[cfg(feature = "spectrogram")]
-                    spectrogram_hop,
-                    #[cfg(feature = "spectrogram")]
-                    spectrogram_finished,
-                    #[cfg(feature = "spectrogram")]
-                    spectrogram_gl_cache: RwLock::default(),
-                    #[cfg(feature = "spectrogram")]
-                    gl: Arc::clone(&audio_sys.gl),
-                    _phantom_data: PhantomData,
-                });
-
-                audio_sys.audio_refs.push(Arc::clone(&audio));
-                Ok(audio)
-            }
+        let mut src_handle = [0];
+        unsafe {
+            Al::gen_sources(1, src_handle.as_mut_ptr());
         }
+        let [src_handle] = src_handle;
+        check_al_error("after alGenSources");
+
+        let mut buffers = vec![0u32; FULL_BUFFER_COUNT];
+        unsafe {
+            Al::gen_buffers(FULL_BUFFER_COUNT as i32, buffers.as_mut_ptr());
+        }
+        check_al_error("after alGenBuffers");
+        #[cfg(feature = "tracing")]
+        tracing::debug!(target: DB_AUDIO, "Generated {} AL buffers for full-streaming", FULL_BUFFER_COUNT);
+
+        let source = Arc::new(RwLock::new(AudioSource {
+            load_position: Arc::clone(&load_pos),
+            playback_position: 0,
+            free_buffers: buffers.clone(),
+            all_buffers: buffers,
+            queued_sizes: VecDeque::new(),
+            played_samples: Arc::default(),
+        }));
+
+        let loaded = Arc::new(RwLock::new(true));
+
+        let mut fx_filter = [0];
+        unsafe { Al::gen_filters(1, fx_filter.as_mut_ptr()) };
+        let [fx_filter] = fx_filter;
+        unsafe {
+            Al::filter_i(fx_filter, al::AL_FILTER_TYPE, al::AL_FILTER_LOWPASS);
+            Al::filter_f(fx_filter, al::AL_LOWPASS_GAIN, 1.);
+            Al::filter_f(fx_filter, al::AL_LOWPASS_GAINHF, 0.1);
+        }
+
+        let sample_count = Arc::new(RwLock::new(audio_info.sample_count));
+
+        let decode_finished: Arc<RwLock<bool>> = Arc::default();
+
+        let data2 = Arc::clone(&data);
+        let decode_cursor = Arc::clone(&load_pos);
+        let loaded2 = Arc::clone(&loaded);
+        let sc2 = Arc::clone(&sample_count);
+        let dcf2 = Arc::clone(&decode_finished);
+        let df2 = Arc::new(RwLock::new(0));
+        audio_sys.add_task(Box::new(move || {
+            Self::load_full(
+                &data2,
+                &loaded2,
+                &load_pos,
+                &mut audio_info,
+                &sc2,
+                &df2,
+                &dcf2,
+            )
+        }));
+
+        #[cfg(feature = "spectrogram")]
+        let (
+            spectrogram_tex_data,
+            spectrogram_columns_done,
+            spectrogram_freq_bins,
+            spectrogram_finished,
+            spectrogram_hop,
+        ) = Self::spawn_spectrogram_task(
+            audio_sys,
+            Arc::clone(&data),
+            decode_cursor,
+            decode_finished,
+            channels,
+            sample_rate,
+        );
+
+        let audio = Arc::new(Self {
+            data,
+            sample_count,
+            source,
+            loaded,
+            pending_play: Arc::new(RwLock::new(false)),
+            src_handle,
+            channels,
+            sample_rate,
+            fx_filter,
+            #[cfg(feature = "spectrogram")]
+            spectrogram_tex_data,
+            #[cfg(feature = "spectrogram")]
+            spectrogram_columns_done,
+            #[cfg(feature = "spectrogram")]
+            spectrogram_freq_bins,
+            #[cfg(feature = "spectrogram")]
+            spectrogram_hop,
+            #[cfg(feature = "spectrogram")]
+            spectrogram_finished,
+            #[cfg(feature = "spectrogram")]
+            spectrogram_gl_cache: RwLock::default(),
+            #[cfg(feature = "spectrogram")]
+            gl: Arc::clone(&audio_sys.gl),
+            _phantom_data: PhantomData,
+        });
+
+        audio_sys.audio_refs.push(Arc::clone(&audio));
+        Ok(audio)
     }
 
     pub fn update(&self) {
         let mut source = self.source.write();
 
-        match &mut *source {
-            AudioSource::Stream {
-                loaded_ranges,
-                playback_position,
-                free_buffers,
-                ..
-            } => {
-                unsafe {
-                    let mut processed = [0i32];
-                    Al::get_source_i(
-                        self.src_handle,
-                        al::AL_BUFFERS_PROCESSED,
-                        processed.as_mut_ptr(),
-                    );
-                    for _ in 0..processed[0] {
-                        let mut buf = [0u32];
-                        Al::source_unqueue_buffers(self.src_handle, 1, buf.as_mut_ptr());
-                        free_buffers.push(buf[0]);
-                    }
+        let AudioSource {
+            load_position,
+            playback_position,
+            free_buffers,
+            queued_sizes,
+            played_samples,
+            ..
+        } = &mut *source;
+        let is_stopped = self.is_stopped();
+        unsafe {
+            let mut processed = [0i32];
+            Al::get_source_i(
+                self.src_handle,
+                al::AL_BUFFERS_PROCESSED,
+                processed.as_mut_ptr(),
+            );
+            for _ in 0..processed[0] {
+                let mut buf = [0u32];
+                Al::source_unqueue_buffers(self.src_handle, 1, buf.as_mut_ptr());
+                check_al_error("alSourceUnqueueBuffers");
+                free_buffers.push(buf[0]);
+                if !is_stopped && let Some(consumed) = queued_sizes.pop_front() {
+                    *played_samples.write() += consumed;
                 }
-
-                let ranges = loaded_ranges.read();
-                let available = Self::contiguous_loaded_end(&ranges, *playback_position);
-                drop(ranges);
-                let dat = self.data.read();
-
-                while let Some(buf) = free_buffers.pop() {
-                    let remaining = available.saturating_sub(*playback_position);
-                    if remaining == 0 {
-                        free_buffers.push(buf);
-                        break;
-                    }
-                    let take = remaining.min(FULL_CHUNK_SAMPLES);
-                    let slice = &dat[*playback_position..*playback_position + take];
-                    unsafe {
-                        let format = if self.channels == 1 {
-                            al::AL_FORMAT_MONO16
-                        } else {
-                            al::AL_FORMAT_STEREO16
-                        };
-                        Al::buffer_data(
-                            buf,
-                            format,
-                            slice.as_ptr() as *const _,
-                            std::mem::size_of_val(slice) as i32,
-                            self.sample_rate as i32,
-                        );
-                        Al::source_queue_buffers(self.src_handle, 1, &buf);
-                    }
-                    *playback_position += take;
-                }
-            }
-            AudioSource::Full {
-                load_position,
-                playback_position,
-                free_buffers,
-                queued_sizes,
-                played_samples,
-                ..
-            } => {
-                unsafe {
-                    let mut processed = [0i32];
-                    Al::get_source_i(
-                        self.src_handle,
-                        al::AL_BUFFERS_PROCESSED,
-                        processed.as_mut_ptr(),
-                    );
-                    for _ in 0..processed[0] {
-                        let mut buf = [0u32];
-                        Al::source_unqueue_buffers(self.src_handle, 1, buf.as_mut_ptr());
-                        check_al_error("alSourceUnqueueBuffers");
-                        free_buffers.push(buf[0]);
-                        if let Some(consumed) = queued_sizes.pop_front() {
-                            *played_samples.write() += consumed;
-                        }
-                    }
-                }
-
-                let available = *load_position.read();
-                let dat = self.data.read();
-
-                while let Some(buf) = free_buffers.pop() {
-                    let remaining = available.saturating_sub(*playback_position);
-                    if remaining == 0 {
-                        free_buffers.push(buf);
-                        break;
-                    }
-                    let take = remaining.min(FULL_CHUNK_SAMPLES);
-                    let slice = &dat[*playback_position..*playback_position + take];
-                    unsafe {
-                        let format = if self.channels == 1 {
-                            al::AL_FORMAT_MONO16
-                        } else {
-                            al::AL_FORMAT_STEREO16
-                        };
-                        Al::buffer_data(
-                            buf,
-                            format,
-                            slice.as_ptr() as *const _,
-                            std::mem::size_of_val(slice) as i32,
-                            self.sample_rate as i32,
-                        );
-                        Al::source_queue_buffers(self.src_handle, 1, &buf);
-                        check_al_error("alBufferData/QueueBuffers");
-                    }
-                    queued_sizes.push_back(take);
-                    *playback_position += take;
-                }
-                drop(dat);
             }
         }
+
+        let available = *load_position.read();
+        let dat = self.data.read();
+
+        while let Some(buf) = free_buffers.pop() {
+            let remaining = available.saturating_sub(*playback_position);
+            if remaining == 0 {
+                free_buffers.push(buf);
+                break;
+            }
+            let take = remaining.min(FULL_CHUNK_SAMPLES);
+            let slice = &dat[*playback_position..*playback_position + take];
+            unsafe {
+                let format = if self.channels == 1 {
+                    al::AL_FORMAT_MONO16
+                } else {
+                    al::AL_FORMAT_STEREO16
+                };
+                Al::buffer_data(
+                    buf,
+                    format,
+                    slice.as_ptr() as *const _,
+                    std::mem::size_of_val(slice) as i32,
+                    self.sample_rate as i32,
+                );
+                Al::source_queue_buffers(self.src_handle, 1, &buf);
+                check_al_error("alBufferData/QueueBuffers");
+            }
+            queued_sizes.push_back(take);
+            *playback_position += take;
+        }
+        drop(dat);
 
         drop(source);
 
@@ -910,12 +722,26 @@ impl<Al: AlInterface> Audio<Al> {
             state[0] == al::AL_PLAYING
         }
     }
+
+    pub fn is_paused(&self) -> bool {
+        unsafe {
+            let mut state = [0];
+            Al::get_source_i(self.src_handle, al::AL_SOURCE_STATE, state.as_mut_ptr());
+            state[0] == al::AL_PAUSED
+        }
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        unsafe {
+            let mut state = [0];
+            Al::get_source_i(self.src_handle, al::AL_SOURCE_STATE, state.as_mut_ptr());
+            state[0] == al::AL_STOPPED
+        }
+    }
+
     pub fn position_seconds(&self) -> f32 {
         let source = self.source.read();
-        let played_samples = match &*source {
-            AudioSource::Full { played_samples, .. } => *played_samples.read(),
-            AudioSource::Stream { played_samples, .. } => *played_samples.read(),
-        };
+        let played_samples = *source.played_samples.read();
         drop(source);
 
         let mut offset_frames = [0i32];
@@ -926,6 +752,7 @@ impl<Al: AlInterface> Audio<Al> {
                 offset_frames.as_mut_ptr(),
             );
         }
+
 
         let played_frames = played_samples / self.channels as usize;
         let total_frames = played_frames + offset_frames[0].max(0) as usize;
@@ -949,6 +776,7 @@ impl<Al: AlInterface> Audio<Al> {
     pub fn stop(&self) {
         *self.pending_play.write() = false;
         unsafe {
+            Al::source_pause(self.src_handle);
             Al::source_stop(self.src_handle);
         }
     }
@@ -989,109 +817,49 @@ impl<Al: AlInterface> Audio<Al> {
         let target_sample = (target * self.sample_rate as f32) as usize * self.channels as usize;
 
         let mut source = self.source.write();
-        match &mut *source {
-            AudioSource::Full {
-                load_position,
-                playback_position,
-                free_buffers,
-                queued_sizes,
-                played_samples,
-                all_buffers,
-            } => {
-                let loaded = *load_position.read();
-                if target_sample > loaded {
-                    return Err(PlaybackError::InvalidSeekPosition(target));
-                }
-
-                let mut was_playing = [0i32];
-                unsafe {
-                    Al::get_source_i(
-                        self.src_handle,
-                        al::AL_SOURCE_STATE,
-                        was_playing.as_mut_ptr(),
-                    );
-                }
-                let was_playing = was_playing[0] == al::AL_PLAYING;
-
-                unsafe {
-                    Al::source_stop(self.src_handle);
-                    Al::source_i(self.src_handle, al::AL_BUFFER, 0);
-                    check_al_error("seek: flush buffers");
-                }
-                free_buffers.clear();
-                free_buffers.extend_from_slice(all_buffers);
-
-                queued_sizes.clear();
-                *played_samples.write() = target_sample;
-
-                *playback_position = target_sample;
-                drop(source);
-
-                self.update();
-                if was_playing {
-                    self.play()?;
-                }
-                Ok(())
-            }
-            AudioSource::Stream { .. } => {
-                drop(source);
-                self.seek_stream(target)
-            }
-        }
-    }
-
-    fn seek_stream(&self, target: f32) -> Result<(), PlaybackError> {
-        let target_sample = (target * self.sample_rate as f32) as usize * self.channels as usize;
-        let mut source = self.source.write();
-        if let AudioSource::Stream {
-            loaded_ranges,
+        let AudioSource {
+            load_position,
             playback_position,
-            seek_target,
             free_buffers,
             queued_sizes,
             played_samples,
-            ..
-        } = &mut *source
-        {
-            let already_loaded =
-                Self::contiguous_loaded_end(&loaded_ranges.read(), target_sample) > target_sample;
+            all_buffers,
+        } = &mut *source;
+        let loaded = *load_position.read();
+        if target_sample > loaded {
+            return Err(PlaybackError::InvalidSeekPosition(target));
+        }
 
-            unsafe {
-                Al::source_stop(self.src_handle);
-                let mut queued = [0i32];
-                Al::get_source_i(self.src_handle, al::AL_BUFFERS_QUEUED, queued.as_mut_ptr());
-                for _ in 0..queued[0] {
-                    let mut buf = [0u32];
-                    Al::source_unqueue_buffers(self.src_handle, 1, buf.as_mut_ptr());
-                    free_buffers.push(buf[0]);
-                }
-            }
+        let mut was_playing = [0i32];
+        unsafe {
+            Al::get_source_i(
+                self.src_handle,
+                al::AL_SOURCE_STATE,
+                was_playing.as_mut_ptr(),
+            );
+        }
+        let was_playing = was_playing[0] == al::AL_PLAYING;
 
-            queued_sizes.clear();
-            *played_samples.write() = target_sample;
+        unsafe {
+            Al::source_pause(self.src_handle);
+            Al::source_stop(self.src_handle);
+            Al::source_i(self.src_handle, al::AL_BUFFER, 0);
+            check_al_error("seek: flush buffers");
+        }
+        free_buffers.clear();
+        free_buffers.extend_from_slice(all_buffers);
 
-            *playback_position = target_sample;
-            if !already_loaded {
-                *seek_target.write() = Some(target_sample);
-            }
+        queued_sizes.clear();
+        *played_samples.write() = target_sample;
+
+        *playback_position = target_sample;
+        drop(source);
+
+        self.update();
+        if was_playing {
+            self.play()?;
         }
         Ok(())
-    }
-
-    fn contiguous_loaded_end(ranges: &[(usize, usize)], pos: usize) -> usize {
-        ranges
-            .iter()
-            .find(|&&(s, e)| s <= pos && pos < e)
-            .map(|&(_, e)| e)
-            .unwrap_or(pos)
-    }
-
-    pub fn mode(&self) -> AudioMode {
-        let source = self.source.read();
-        match *source {
-            AudioSource::Stream { .. } => AudioMode::Stream,
-            AudioSource::Full { .. } => AudioMode::Full,
-        }
     }
 
     /// This may be None if the audio did not provide the length as metadata.
@@ -1230,98 +998,6 @@ impl<Al: AlInterface> Audio<Al> {
         (tex_data, columns_done, freq_bins, finished, hop)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn decode_task_loop(
-        data: &Arc<RwLock<Vec<i16>>>,
-        loaded_ranges: &Arc<RwLock<Vec<(usize, usize)>>>,
-        decode_cursor: &Arc<RwLock<usize>>,
-        seek_target: &Arc<RwLock<Option<usize>>>,
-        loaded: &Arc<RwLock<bool>>,
-        channels: u16,
-        info: &mut AudioInfo,
-        sample_count: &Arc<RwLock<Option<usize>>>,
-        decoded_frames: &Arc<RwLock<usize>>,
-        decode_finished: &Arc<RwLock<bool>>,
-    ) -> TaskAction {
-        if !*loaded.read() {
-            *decode_finished.write() = true;
-            *sample_count.write() = Some(*decoded_frames.read());
-            return TaskAction::Remove;
-        }
-
-        if let Some(target_sample) = seek_target.write().take() {
-            let target_frame = target_sample / channels as usize;
-            let target_time_secs = target_frame as f64 / info.sample_rate as f64;
-            let time = symphonia::core::units::Time::try_from_secs_f64(target_time_secs).unwrap();
-
-            match info.format_reader.seek(
-                symphonia::core::formats::SeekMode::Accurate,
-                symphonia::core::formats::SeekTo::Time {
-                    time,
-                    track_id: Some(info.track_id),
-                },
-            ) {
-                Ok(seeked) => {
-                    let actual_frame = seeked.actual_ts.get().max(0) as usize;
-                    *decode_cursor.write() = actual_frame * channels as usize;
-                }
-                Err(err) => {
-                    #[cfg(feature = "tracing")]
-                    tracing::warn!(target: DB_AUDIO, "seek failed: {err}")
-                },
-            }
-        }
-
-        let packet = loop {
-            let packet = match info.format_reader.next_packet() {
-                Ok(Some(p)) => p,
-                Ok(None) => {
-                    *decode_finished.write() = true;
-                    *sample_count.write() = Some(*decoded_frames.read());
-                    return TaskAction::Remove;
-                }
-                Err(symphonia::core::errors::Error::ResetRequired) => {
-                    unimplemented!("why do I have to deal with OGG")
-                }
-                Err(err) => {
-                    #[cfg(feature = "tracing")]
-                    tracing::error!(target: DB_AUDIO, "{err}");
-                    *decode_finished.write() = true;
-                    *sample_count.write() = Some(*decoded_frames.read());
-                    return TaskAction::Remove;
-                }
-            };
-            while !info.format_reader.metadata().is_latest() {
-                info.format_reader.metadata().pop();
-            }
-            if packet.track_id != info.track_id {
-                continue;
-            }
-            break packet;
-        };
-
-        if let Ok(buf) = info.decoder.decode(&packet) {
-            let size = buf.samples_interleaved();
-            let start = *decode_cursor.read();
-            let end = start + size;
-
-            let mut dat = data.write();
-            if dat.len() < end {
-                dat.resize(end, i16::MID);
-            }
-            buf.copy_to_slice_interleaved(&mut dat[start..end]);
-            drop(dat);
-
-            *decode_cursor.write() = end;
-            *decoded_frames.write() += size / channels as usize;
-            let mut ranges = loaded_ranges.write();
-            ranges.push((start, end));
-            Self::merge_ranges(&mut ranges);
-        }
-
-        TaskAction::None
-    }
-
     #[cfg(feature = "spectrogram")]
     fn spectrogram_task_loop(state: &mut SpectrogramState) -> TaskAction {
         let decoded_samples = *state.decode_cursor.read();
@@ -1374,18 +1050,6 @@ impl<Al: AlInterface> Audio<Al> {
         *state.columns_done.write() = columns_done + 1;
 
         TaskAction::None
-    }
-
-    fn merge_ranges(ranges: &mut Vec<(usize, usize)>) {
-        ranges.sort_unstable_by_key(|r| r.0);
-        let mut merged: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
-        for &(s, e) in ranges.iter() {
-            match merged.last_mut() {
-                Some(last) if s <= last.1 => last.1 = last.1.max(e),
-                _ => merged.push((s, e)),
-            }
-        }
-        *ranges = merged;
     }
 
     #[cfg(feature = "spectrogram")]
@@ -1566,14 +1230,8 @@ impl<Al: AlInterface> Drop for Audio<Al> {
             let mut all_buffers: Vec<u32> = Vec::new();
             {
                 let source = self.source.read();
-                match &*source {
-                    AudioSource::Full {
-                        all_buffers: bufs, ..
-                    } => all_buffers.extend_from_slice(bufs),
-                    AudioSource::Stream { free_buffers, .. } => {
-                        all_buffers.extend_from_slice(free_buffers)
-                    }
-                }
+                let AudioSource { all_buffers: bufs, .. } = &*source;
+                all_buffers.extend_from_slice(bufs);
             }
             if !all_buffers.is_empty() {
                 unsafe {
