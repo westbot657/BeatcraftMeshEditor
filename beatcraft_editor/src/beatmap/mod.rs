@@ -5,7 +5,7 @@ use std::sync::mpsc;
 use std::thread;
 
 use eframe::glow::{self, Context, HasContext};
-use egui::{Align, Align2, Color32, FontId, FontSelection, ImageSource, Pos2, Rect, RichText, TextStyle, TextWrapMode, Ui, WidgetText};
+use egui::{Align, Align2, Color32, FontId, FontSelection, Id, ImageSource, Pos2, Rect, RichText, Sense, TextStyle, TextWrapMode, Ui, WidgetText};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use rand::rngs::ThreadRng;
@@ -36,6 +36,7 @@ use beatmap_core::{ArrowType, BeatmapController, GameObject, HitBox, ObjectType,
 use crate::beatmap::widgets::bar_slider::BarSlider;
 use crate::beatmap::widgets::cut_direction_selector::{CutDirectionSelector, SelectorLayout};
 use crate::beatmap::widgets::keybind_hint::{Corner, ExtensionAxis, ExtensionCorner, HintItem, KeybindHint, KeybindHintList};
+use crate::beatmap::widgets::song_overview::SongOverview;
 
 pub mod data;
 pub mod event;
@@ -1186,7 +1187,6 @@ impl App {
                         },
                         Some((controller, _data)) => {
                             // In editor
-
                             ui.allocate_ui_with_layout(
                                 [ui.available_width(), 60.].into(),
                                 egui::Layout::left_to_right(egui::Align::Center),
@@ -1197,18 +1197,56 @@ impl App {
                                         let t = audio.position_seconds();
                                         let time = format!("{} / {}", format_time(t), format_time(len));
                                         let beat = format!("{:08.3} / {:08.3}", controller.runtime_data.seconds_to_beat(t), controller.runtime_data.seconds_to_beat(len));
-                                        let beat = self.data.locale.get_with_args(
-                                            "beat-label",
-                                            &[
-                                                ("fract".into(), beat.into())
-                                            ].into()
-                                        );
-                                        let center = ui.max_rect().center() - egui::vec2(0., 12.);
+                                        let center = ui.max_rect().center() - egui::vec2(0., 14.);
                                         let beat_pos = center + egui::vec2(275., 0.);
+
+                                        // Song overview bar. Drawn before the beat label so the
+                                        // label paints on top of it. Same row/size as the sliders.
+                                        let overview_rect = Rect::from_center_size(
+                                            center,
+                                            egui::vec2(300., 18.),
+                                        );
+                                        let mut song_pos = (t / len) as f32;
+                                        let overview_resp = ui.put(
+                                            overview_rect,
+                                            SongOverview::new(
+                                                &mut song_pos,
+                                                self.render.renderer.beatmap.spectrogram_range(),
+                                            )
+                                                .length(250.)
+                                                .bg_color(Color32::from_gray(0x30))
+                                                .view_color(Color32::from_gray(0x50))
+                                                .line_color(Color32::from_gray(0x70)),
+                                        );
+                                        if overview_resp.changed() {
+                                            let seek_secs = len * song_pos;
+                                            let beat = controller.runtime_data.seconds_to_beat(seek_secs);
+                                            let _ = audio.seek(seek_secs);
+                                            self.render.renderer.beatmap.seek(beat);
+                                        }
+
                                         paint_text_centered(ui, center, time);
+
+                                        let beat_rect = Rect::from_center_size(beat_pos, egui::vec2(250., 18.));
+                                        let beat_rect_inner = Rect::from_center_size(beat_pos + egui::vec2(0., 1.), egui::vec2(225., 20.));
+                                        ui.painter_at(beat_rect_inner)
+                                            .rect_filled(beat_rect_inner, 2., Color32::from_gray(0x30));
+
                                         paint_text_centered(ui, beat_pos, beat);
 
-                                        let speed_pos = center + egui::vec2(-250., -2.);
+                                        let beat_resp = ui.interact(beat_rect, Id::new("beatmap-beat-rect"), Sense::hover());
+                                        KeybindHintList::new(
+                                            vec![HintItem::text(self.data.locale.get("beat-label").to_string())],
+                                            beat_rect, &beat_resp
+                                        )
+                                            .placement(ExtensionCorner::Exterior(Corner::BottomRight, ExtensionAxis::Vertical))
+                                            .gap(-10.)
+                                            .scale(0.8)
+                                            .background(Color32::from_gray(0x20))
+                                            .invert_visibility(true)
+                                            .show(ui, &self.data.keymaps);
+
+                                        let speed_pos = center + egui::vec2(-275., 0.);
                                         let speed_rect = Rect::from_center_size(speed_pos, egui::vec2(250., 18.));
                                         let spd = (self.state.playback_speed * 100.) as u32;
                                         let mut speed = spd;
@@ -1243,7 +1281,7 @@ impl App {
                                             .show(ui, &self.data.keymaps);
 
 
-                                        let spacing_pos = center + egui::vec2(-525., -2.);
+                                        let spacing_pos = center + egui::vec2(-540., 0.);
                                         let spacing_rect = Rect::from_center_size(spacing_pos, egui::vec2(250., 18.));
                                         let def = self
                                             .data
@@ -1272,7 +1310,7 @@ impl App {
                                             .invert_visibility(true)
                                             .show(ui, &self.data.keymaps);
 
-                                        let volume_pos = center + egui::vec2(525., -2.);
+                                        let volume_pos = center + egui::vec2(540., 0.);
                                         let volume_rect = Rect::from_center_size(volume_pos, egui::vec2(250., 18.));
                                         let vol = (self.data.audio_volume * 100.) as u32;
                                         let mut volume = vol;
@@ -1387,14 +1425,18 @@ impl App {
                                 )),
                             });
 
+                            let seek_text = self.data.locale.get("seek-label").to_string();
+                            let zoom_text = self.data.locale.get("zoom-label").to_string();
+
                             KeybindHintList::new(
                                 vec![
-                                    HintItem::text("Seek:"),
+                                    HintItem::text(format!(" {seek_text}:")),
                                     HintItem::fake(&["Scroll"]),
                                     HintItem::text("|"),
                                     HintItem::fake(&["Left Mouse"]),
-                                    HintItem::text("Zoom:"),
-                                    HintItem::fake(&["Alt", "Scroll"])
+                                    HintItem::text(format!(" {zoom_text}:")),
+                                    HintItem::fake(&["Alt", "Scroll"]),
+                                    HintItem::text(" "),
                                 ],
                                 rect, &resp
                             )

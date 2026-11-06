@@ -359,8 +359,7 @@ impl DerefMut for RecentProjects {
 
 impl From<&AppData> for RawAppData {
     fn from(value: &AppData) -> Self {
-        tracing::debug!(target: DB_DATA, ?value, "Saving app data");
-        Self {
+        let s = Self {
             recents: (&value.recents).into(),
             audio_volume: value.audio_volume,
             keymaps: RawKeymapData {
@@ -369,7 +368,9 @@ impl From<&AppData> for RawAppData {
             },
             locale: value.locale.locale.to_string(),
             catch_all: None,
-        }
+        };
+        tracing::debug!(target: DB_DATA, value = ?s, "Saving app data");
+        s
     }
 }
 

@@ -372,5 +372,7 @@ tooltip-beatmap_editor-place-gradient-color-disabled =
 tooltip-beatmap_editor-place-cut_offset-disabled =
     Click the toggle to enable rotation offset
 
-beat-label = Beat: {$fract}
-
+beat-label = Beat
+songtime-label = Song time
+seek-label = Seek
+zoom-label = Zoom
