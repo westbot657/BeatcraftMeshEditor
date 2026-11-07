@@ -1,10 +1,10 @@
-use egui::{Color32, ImageSource, Response, Ui, Widget};
-use beatmap_core::CutDirectionExt as _;
-use bs_mapping_data::CutDirection;
 use crate::beatmap::widgets::angle_dial::AngleDial;
-use crate::beatmap::widgets::keybind_hint::{Corner, ExtensionCorner, KeybindHint};
-use crate::beatmap::widgets::toggle::ToggleSwitch;
 use crate::keymap::KeymapSystem;
+use crate::widgets::keybind_hint::{Corner, ExtensionCorner, KeybindHint};
+use crate::widgets::toggle::ToggleSwitch;
+use beatmap_core::beatmap::CutDirectionExt as _;
+use bs_mapping_data::CutDirection;
+use egui::{Color32, ImageSource, Response, Ui, Widget};
 
 pub static ARROW: ImageSource =
     egui::include_image!("../../assets/textures/svg/cut_dir_arrow.svg");

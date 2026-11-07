@@ -1,15 +1,15 @@
+use crate::widgets::keybind_hint::HintPart;
+use crate::{DB_KEYMAP, DB_LOGIC};
+use bitflags::bitflags;
+use egui::{Color32, Event, Id, Modifiers, Response, Ui, Widget};
+use keybinds::{Key, KeyInput, KeySeq, Match, Mods};
+use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ops::{BitAnd, BitOr, Not};
 use std::rc::Rc;
 use std::time::Duration;
-use bitflags::bitflags;
-use egui::{Color32, Event, Id, Modifiers, Response, Ui, Widget};
-use keybinds::{Key, KeyInput, KeySeq, Match, Mods};
-use parking_lot::RwLock;
-use crate::{DB_KEYMAP, DB_LOGIC};
-use crate::beatmap::widgets::keybind_hint::HintPart;
 
 /// Use bitwise operators to build: | & !
 /// use check on the final object to check the built expression

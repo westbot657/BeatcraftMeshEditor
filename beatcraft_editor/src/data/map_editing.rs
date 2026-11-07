@@ -4,7 +4,8 @@ use glam::{Quat, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
 
 use crate::DB_DATA;
-use beatmap_core::{BeatmapController, BombNote, ChainNote, ChainNoteLinkData, ColorNote, CutDirectionExt, NoteColor, ObjectColor, Obstacle, RawNoteColor, RuntimeData, TimeUnit};
+use beatmap_core::beatmap::{BombNote, ChainNote, ChainNoteLinkData, ColorNote, CutDirectionExt, NoteColor, ObjectColor, Obstacle, RawNoteColor};
+use beatmap_core::{BeatmapController, RuntimeData, TimeUnit};
 use bs_mapping_data::v2::{self, ObstacleV2Type, V2Note};
 use bs_mapping_data::{ArcMidAnchorMode, BeatmapFile, Color, CutDirection, Sentinel};
 

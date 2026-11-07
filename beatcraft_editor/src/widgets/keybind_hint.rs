@@ -1,6 +1,6 @@
 use egui::{Color32, Id, Response, Ui, Widget};
-use keybinds::{KeyInput, Mods};
-use crate::keymap::{paint_key_seq_hint, KeymapSystem, paint_hint_parts};
+use keybinds::KeyInput;
+use crate::keymap::{KeymapSystem, paint_hint_parts};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Corner {

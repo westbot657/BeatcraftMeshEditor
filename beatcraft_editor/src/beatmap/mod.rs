@@ -4,13 +4,6 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 
-use eframe::glow::{self, Context, HasContext};
-use egui::{Align, Align2, Color32, FontId, FontSelection, Id, ImageSource, Pos2, Rect, RichText, Sense, TextStyle, TextWrapMode, Ui, WidgetText};
-use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
-use indexmap::IndexMap;
-use rand::rngs::ThreadRng;
-use beatcraft_audiolib::{Audio, AudioError, AudioSystem, NativeOpenAL};
-use beatcraft_editor_proc::hex;
 use crate::config::ProjectType;
 use crate::data::map_editing::{EditingData, GlobalEditingData, ObjectSource};
 use crate::data::mesh::LightMeshData;
@@ -20,23 +13,33 @@ use crate::editor::{
 };
 use crate::light_mesh::LightMesh;
 use crate::render::{GpuMesh, GridType, InstanceData, MeshDrawCall, Renderer};
-use crate::widgets::{ImageCard, MathDragValue};
+use crate::widgets::ImageCard;
 use crate::{
     DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, MISSING_EDITOR_ICON, RefDuper, UnsafeMutRef, editor,
     get_data_folder,
 };
+use beatcraft_audiolib::{Audio, AudioError, AudioSystem, NativeOpenAL};
+use beatcraft_editor_proc::hex;
+use eframe::glow::{self, Context, HasContext};
+use egui::{Align, Align2, Color32, FontId, FontSelection, Id, ImageSource, Pos2, Rect, RichText, Sense, TextStyle, TextWrapMode, Ui, WidgetText};
+use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
+use indexmap::IndexMap;
+use rand::rngs::ThreadRng;
 
-use self::object::GameObjectExt;
 use self::data::obstacle_font::{HorizontalAlign, ObstacleFont, ObstacleFontData, TextLayout, VerticalAlign};
+use self::object::GameObjectExt;
 use bs_mapping_data::custom_info_v2::DifficultyBeatmapCustomDataV2;
 use bs_mapping_data::info_v2::{CharacteristicSetV2, DifficultyBeatmapV2};
 use bs_mapping_data::{ArcMidAnchorMode, AudioDataFile, BeatmapFile, Color, CutDirection, InfoFile, MapCharacteristic, MapDifficulty};
 
-use beatmap_core::{ArrowType, BeatmapController, GameObject, HitBox, ObjectType, RuntimeData};
-use crate::beatmap::widgets::bar_slider::BarSlider;
 use crate::beatmap::widgets::cut_direction_selector::{CutDirectionSelector, SelectorLayout};
-use crate::beatmap::widgets::keybind_hint::{Corner, ExtensionAxis, ExtensionCorner, HintItem, KeybindHint, KeybindHintList};
 use crate::beatmap::widgets::song_overview::SongOverview;
+use crate::widgets::bar_slider::BarSlider;
+use crate::widgets::keybind_hint::{Corner, ExtensionAxis, ExtensionCorner, HintItem, KeybindHint, KeybindHintList};
+use crate::widgets::math_values::MathDragValue;
+use beatmap_core::beatmap::{ArrowType, GameObject, ObjectType};
+use beatmap_core::math::HitBox;
+use beatmap_core::{BeatmapController, RuntimeData};
 
 pub mod data;
 pub mod event;

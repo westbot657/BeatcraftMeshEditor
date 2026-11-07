@@ -1,18 +1,13 @@
-use std::collections::HashMap;
 use std::f32;
 
-use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
+use glam::{Mat4, Quat, Vec3, Vec4};
 use rand::{RngExt, rngs::ThreadRng};
 
 use crate::data::map_editing::ObjectSource;
 use crate::render::GameObjectInstanceData;
 
-use super::BeatmapProjectDiff;
-use bs_mapping_data::{
-    BeatmapDataError, BeatmapFile, BpmRegion,
-    CutDirection, InfoFile, v2,
-};
 
+use beatmap_core::beatmap::{Arc, BombNote, ChainNote, ChainNoteLink, ColorNote, GameObject, Obstacle};
 use beatmap_core::*;
 
 pub trait GameObjectExt: GameObject<ObjectSource> {

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use bs_mapping_data::{Color, CutDirection, MapVersion};
 use bs_mapping_data::v2::{ArcV2, BeatmapFileV2, BombNoteV2, ColorNoteV2, ObstacleV2, ObstacleV2Type, V2Note};
+use bs_mapping_data::{Color, CutDirection, MapVersion};
 
-use beatmap_core::NoteColor;
 use crate::data::map_editing::{DataElement, EditingData, Value};
+use beatmap_core::beatmap::NoteColor;
 
 use super::{ExportResult, Exportable};
 

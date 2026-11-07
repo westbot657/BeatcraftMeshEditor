@@ -8,7 +8,7 @@ use indexmap::IndexMap;
 use crate::data::mesh::UvId;
 use crate::editor::{App, Selection};
 use crate::light_mesh::Triangle;
-use crate::widgets::MathDragValue;
+use crate::widgets::math_values::MathDragValue;
 use crate::{
     RefDuper, UV_HIT_RADIUS, UV_VERT_COLORS, editor, get_or_load_texture, light_mesh, screen_to_uv,
     snap_uv, uv_to_screen,

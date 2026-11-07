@@ -13,19 +13,17 @@ use keybinds::KeySeq;
 use tracing::Level;
 
 #[cfg(feature = "mapper")]
-use beatcraft_audiolib::{AudioSystem, NativeOpenAL};
-#[cfg(feature = "mapper")]
 use crate::beatmap::BeatmapEditor;
+use crate::config::AppData;
 #[cfg(feature = "mapper")]
 use crate::data::map_editing::ObjectSource;
-use beatmap_core::{BombNote, ChainNote, ColorNote, ObjectType, Obstacle, RuntimeData};
-use crate::config::AppData;
 use crate::data::mesh::{
     EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData,
     MeshType, SessionData, SpectrogramData, TypeData, VertexId,
 };
 #[cfg(feature = "mesh-editor")]
 use crate::data::mesh::{NormalId, UvId};
+use crate::keymap::{ContextGuard, KeymapSystem};
 use crate::light_mesh::{
     LightMesh, Part,
 };
@@ -35,9 +33,12 @@ use crate::light_mesh::{
     LightMeshSnapshot,
 };
 use crate::render::{GpuMesh, InstanceData, LIGHT_COLORS, Renderer};
-use crate::{editor, load_app_data, save_app_data, RefDuper, DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER};
+use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, editor, load_app_data, save_app_data};
+#[cfg(feature = "mapper")]
+use beatcraft_audiolib::{AudioSystem, NativeOpenAL};
+use beatmap_core::beatmap::{BombNote, ChainNote, ColorNote, ObjectType, Obstacle};
+use beatmap_core::RuntimeData;
 use bs_mapping_data::{AudioDataFile, InfoFile};
-use crate::keymap::{ContextGuard, KeymapSystem};
 
 #[derive(Copy, Clone)]
 pub struct Camera {
@@ -898,7 +899,7 @@ pub enum HistoryEntry {
     #[cfg(feature = "mapper")]
     BeatmapChains(Vec<ChainNote<ObjectSource>>),
     #[cfg(feature = "mapper")]
-    BeatmapArcs(Vec<beatmap_core::Arc<ObjectSource>>),
+    BeatmapArcs(Vec<beatmap_core::beatmap::Arc<ObjectSource>>),
     #[cfg(feature = "mapper")]
     BeatmapRuntimeData(RuntimeData),
 }

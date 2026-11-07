@@ -26,27 +26,31 @@ use self::editor::{
 };
 #[cfg(feature = "mesh-editor")]
 use self::editor::{CreateEnv, RoutineAction, ViewStyle};
-#[cfg(feature = "mesh-editor")]
-use self::widgets::MathDragValue;
 use fluent_templates::fluent_bundle::FluentValue;
+#[cfg(feature = "mesh-editor")]
+use widgets::math_values::MathDragValue;
 #[cfg(any(not(feature = "mesh-editor"), not(feature = "mapper")))]
 use crate::config::ProjectKind;
-use crate::keymap::{KeymapSystem, SingleKeyEdit};
+use crate::keymap::KeymapSystem;
 
-#[cfg(feature = "mapper")]
-pub mod beatmap;
 pub mod config;
 pub mod data;
 pub mod editor;
 pub mod light_mesh;
-pub mod math_interp;
+pub mod math_interpreter;
 pub mod renaming;
 pub mod render;
-#[cfg(feature = "mesh-editor")]
-pub mod scenes;
 pub mod ui_elements;
 pub mod widgets;
-mod keymap;
+pub mod keymap;
+
+#[cfg(feature = "mapper")]
+pub mod beatmap;
+
+#[cfg(feature = "mesh-editor")]
+pub mod scenes;
+
+pub mod lightshow;
 
 // Logging targets
 pub const DB_LOGIC: &str = "logic";

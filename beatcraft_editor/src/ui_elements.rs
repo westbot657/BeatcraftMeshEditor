@@ -8,10 +8,10 @@ use glam::{Quat, Vec2, Vec3};
 use crate::data::mesh::VertexId;
 use crate::editor::{self, App, RotationDisplayMode};
 use crate::light_mesh::{self, ComputeVertex, Part};
-use crate::widgets::{MathDragValue, MathDragValueOpt, MultiMathValue};
 use bs_mapping_data::easing::Easing;
 
 use crate::RefDuper;
+use crate::widgets::math_values::{MathDragValue, MathDragValueOpt, MultiMathValue};
 
 pub fn trigger_history<T: 'static + Clone + Send + Sync>(
     ui: &mut egui::Ui,
