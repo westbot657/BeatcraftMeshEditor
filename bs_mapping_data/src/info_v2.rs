@@ -140,9 +140,9 @@ pub struct BpmRegionV2 {
     #[serde(rename = "_endSampleIndex")]
     pub end_index: usize,
     #[serde(rename = "_startBeat")]
-    pub start_beat: f32,
+    pub start_beat: f64,
     #[serde(rename = "_endBeat")]
-    pub end_beat: f32,
+    pub end_beat: f64,
 }
 
 impl From<&BpmRegionV2> for BpmRegion {

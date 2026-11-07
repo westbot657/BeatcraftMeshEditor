@@ -17,6 +17,7 @@ glam = { version = "0.33.5" }
 tracing = { version = "0.1.44", optional = true }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"], optional = true }
 tracing-appender = { version = "0.2.5", optional = true }
+thiserror = "2.0.20"
 
 #tracks-rs
 

@@ -98,9 +98,9 @@ pub struct BpmRegionV4 {
     #[serde(rename = "ei")]
     pub end_index: usize,
     #[serde(rename = "sb")]
-    pub start_beat: f32,
+    pub start_beat: f64,
     #[serde(rename = "eb")]
-    pub end_beat: f32,
+    pub end_beat: f64,
 }
 
 impl From<&BpmRegionV4> for BpmRegion {

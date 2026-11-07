@@ -3,14 +3,14 @@ pub mod spline;
 pub mod math;
 pub mod beatmap;
 pub mod lightshow;
+pub mod tracks;
 
 use std::fmt::Debug;
 
 use beatcraft_editor_proc::hex;
 use bs_mapping_data::BpmRegion;
 use beatmap::{Arc, BombNote, ChainNote, ColorNote, Obstacle};
-use glam::{Vec3, Vec4};
-use math::Lerp;
+use glam::{Vec3, Vec4, FloatExt};
 
 
 pub struct BeatmapController<ObjectSource> {
@@ -70,7 +70,7 @@ impl RuntimeData {
     }
 
     pub fn seconds_to_beat(&self, seconds: f32) -> f32 {
-        let sample = (seconds * self.sample_rate as f32) as usize;
+        let sample = seconds as f64 * self.sample_rate as f64;
         for BpmRegion {
             start_sample,
             end_sample,
@@ -78,20 +78,20 @@ impl RuntimeData {
             end_beat,
         } in self.bpm_regions.iter()
         {
-            if (*start_sample..=*end_sample).contains(&sample) {
-                let x = f32::inv_lerp(*start_sample as f32, *end_sample as f32, sample as f32);
-                return f32::lerp(*start_beat, *end_beat, x);
+            if (*start_sample..=*end_sample).contains(&(sample as usize)) {
+                let x = f64::inverse_lerp(*start_sample as f64, *end_sample as f64, sample);
+                return f64::lerp(*start_beat, *end_beat, x) as f32;
             }
         }
-        seconds / (60. / self.bpm)
+        (seconds as f64 / (60. / self.bpm as f64)) as f32
     }
 
     pub fn beat_to_seconds(&self, beat: f32) -> f32 {
-        let sample = self.beat_to_sample(beat);
-        sample as f32 / self.sample_rate as f32
+        let sample = self.beat_to_sample(beat as f64);
+        (sample as f64 / self.sample_rate as f64) as f32
     }
 
-    fn beat_to_sample(&self, beat: f32) -> usize {
+    fn beat_to_sample(&self, beat: f64) -> usize {
         for BpmRegion {
             start_sample,
             end_sample,
@@ -100,19 +100,19 @@ impl RuntimeData {
         } in self.bpm_regions.iter()
         {
             if (*start_beat..=*end_beat).contains(&beat) {
-                let x = f32::inv_lerp(*start_beat, *end_beat, beat);
-                return f32::lerp(*start_sample as f32, *end_sample as f32, x) as usize;
+                let x = f64::inverse_lerp(*start_beat, *end_beat, beat);
+                return f64::lerp(*start_sample as f64, *end_sample as f64, x) as usize;
             }
         }
-        let s = beat * (60. / self.bpm);
-        (s * self.sample_rate as f32) as usize
+        let s = beat * (60. / self.bpm as f64);
+        (s * self.sample_rate as f64) as usize
     }
 
     pub fn bpm(&self, time: TimeUnit) -> f32 {
         let time_samples = match time {
             TimeUnit::Sample(s) => s,
             TimeUnit::Seconds(s) => (s * self.sample_rate as f32) as usize,
-            TimeUnit::Beat(b) => self.beat_to_sample(b),
+            TimeUnit::Beat(b) => self.beat_to_sample(b as f64),
         };
 
         for BpmRegion {
@@ -125,7 +125,7 @@ impl RuntimeData {
             if (*start_sample..=*end_sample).contains(&time_samples) {
                 let seconds = (*end_sample - *start_sample) as f32 / self.sample_rate as f32;
                 let beats = *end_beat - *start_beat;
-                return beats / seconds * 60.;
+                return (beats / seconds as f64 * 60.) as f32;
             }
         }
         self.bpm

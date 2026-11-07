@@ -1,10 +1,10 @@
-use crate::math::{HitBox, Lerp};
+use crate::math::HitBox;
 use crate::spline::BezierCurve;
 use crate::{ColorScheme, HEAD_POS, RuntimeData};
 use beatcraft_editor_proc::hex;
 use bs_mapping_data::easing::Easing;
 use bs_mapping_data::{Color, CutDirection};
-use glam::{Mat4, Quat, Vec2, Vec3, Vec3Swizzles, Vec4};
+use glam::{Mat4, Quat, Vec2, Vec3, Vec3Swizzles, Vec4, FloatExt};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
@@ -183,10 +183,10 @@ pub trait GameObject<ObjectSource>: Debug {
         let in_post_roll = current_time > d_time;
 
         let z = if in_pre_roll {
-            let p = f32::inv_lerp(pre_roll_start_time, s_time, current_time).clamp(0., 1.);
+            let p = f32::inverse_lerp(pre_roll_start_time, s_time, current_time).clamp(0., 1.);
             f32::lerp(JUMP_FAR_Z, z_at_spawn, p)
         } else if in_post_roll {
-            let p = f32::inv_lerp(d_time, post_roll_end_time, current_time).clamp(0., 1.);
+            let p = f32::inverse_lerp(d_time, post_roll_end_time, current_time).clamp(0., 1.);
             f32::lerp(z_at_despawn, -JUMP_FAR_Z, p)
         } else {
             (object_time - current_time) * njs

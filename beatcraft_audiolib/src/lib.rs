@@ -868,7 +868,7 @@ impl<Al: AlInterface> Audio<Al> {
     /// shorter duration than the audio actually is until done.
     pub fn length_seconds(&self) -> Option<f32> {
         let frames = (*self.sample_count.read())?;
-        Some(frames as f32 / self.sample_rate as f32)
+        Some((frames as f64 / self.sample_rate as f64) as f32)
     }
 
     fn load_full(

@@ -300,8 +300,8 @@ impl SpawnRotationAngle {
 pub struct BpmRegion {
     pub start_sample: usize,
     pub end_sample: usize,
-    pub start_beat: f32,
-    pub end_beat: f32,
+    pub start_beat: f64,
+    pub end_beat: f64,
 }
 
 // Implementations
