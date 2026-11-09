@@ -12,7 +12,6 @@ use bs_mapping_data::BpmRegion;
 use beatmap::{Arc, BombNote, ChainNote, ColorNote, Obstacle};
 use glam::{Vec3, Vec4, FloatExt};
 
-
 pub struct BeatmapController<ObjectSource> {
     pub runtime_data: RuntimeData,
     pub color_notes: Vec<ColorNote<ObjectSource>>,
