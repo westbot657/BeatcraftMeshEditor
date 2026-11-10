@@ -30,7 +30,7 @@ pub struct Vec4Point {
 impl Point for F32Point {
     type Output = f32;
 
-    fn interpolate(&self, other: &Self, span: BeatSpan, runtime_data: &RuntimeData) -> Self::Output {
+    fn interpolate(&self, other: &Self, mut span: BeatSpan, runtime_data: &RuntimeData) -> Self::Output {
         let dt = span.inverse_lerp_seconds(runtime_data); // TODO: check if this should lerp in seconds or beats
         let dt = other.easing_from_last.apply(dt);
         self.v.lerp(other.v, dt)
@@ -40,7 +40,7 @@ impl Point for F32Point {
 impl Point for Vec2Point {
     type Output = Vec2;
 
-    fn interpolate(&self, other: &Self, span: BeatSpan, runtime_data: &RuntimeData) -> Self::Output {
+    fn interpolate(&self, other: &Self, mut span: BeatSpan, runtime_data: &RuntimeData) -> Self::Output {
         let dt = span.inverse_lerp_seconds(runtime_data); // TODO: check if this should lerp in seconds or beats
         let dt = other.easing_from_last.apply(dt);
         self.v.lerp(other.v, dt)
@@ -50,7 +50,7 @@ impl Point for Vec2Point {
 impl Point for Vec3Point {
     type Output = Vec3;
 
-    fn interpolate(&self, other: &Self, span: BeatSpan, runtime_data: &RuntimeData) -> Self::Output {
+    fn interpolate(&self, other: &Self, mut span: BeatSpan, runtime_data: &RuntimeData) -> Self::Output {
         let dt = span.inverse_lerp_seconds(runtime_data); // TODO: check if this should lerp in seconds or beats
         let dt = other.easing_from_last.apply(dt);
         self.v.lerp(other.v, dt)
@@ -60,7 +60,7 @@ impl Point for Vec3Point {
 impl Point for Vec4Point {
     type Output = Vec4;
 
-    fn interpolate(&self, other: &Self, span: BeatSpan, runtime_data: &RuntimeData) -> Self::Output {
+    fn interpolate(&self, other: &Self, mut span: BeatSpan, runtime_data: &RuntimeData) -> Self::Output {
         let dt = span.inverse_lerp_seconds(runtime_data); // TODO: check if this should lerp in seconds or beats
         let dt = other.easing_from_last.apply(dt);
         self.v.lerp(other.v, dt)

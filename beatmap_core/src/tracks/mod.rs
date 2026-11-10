@@ -6,6 +6,7 @@
 
 pub mod points;
 
+use std::fmt::Debug;
 use std::num::NonZeroUsize;
 use glam::FloatExt;
 use crate::RuntimeData;
@@ -25,22 +26,40 @@ pub struct BeatSpan {
     pub start: f32,
     pub end: f32,
     pub now: f32,
+    start_seconds: Option<f32>,
+    end_seconds: Option<f32>,
+    pub now_seconds: f32,
 }
 
 impl BeatSpan {
+
+    pub fn get_start_seconds(&mut self, rt: &RuntimeData) -> f32 {
+        *self.start_seconds.get_or_insert_with(|| rt.beat_to_seconds(self.start))
+    }
+
+    pub fn get_end_seconds(&mut self, rt: &RuntimeData) -> f32 {
+        *self.end_seconds.get_or_insert_with(|| rt.beat_to_seconds(self.end))
+    }
+
     pub fn inverse_lerp_beats(&self) -> f32 {
         if self.end <= self.start { return 1.0; }
         f32::inverse_lerp(self.start, self.end, self.now).clamp(0., 1.)
     }
-    pub fn inverse_lerp_seconds(&self, rt: &RuntimeData) -> f32 {
-        let s = rt.beat_to_seconds(self.start);
-        let e = rt.beat_to_seconds(self.end);
+    pub fn inverse_lerp_seconds(&mut self, rt: &RuntimeData) -> f32 {
+        let s = self.get_start_seconds(rt);
+        let e = self.get_end_seconds(rt);
         if e <= s { return 1.0; }
         f32::inverse_lerp(
             s,
             e,
-            rt.beat_to_seconds(self.now),
+            self.now_seconds,
         ).clamp(0., 1.)
+    }
+    pub fn elapsed_beats(&self) -> f32 {
+        self.now - self.start
+    }
+    pub fn elapsed_seconds(&mut self, rt: &RuntimeData) -> f32 {
+        self.now_seconds - self.get_start_seconds(rt)
     }
 }
 
@@ -84,7 +103,7 @@ impl<P: Point> Track<P> {
         Self { points, start: Default::default(), last_beat }
     }
 
-    pub fn animate(&self, beat: f32, rt: &RuntimeData) -> P::Output {
+    pub fn animate(&self, beat: f32, second: f32, rt: &RuntimeData) -> P::Output {
         let i = self.points.partition_point(|p| p.beat <= beat);
 
         let a = match i.checked_sub(1) {
@@ -106,7 +125,7 @@ impl<P: Point> Track<P> {
 
         a.point.interpolate(
             &b.point,
-            BeatSpan { start: a.beat, end: b.beat, now: beat },
+            BeatSpan { start: a.beat, end: b.beat, now: beat, start_seconds: None, end_seconds: None, now_seconds: second },
             rt,
         )
     }
@@ -155,9 +174,9 @@ impl<P: Point> TrackSet<P> {
         }
     }
 
-    pub fn animate(&self, object_id: usize, beat: f32, runtime_data: &RuntimeData) -> Option<P::Output> {
+    pub fn animate(&self, object_id: usize, beat: f32, second: f32, runtime_data: &RuntimeData) -> Option<P::Output> {
         let track = self.tracks.get(object_id)?;
-        Some(track.animate(beat, runtime_data))
+        Some(track.animate(beat, second, runtime_data))
     }
 
     pub fn insert(&mut self, object_id: usize, point: TimedPoint<P>) -> Result<(), TrackSetInsertionError> {
