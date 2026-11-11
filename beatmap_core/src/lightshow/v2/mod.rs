@@ -8,8 +8,8 @@ pub mod points;
 
 #[derive(Clone, Debug)]
 pub struct RingLightFrame {
-    pub position_offset: f32,
-    pub rotation: f32,
+    pub position_offset: Angle,
+    pub rotation: Angle,
 }
 
 #[derive(Clone, Debug, Default)]
