@@ -1,4 +1,4 @@
-use crate::tracks::{BeatSpan, Point};
+use crate::tracks::{Angle, BeatSpan, Point};
 use crate::{ColorScheme, RuntimeData};
 use glam::{FloatExt, Vec4};
 
@@ -34,13 +34,13 @@ pub enum RotationDirection {
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct RotationPoint {
-    pub start: f32,
-    pub speed: f32,
+    pub start: Angle,
+    pub speed: Angle,
     pub direction: RotationDirection,
 }
 
 impl Point for RotationPoint {
-    type Output = f32;
+    type Output = Angle;
 
     fn interpolate(&self, _other: &Self, span: BeatSpan, rt: &RuntimeData) -> Self::Output {
         let start = rt.beat_to_seconds(span.start);
