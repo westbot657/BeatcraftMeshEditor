@@ -72,6 +72,12 @@ pub enum BoostableColor {
     }
 }
 
+impl Default for BoostableColor {
+    fn default() -> Self {
+        Self::Unboostable(Vec4::ZERO)
+    }
+}
+
 impl From<Vec4> for BoostableColor {
     fn from(value: Vec4) -> Self {
         Self::Unboostable(value)
@@ -134,6 +140,16 @@ impl BoostableColor {
         match self {
             Self::Unboostable(v4) => lerp_brightness(v4, brightness).into(),
             Self::Boostable { normal, boosted } => (lerp_brightness(normal, brightness), lerp_brightness(boosted, brightness)).into(),
+        }
+    }
+
+    pub fn resolve(self, boost_state: ColorBoostState) -> Vec4 {
+        match self {
+            Self::Unboostable(v4) => v4,
+            Self::Boostable { normal, boosted } => match boost_state {
+                ColorBoostState::Normal => normal,
+                ColorBoostState::Boosted => boosted,
+            }
         }
     }
 }

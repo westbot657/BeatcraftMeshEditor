@@ -12,7 +12,7 @@ use glam::FloatExt;
 use crate::RuntimeData;
 
 pub trait Point: Clone + Default {
-    type Output;
+    type Output: Default;
     /// beat, new_beat, and runtime_data are provided in case time-based changes need to be made.
     fn extend(&self, beat: f32, new_beat: f32, runtime_data: &RuntimeData) -> Self {
         let _ = (beat, new_beat, runtime_data);
@@ -172,6 +172,17 @@ impl<P: Point> TrackSet<P> {
             tracks: vec![Vec::new(); object_count.get()],
             song_length,
         }
+    }
+
+    pub fn iter_animate<R>(&self, beat: f32, second: f32, runtime_data: &RuntimeData, expected_elements: usize, frame: &mut Vec<R>, transformer: impl Fn(P::Output) -> R) {
+        for i in 0..expected_elements {
+            let val = self.animate(i, beat, second, runtime_data).unwrap_or_default();
+            frame.push(transformer(val));
+        }
+    }
+    
+    pub fn iter(&self) -> impl Iterator<Item = &Track<P>> {
+        self.tracks.iter()
     }
 
     pub fn animate(&self, object_id: usize, beat: f32, second: f32, runtime_data: &RuntimeData) -> Option<P::Output> {
