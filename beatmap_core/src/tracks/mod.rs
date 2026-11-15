@@ -8,20 +8,13 @@ pub mod points;
 
 use std::borrow::Cow;
 use std::fmt::Debug;
-use std::num::NonZeroUsize;
+use std::marker::PhantomData;
+use std::mem::MaybeUninit;
+use std::ops::Index;
+use std::slice::SliceIndex;
 use glam::FloatExt;
 use tiny_vec::TinyVec;
 use crate::RuntimeData;
-
-pub trait Point: Clone + Default {
-    type Output: Default;
-    /// beat, new_beat, and runtime_data are provided in case time-based changes need to be made.
-    fn extend(&self, beat: f32, new_beat: f32, runtime_data: &RuntimeData) -> Self {
-        let _ = (beat, new_beat, runtime_data);
-        self.clone()
-    }
-    fn interpolate(&self, other: &Self, span: BeatSpan, runtime_data: &RuntimeData) -> Self::Output;
-}
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Angle {
@@ -151,189 +144,12 @@ impl BeatSpan {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct TimedPoint<P: Point> {
-    pub point: P,
-    /// beat is private so that the user can't modify it when holding a &mut TimedPoint<P>
-    beat: f32,
-}
-
-#[derive(Default, Clone)]
-pub struct Track<P: Point> {
-    points: Vec<TimedPoint<P>>,
-    start: TimedPoint<P>,
-    last_beat: f32,
-}
-
-#[derive(thiserror::Error, Debug)]
-#[error("insertion beat {got} is out of bounds 0..={bound}")]
-pub struct TrackInsertionError {
-    bound: f32,
-    got: f32,
-}
-
-impl<P: Point> Track<P> {
-    pub fn empty(last_beat: f32) -> Self {
-        Self::from_point_vec(Vec::new(), last_beat)
-    }
-    pub fn from_point_vec(mut points: Vec<TimedPoint<P>>, last_beat: f32) -> Self {
-        points.sort_by(|a, b| a.beat.total_cmp(&b.beat));
-        #[cfg(feature = "tracing")]
-        let l = points.len();
-        points.retain(|p| (0f32..=last_beat).contains(&p.beat) );
-        #[cfg(feature = "tracing")]
-        if l != points.len() {
-            let diff = l - points.len();
-            let s = if diff == 1 { "" } else { "s" };
-            tracing::warn!("truncated {diff} point{s} outside the song");
-        }
-
-        Self { points, start: Default::default(), last_beat }
-    }
-
-    fn _animate(
-        points: &[TimedPoint<P>],
-        start: &TimedPoint<P>,
-        last_beat: f32,
-        beat: f32,
-        second: f32,
-        rt: &RuntimeData
-    ) -> P::Output {
-        let i = points.partition_point(|p| p.beat <= beat);
-
-        let a = match i.checked_sub(1) {
-            Some(j) => &points[j],
-            None => start,
-        };
-
-        let extended;
-        let b = match points.get(i) {
-            Some(p) => p,
-            None => {
-                extended = TimedPoint {
-                    point: a.point.extend(a.beat, last_beat, rt),
-                    beat: last_beat,
-                };
-                &extended
-            }
-        };
-
-        a.point.interpolate(
-            &b.point,
-            BeatSpan { start: a.beat, end: b.beat, now: beat, start_seconds: None, end_seconds: None, now_seconds: second },
-            rt,
-        )
-    }
-
-    pub fn animate(&self, beat: f32, second: f32, rt: &RuntimeData) -> P::Output {
-        Self::_animate(&self.points, &self.start, self.last_beat, beat, second, rt)
-    }
-
-    pub fn points(&self) -> &[TimedPoint<P>] {
-        &self.points
-    }
-
-    /// This will return Err if the point's beat is outside the song length.
-    pub fn insert(&mut self, beat: f32, point: P) -> Result<(), TrackInsertionError> {
-        if !(0f32..=self.last_beat).contains(&beat) {
-            return Err(TrackInsertionError { bound: self.last_beat, got: beat });
-        }
-
-        let i = self.points.partition_point(|p| p.beat <= beat);
-
-        self.points.insert(i, TimedPoint { point, beat });
-
-        Ok(())
-    }
-}
-
-pub struct UninitializedTrackSet<P: Point> {
-    tracks: Vec<Vec<TimedPoint<P>>>,
-    song_length: f32,
-}
-
-pub struct TrackSet<P: Point> {
-    tracks: Vec<Track<P>>
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum TrackSetInsertionError {
-    #[error("{0}")]
-    OutOfBounds(#[from] TrackInsertionError),
-    #[error("invalid object id: {id} expected 0..={max}")]
-    InvalidId { max: usize, id: usize },
-}
-
-impl<P: Point> TrackSet<P> {
-
-    pub fn new(object_count: NonZeroUsize, song_length: f32) -> UninitializedTrackSet<P> {
-        UninitializedTrackSet {
-            tracks: vec![Vec::new(); object_count.get()],
-            song_length,
-        }
-    }
-
-    pub fn iter_animate<R>(&self, beat: f32, second: f32, runtime_data: &RuntimeData, expected_elements: usize, frame: &mut Vec<R>, transformer: impl Fn(P::Output) -> R) {
-        for i in 0..expected_elements {
-            let val = self.animate(i, beat, second, runtime_data).unwrap_or_default();
-            frame.push(transformer(val));
-        }
-    }
-    
-    pub fn iter(&self) -> impl Iterator<Item = &Track<P>> {
-        self.tracks.iter()
-    }
-
-    pub fn animate(&self, object_id: usize, beat: f32, second: f32, runtime_data: &RuntimeData) -> Option<P::Output> {
-        let track = self.tracks.get(object_id)?;
-        Some(track.animate(beat, second, runtime_data))
-    }
-
-    pub fn insert(&mut self, object_id: usize, beat: f32, point: P) -> Result<(), TrackSetInsertionError> {
-        let l = self.tracks.len()-1;
-        let track = self.tracks.get_mut(object_id).ok_or_else(|| TrackSetInsertionError::InvalidId { max: l, id: object_id })?;
-        Ok(track.insert(beat, point)?)
-    }
-
-    pub fn points(&self, object_id: usize) -> Option<&[TimedPoint<P>]> {
-        let track = self.tracks.get(object_id)?;
-        Some(track.points())
-    }
-
-}
-
-impl<P: Point> UninitializedTrackSet<P> {
-    pub fn add_point(&mut self, object_id: usize, beat: f32, point: P) -> Result<(), TrackSetInsertionError> {
-        let l = self.tracks.len()-1;
-        let track = self.tracks.get_mut(object_id).ok_or_else(|| TrackSetInsertionError::InvalidId { max: l, id: object_id })?;
-        if !(0f32..=self.song_length).contains(&beat) {
-            return Err(TrackSetInsertionError::OutOfBounds(TrackInsertionError { bound: self.song_length, got: beat }));
-        }
-        track.push(TimedPoint { point, beat });
-        Ok(())
-    }
-
-    pub fn finalize(self) -> TrackSet<P> {
-        TrackSet {
-            tracks: self.tracks
-                .into_iter()
-                .map(|t| Track::from_point_vec(t, self.song_length))
-                .collect()
-        }
-    }
-}
-
 /// For events that require multiple points to animate.
 /// since get_points returns a `Cow<'_, [TimedPoint<P>]>`,
 /// it is valid to store a small list of points in the event
 /// to avoid expensive recomputation each frame.
-pub trait Event: Default + Clone {
-    type Point: Point;
-
-    fn extend(&self, beat: f32, new_beat: f32, runtime_data: &RuntimeData) -> Self {
-        let _ = (beat, new_beat, runtime_data);
-        self.clone()
-    }
+pub trait Event: Default + Clone + TimedData {
+    type Point: TimedData<State = Self::State>;
 
     /// Return all points that this event turns into.
     /// EventTrack handles trimming so that points from this event don't appear after the next event's points
@@ -341,121 +157,149 @@ pub trait Event: Default + Clone {
     fn get_points<'e>(
         &'e self,
         event_beat: f32,
-        previous: &TimedEvent<Self>,
-        next: Option<&TimedEvent<Self>>,
+        previous: &Timed<Self>,
+        next: Option<&Timed<Self>>,
         rt: &RuntimeData,
-    ) -> Cow<'e, [TimedPoint<Self::Point>]>;
+    ) -> TinyVec<(f32, Cow<'e, Self::Point>), 4>;
 
     /// When the points from this event extend past the start of the next event's points,
     /// this function is intended to handle any changes needed (such as interpolating a new
     /// endpoint at the cutoff beat)
     /// by default this does nothing
     fn clip<'e>(
-        points: Cow<'e, [TimedPoint<Self::Point>]>,
+        points: TinyVec<(f32, Cow<'e, Self::Point>), 4>,
         cutoff_beat: f32,
         rt: &RuntimeData,
-    ) -> Cow<'e, [TimedPoint<Self::Point>]> {
+    ) -> TinyVec<(f32, Cow<'e, Self::Point>), 4> {
         let _ = (cutoff_beat, rt);
         points
     }
 
 }
 
-#[derive(Default, Clone)]
-pub struct TimedEvent<E: Event> {
-    pub event: E,
-    beat: f32,
+#[derive(thiserror::Error, Debug)]
+#[error("insertion beat {got} is out of bounds 0..={bound}")]
+pub struct TrackInsertionError {
+    pub bound: f32,
+    pub got: f32,
 }
 
-impl<E: Event> TimedEvent<E> {
-    pub fn beat(&self) -> f32 {
-        self.beat
+#[derive(thiserror::Error, Debug)]
+pub enum TrackSetInsertionError {
+    #[error("{0}")]
+    OutOfBounds(#[from] TrackInsertionError),
+    #[error("invalid object id: {id} expected 0..{max}")]
+    InvalidId { max: usize, id: usize },
+}
+
+pub trait Animator<T: TimedData> {
+    fn animate(
+        default: &Timed<T>,
+        track: &[Timed<T>],
+        last_beat: f32,
+        beat: f32,
+        second: f32,
+        rt: &RuntimeData,
+    ) -> T::State;
+}
+
+pub trait TimedData: Clone + Default {
+
+    type Animator: Animator<Self>;
+
+    type State: Clone + Default;
+
+    fn extend(
+        &self,
+        beat: f32,
+        new_beat: f32,
+        runtime_data: &RuntimeData
+    ) -> Self {
+        let _ = (beat, new_beat, runtime_data);
+        self.clone()
     }
+
+    fn interpolate(
+        &self,
+        other: &Self,
+        span: BeatSpan,
+        runtime_data: &RuntimeData
+    ) -> Self::State;
+
 }
 
-/// This track type is for more complex events that require multiple
-/// points to statelessly animate.
-pub struct EventTrack<E: Event> {
-    events: Vec<TimedEvent<E>>,
-    start: TimedEvent<E>,
-    last_beat: f32,
-}
+pub struct PointAnimator<P: TimedData>(PhantomData<P>);
+pub struct EventAnimator<E: TimedData>(PhantomData<E>);
 
-impl<E: Event> EventTrack<E> {
-    pub fn empty(last_beat: f32) -> Self {
-        Self::from_event_vec(Vec::new(), last_beat)
-    }
-    pub fn from_event_vec(mut events: Vec<TimedEvent<E>>, last_beat: f32) -> Self {
-        events.sort_by(|a, b| a.beat.total_cmp(&b.beat));
-        #[cfg(feature = "tracing")]
-        let l = events.len();
-        events.retain(|e| (0f32..=last_beat).contains(&e.beat));
-        #[cfg(feature = "tracing")]
-        if l != events.len() {
-            let diff = l - events.len();
-            let s = if diff == 1 { "" } else { "s" };
-            tracing::warn!("truncated {diff} event{s} outside the song");
-        }
-
-        Self {
-            events,
-            start: Default::default(),
+impl<P: TimedData> Animator<P> for PointAnimator<P> {
+    fn animate(default: &Timed<P>, data: &[Timed<P>], last_beat: f32, beat: f32, second: f32, rt: &RuntimeData) -> P::State {
+        animate_timed(
+            default,
+            data,
             last_beat,
-        }
+            beat,
+            second,
+            rt
+        )
     }
+}
 
-    pub fn animate(&self, beat: f32, second: f32, rt: &RuntimeData) -> <E::Point as Point>::Output {
-        let i = self.events.partition_point(|e| e.beat <= beat);
+impl<E: Event + TimedData> Animator<E> for EventAnimator<E>
+where
+    E::Point: TimedData
+{
+    fn animate(default: &Timed<E>, data: &[Timed<E>], last_beat: f32, beat: f32, second: f32, rt: &RuntimeData) -> E::State {
+        let i = data.partition_point(|e| e.beat <= beat);
 
         let a = match i.checked_sub(2) {
-            Some(j) => &self.events[j],
-            None => &self.start,
+            Some(j) => &data[j],
+            None => default,
         };
 
         let b = i.checked_sub(1)
-            .map(|j| &self.events[j]);
+            .map(|j| &data[j]);
 
         let ab = b.unwrap_or(a);
 
         let extended;
-        let c = match self.events.get(i) {
+        let c = match data.get(i) {
             Some(e) => e,
             None => {
-                extended = TimedEvent {
-                    event: ab.event.extend(ab.beat, self.last_beat, rt),
-                    beat: self.last_beat,
+                extended = Timed {
+                    data: ab.data.extend(ab.beat, last_beat, rt),
+                    beat: last_beat,
                 };
                 &extended
             }
         };
 
-        let d = self.events.get(i+1);
+        let d = data.get(i+1);
 
         let abc = b.map(|e| {
-            let abc = e.event.get_points(e.beat, a, Some(c), rt);
+            let abc = e.data.get_points(e.beat, a, Some(c), rt);
             debug_assert!(
                 abc.windows(2)
-                    .all(|w| w[0].beat <= w[1].beat),
+                    .all(|w| w[0].0 <= w[1].0),
                 "get_points returned unordered points, {:?}", std::any::type_name::<E>()
             );
             abc
         });
 
-        let bcd = c.event.get_points(c.beat, ab, d, rt);
+        let bcd = c.data.get_points(c.beat, ab, d, rt);
         debug_assert!(
             bcd.windows(2)
-                .all(|w| w[0].beat <= w[1].beat),
+                .all(|w| w[0].0 <= w[1].0),
             "get_points returned unordered points, {:?}", std::any::type_name::<E>(),
         );
 
         let cutoff = if let Some(p0) = bcd.first() {
-            p0.beat
+            p0.0
         } else {
             #[cfg(feature = "tracing")]
             tracing::error!("Event didn't return any points (at beat {beat})");
             let def = E::Point::default();
-            let end = def.extend(0., self.last_beat, rt);
-            let span = BeatSpan::new(beat, second, 0., self.last_beat);
+            let end = def.extend(0., last_beat, rt);
+            let span = BeatSpan::new(beat, second, 0., last_beat);
             return def.interpolate(&end, span, rt)
         };
 
@@ -467,122 +311,295 @@ impl<E: Event> EventTrack<E> {
 
         if let Some(abc) = abc {
             let abc = E::clip(abc, cutoff, rt);
-            match abc {
-                Cow::Owned(vec) => {
-                    for p in vec {
-                        if p.beat <= cutoff {
-                            points.push(p);
-                        }
-                    }
-                }
-                Cow::Borrowed(slice) => {
-                    for p in slice {
-                        if p.beat <= cutoff {
-                            points.push(p.clone())
-                        }
-                    }
+            for (beat, data) in abc {
+                if beat <= cutoff {
+                    points.push(Timed { beat, data: data.into_owned() })
                 }
             }
         }
 
-        for p in bcd.into_owned().into_iter() {
-            points.push(p);
+        for (beat, data) in bcd {
+            points.push(Timed { beat, data: data.into_owned() });
         }
 
-        Track::_animate(
+        animate_timed(
+            &Timed { data: Default::default(), beat: 0. },
             &points,
-            &Default::default(),
-            self.last_beat,
+            last_beat,
             beat,
             second,
             rt
         )
     }
+}
 
-    pub fn events(&self) -> &[TimedEvent<E>] {
-        &self.events
+/// This struct has no public constructor so that holding a &mut Timed<T>
+/// is safe from unwanted beat modifications
+pub struct Timed<T: TimedData> {
+    pub data: T,
+    beat: f32,
+}
+
+pub struct Track<T: TimedData> {
+    data: Vec<Timed<T>>,
+    /// Holds a cached default element for interpolating when the data list
+    /// is empty or is animating before it's first element
+    default: Timed<T>,
+    last_beat: f32,
+}
+
+pub struct TrackSet<T: TimedData> {
+    tracks: Vec<Vec<Timed<T>>>,
+    /// Holds a cached default element for interpolating when the data list
+    /// is empty or is animating before it's first element
+    default: Timed<T>,
+    last_beat: f32,
+}
+
+pub struct UninitializedTrackSet<T: TimedData> {
+    tracks: Vec<Vec<Timed<T>>>,
+    last_beat: f32,
+}
+
+pub struct DataView<'d, T>(&'d mut [T]);
+
+impl<T: TimedData> Timed<T> {
+    #[inline]
+    pub fn beat(&self) -> f32 {
+        self.beat
     }
+}
 
-    pub fn insert(&mut self, beat: f32, event: E) -> Result<(), TrackInsertionError> {
-        if !(0f32..=self.last_beat).contains(&beat) {
-            return Err(TrackInsertionError { bound: self.last_beat, got: beat });
+impl<'d, T> DataView<'d, T> {
+    pub fn get(&self, index: usize) -> Option<&T> {
+        self.0.get(index)
+    }
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+        self.0.get_mut(index)
+    }
+}
+
+pub fn animate_timed<T: TimedData>(
+    default: &Timed<T>,
+    data: &[Timed<T>],
+    last_beat: f32,
+    beat: f32,
+    second: f32,
+    rt: &RuntimeData,
+) -> T::State {
+    let i = data.partition_point(|p| p.beat <= beat);
+
+    let a = match i.checked_sub(1) {
+        Some(j) => &data[j],
+        None => default,
+    };
+
+    let extended;
+    let b = match data.get(i) {
+        Some(p) => p,
+        None => {
+            extended = Timed {
+                data: a.data.extend(a.beat, last_beat, rt),
+                beat: last_beat,
+            };
+            &extended
         }
+    };
 
-        let i = self.events.partition_point(|p| p.beat <= beat);
+    a.data.interpolate(
+        &b.data,
+        BeatSpan {
+            start: a.beat,
+            end: b.beat,
+            now: beat,
+            start_seconds: None,
+            end_seconds: None,
+            now_seconds: second
+        },
+        rt,
+    )
+}
 
-        self.events.insert(i, TimedEvent { event, beat });
+fn clip_vec<T: TimedData>(data: &mut Vec<Timed<T>>, last_beat: f32) {
+    #[cfg(feature = "tracing")]
+    let l = data.len();
+
+    data.retain(|t| (0f32..=last_beat).contains(&t.beat));
+
+    #[cfg(feature = "tracing")]
+    if l != data.len() {
+        let diff = l - data.len();
+        let s = if diff == 1 { "" } else { "s" };
+        tracing::warn!("truncated {diff} element{s} outside the song bounds");
+    }
+}
+
+fn track_insert<T: TimedData>(list: &mut Vec<Timed<T>>, last_beat: f32, beat: f32, data: T) -> Result<(), TrackInsertionError> {
+    if (0f32..=last_beat).contains(&beat) {
+
+        let i = list
+            .partition_point(|p| p.beat <= beat);
+
+        list.insert(i, Timed { data, beat });
 
         Ok(())
+    } else {
+        Err(TrackInsertionError {
+            bound: last_beat,
+            got: beat,
+        })
+    }
+}
+
+impl<T: TimedData> Track<T> {
+
+    pub fn empty(last_beat: f32) -> Self {
+        Self::from_vec(Vec::new(), last_beat)
+    }
+
+    pub fn from_vec(mut data: Vec<Timed<T>>, last_beat: f32) -> Self {
+        data.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+        clip_vec(&mut data, last_beat);
+        Self { data, default: Timed { data: Default::default(), beat: 0. }, last_beat }
+    }
+
+    pub fn insert(&mut self, beat: f32, data: T) -> Result<(), TrackInsertionError> {
+        track_insert(&mut self.data, self.last_beat, beat, data)
+    }
+
+    pub fn animate(&self, beat: f32, second: f32, rt: &RuntimeData) -> T::State {
+        T::Animator::animate(&self.default, &self.data, self.last_beat, beat, second, rt)
+    }
+
+    pub fn data(&self) -> &[Timed<T>] {
+        &self.data
+    }
+
+    pub fn data_mut(&mut self) -> DataView<'_, Timed<T>> {
+        DataView(self.data.as_mut_slice())
     }
 
 }
 
-pub struct UninitializedEventTrackSet<E: Event> {
-    tracks: Vec<Vec<TimedEvent<E>>>,
-    song_length: f32,
+
+
+impl<T: TimedData> TrackSet<T> {
+    pub fn empty(tracks: usize, last_beat: f32) -> Self {
+        let mut tracks2 = Vec::with_capacity(tracks);
+        for _ in 0..tracks {
+            tracks2.push(Vec::new());
+        }
+        Self { tracks: tracks2, default: Timed { data: Default::default(), beat: 0. }, last_beat }
+    }
+
+    pub fn new(tracks: usize, last_beat: f32) -> UninitializedTrackSet<T> {
+        let mut tracks2 = Vec::with_capacity(tracks);
+        for _ in 0..tracks {
+            tracks2.push(Vec::new());
+        }
+        UninitializedTrackSet {
+            tracks: tracks2,
+            last_beat
+        }
+    }
+
+    pub fn from_vecs(mut tracks: Vec<Vec<Timed<T>>>, last_beat: f32) -> Self {
+        for track in tracks.iter_mut() {
+            track.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+            clip_vec(track, last_beat);
+        }
+        Self { tracks, default: Timed { data: Default::default(), beat: 0. }, last_beat }
+    }
+
+    pub fn insert(&mut self, track: usize, beat: f32, data: T) -> Result<(), TrackSetInsertionError> {
+        if let Some(track) = self.tracks.get_mut(track) {
+            Ok(track_insert(track, self.last_beat, beat, data)?)
+        } else {
+            Err(TrackSetInsertionError::InvalidId { max: self.tracks.len(), id: track })
+        }
+    }
+
+    /// Note: if the track set has fewer tracks than the frame expects, this creates a default
+    /// data value to place in the list for each missing track.
+    pub fn iter_animate<R>(
+        &self,
+        beat: f32,
+        second: f32,
+        rt: &RuntimeData,
+        track_count: usize,
+        frame: &mut Vec<R>,
+        transformer: impl Fn(T::State) -> R,
+    ) {
+        for i in 0..track_count {
+            let state = match self.tracks.get(i) {
+                Some(track) => T::Animator::animate(&self.default, track, self.last_beat, beat, second, rt),
+                None => T::State::default(),
+            };
+            frame.push(transformer(state));
+        }
+
+    }
+
+    /// `frame` should hold uninitialized R elements.
+    /// in the case that the track set has fewer
+    /// tracks than the frame, it's the caller's responsibility to remove, or finish initializing
+    /// the elements that this function didn't touch.
+    /// this function therefore returns N as the number of values it wrote (0<=x<=frame.len())
+    pub fn direct_animate<R>(
+        &self,
+        beat: f32,
+        second: f32,
+        rt: &RuntimeData,
+        frame: &mut [MaybeUninit<R>],
+        transformer: impl Fn(T::State) -> R,
+    ) -> usize {
+        for i in 0..frame.len() {
+            if i == self.tracks.len() {
+                return i;
+            }
+            let track = &self.tracks[i];
+            let state = T::Animator::animate(
+                &self.default,
+                track,
+                self.last_beat,
+                beat,
+                second,
+                rt
+            );
+            frame[i].write(transformer(state));
+        }
+        frame.len()
+    }
+
+    pub fn data(&self, track: usize) -> Option<&[Timed<T>]> {
+        Some(self.tracks.get(track)?)
+    }
+
 }
 
-pub struct EventTrackSet<E: Event> {
-    tracks: Vec<EventTrack<E>>,
-}
+impl<T: TimedData> UninitializedTrackSet<T> {
 
-impl<E: Event> EventTrackSet<E> {
-
-    pub fn new(object_count: NonZeroUsize, song_length: f32) -> UninitializedEventTrackSet<E> {
-        UninitializedEventTrackSet {
-            tracks: vec![Vec::new(); object_count.get()],
-            song_length,
+    pub fn add(&mut self, track: usize, beat: f32, data: T) -> Result<(), TrackSetInsertionError> {
+        if let Some(track) = self.tracks.get_mut(track) {
+            if (0f32..=self.last_beat).contains(&beat) {
+                track.push(Timed { data, beat });
+                Ok(())
+            } else {
+                Err(TrackSetInsertionError::OutOfBounds(TrackInsertionError {
+                    bound: self.last_beat,
+                    got: beat,
+                }))
+            }
+        } else {
+            Err(TrackSetInsertionError::InvalidId {
+                max: self.tracks.len(),
+                id: track,
+            })
         }
     }
 
-    pub fn iter_animate<R>(&self, beat: f32, second: f32, runtime_data: &RuntimeData, expected_elements: usize, frame: &mut Vec<R>, transformer: impl Fn(<E::Point as Point>::Output) -> R) {
-        for i in 0..expected_elements {
-            let val = self.animate(i, beat, second, runtime_data).unwrap_or_default();
-            frame.push(transformer(val));
-        }
+    pub fn finalize(self) -> TrackSet<T> {
+        TrackSet::from_vecs(self.tracks, self.last_beat)
     }
-
-    pub fn iter(&self) -> impl Iterator<Item = &EventTrack<E>> {
-        self.tracks.iter()
-    }
-
-    pub fn animate(&self, object_id: usize, beat: f32, second: f32, runtime_data: &RuntimeData) -> Option<<E::Point as Point>::Output> {
-        let track = self.tracks.get(object_id)?;
-        Some(track.animate(beat, second, runtime_data))
-    }
-
-    pub fn insert(&mut self, object_id: usize, beat: f32, event: E) -> Result<(), TrackSetInsertionError> {
-        let l = self.tracks.len()-1;
-        let track = self.tracks.get_mut(object_id).ok_or_else(|| TrackSetInsertionError::InvalidId { max: l, id: object_id })?;
-        Ok(track.insert(beat, event)?)
-    }
-
-    pub fn events(&self, object_id: usize) -> Option<&[TimedEvent<E>]> {
-        let track = self.tracks.get(object_id)?;
-        Some(&track.events)
-    }
-
-}
-
-impl<E: Event> UninitializedEventTrackSet<E> {
-    pub fn add_point(&mut self, object_id: usize, beat: f32, event: E) -> Result<(), TrackSetInsertionError> {
-        let l = self.tracks.len()-1;
-        let track = self.tracks.get_mut(object_id).ok_or_else(|| TrackSetInsertionError::InvalidId { max: l, id: object_id })?;
-        if !(0f32..=self.song_length).contains(&beat) {
-            return Err(TrackSetInsertionError::OutOfBounds(TrackInsertionError { bound: self.song_length, got: beat }));
-        }
-        track.push(TimedEvent { event, beat });
-        Ok(())
-    }
-
-    pub fn finalize(self) -> EventTrackSet<E> {
-        EventTrackSet {
-            tracks: self.tracks
-                .into_iter()
-                .map(|t| EventTrack::from_event_vec(t, self.song_length))
-                .collect()
-        }
-    }
-
 }
 

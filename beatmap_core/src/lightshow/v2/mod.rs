@@ -35,38 +35,38 @@ pub struct V2RingInfo {
 }
 
 pub struct V2EnvironmentInfo {
-    pub left_laser_count: u32,
-    pub left_spinning_count: u32,
+    pub left_laser_count: usize,
+    pub left_spinning_count: usize,
 
-    pub right_laser_count: u32,
-    pub right_spinning_count: u32,
+    pub right_laser_count: usize,
+    pub right_spinning_count: usize,
 
-    pub back_laser_count: u32,
-    pub center_laser_count: u32,
+    pub back_laser_count: usize,
+    pub center_laser_count: usize,
 
-    pub outer_ring_count: u32,
-    pub inner_ring_count: u32,
+    pub outer_ring_count: usize,
+    pub inner_ring_count: usize,
 
-    pub ring_light_count: u32,
+    pub ring_light_count: usize,
 
 }
 
 impl V2StateFrame {
     fn new(info: &V2EnvironmentInfo) -> Self {
         Self {
-            left_laser_colors: Vec::with_capacity(info.left_laser_count as usize),
-            left_laser_rotations: Vec::with_capacity(info.left_spinning_count as usize),
+            left_laser_colors: Vec::with_capacity(info.left_laser_count),
+            left_laser_rotations: Vec::with_capacity(info.left_spinning_count),
 
-            right_laser_colors: Vec::with_capacity(info.right_laser_count as usize),
-            right_laser_rotations: Vec::with_capacity(info.right_spinning_count as usize),
+            right_laser_colors: Vec::with_capacity(info.right_laser_count),
+            right_laser_rotations: Vec::with_capacity(info.right_spinning_count),
 
-            back_lasers: Vec::with_capacity(info.back_laser_count as usize),
-            center_lasers: Vec::with_capacity(info.center_laser_count as usize),
+            back_lasers: Vec::with_capacity(info.back_laser_count),
+            center_lasers: Vec::with_capacity(info.center_laser_count),
 
-            outer_rings: Vec::with_capacity(info.outer_ring_count as usize),
-            inner_rings: Vec::with_capacity(info.inner_ring_count as usize),
+            outer_rings: Vec::with_capacity(info.outer_ring_count),
+            inner_rings: Vec::with_capacity(info.inner_ring_count),
 
-            ring_lights: Vec::with_capacity(info.ring_light_count as usize),
+            ring_lights: Vec::with_capacity(info.ring_light_count),
         }
     }
 }
@@ -99,14 +99,14 @@ impl LightshowV2Controller {
 
         let boost_state = self.color_boosts.animate(beat, second, rt);
 
-        self.left_lasers.iter_animate(beat, second, rt, info.left_laser_count as usize, &mut frame.left_laser_colors, |c| c.resolve(boost_state));
-        self.left_rotations.iter_animate(beat, second, rt, info.left_spinning_count as usize, &mut frame.left_laser_rotations, |r| r);
+        self.left_lasers.iter_animate(beat, second, rt, info.left_laser_count, &mut frame.left_laser_colors, |c| c.resolve(boost_state));
+        self.left_rotations.iter_animate(beat, second, rt, info.left_spinning_count, &mut frame.left_laser_rotations, |r| r);
 
-        self.right_lasers.iter_animate(beat, second, rt, info.right_laser_count as usize, &mut frame.right_laser_colors, |c| c.resolve(boost_state));
-        self.right_rotations.iter_animate(beat, second, rt, info.right_spinning_count as usize, &mut frame.right_laser_rotations, |r| r);
+        self.right_lasers.iter_animate(beat, second, rt, info.right_laser_count, &mut frame.right_laser_colors, |c| c.resolve(boost_state));
+        self.right_rotations.iter_animate(beat, second, rt, info.right_spinning_count, &mut frame.right_laser_rotations, |r| r);
 
-        self.back_lasers.iter_animate(beat, second, rt, info.back_laser_count as usize, &mut frame.back_lasers, |c| c.resolve(boost_state));
-        self.center_lasers.iter_animate(beat, second, rt, info.center_laser_count as usize, &mut frame.center_lasers, |c| c.resolve(boost_state));
+        self.back_lasers.iter_animate(beat, second, rt, info.back_laser_count, &mut frame.back_lasers, |c| c.resolve(boost_state));
+        self.center_lasers.iter_animate(beat, second, rt, info.center_laser_count, &mut frame.center_lasers, |c| c.resolve(boost_state));
 
         // TODO: ring lights
 

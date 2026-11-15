@@ -1,6 +1,7 @@
-use crate::tracks::{Angle, BeatSpan, Point};
+use crate::tracks::{Angle, BeatSpan};
 use crate::{ColorScheme, RuntimeData};
 use glam::{FloatExt, Vec4};
+use beatcraft_editor_proc::point;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum ColorBoostState {
@@ -14,12 +15,12 @@ pub struct ColorBoostPoint {
     pub state: ColorBoostState,
 }
 
-impl Point for ColorBoostPoint {
-    type Output = ColorBoostState;
-
-    /// Color boosts is an on/off state, no interpolation exists
-    fn interpolate(&self, _other: &Self, _span: BeatSpan, _rt: &RuntimeData) -> Self::Output {
-        self.state
+point! {
+    ColorBoostPoint: ColorBoostState {
+        /// Color boosts is an on/off state, no interpolation exists
+        fn interpolate(&self, _other: &Self, _span: BeatSpan, _rt: &RuntimeData) -> Self::State {
+            self.state
+        }
     }
 }
 
@@ -39,18 +40,18 @@ pub struct RotationPoint {
     pub direction: RotationDirection,
 }
 
-impl Point for RotationPoint {
-    type Output = Angle;
-
-    fn interpolate(&self, _other: &Self, span: BeatSpan, rt: &RuntimeData) -> Self::Output {
-        let start = rt.beat_to_seconds(span.start);
-        let now = span.now_seconds;
-        let delta = now - start;
-        let mut delta_rotation = delta * self.speed;
-        if self.direction == RotationDirection::CounterClockwise {
-            delta_rotation = -delta_rotation;
+point! {
+    RotationPoint: Angle {
+        fn interpolate(&self, _other: &Self, span: BeatSpan, rt: &RuntimeData) -> Self::State {
+            let start = rt.beat_to_seconds(span.start);
+            let now = span.now_seconds;
+            let delta = now - start;
+            let mut delta_rotation = delta * self.speed;
+            if self.direction == RotationDirection::CounterClockwise {
+                delta_rotation = -delta_rotation;
+            }
+            self.start + delta_rotation
         }
-        self.start + delta_rotation
     }
 }
 
@@ -187,36 +188,36 @@ pub struct LightPoint {
     pub brightness: f32,
 }
 
-impl Point for LightPoint {
-    type Output = BoostableColor;
-
-    fn interpolate(&self, other: &Self, mut span: BeatSpan, runtime_data: &RuntimeData) -> Self::Output {
-        let color = self.action.get_color()
-            .map(|c| c.resolve(&runtime_data.color_scheme));
-        if let Some(mut color) = color {
-            let brightness = if let LightAction::Transition(c2) = other.action {
-                let dt = span.inverse_lerp_seconds(runtime_data);
-                color = color.lerp(c2.resolve(&runtime_data.color_scheme), dt);
-                self.brightness.lerp(other.brightness, dt)
+point! {
+    LightPoint: BoostableColor{
+        fn interpolate(&self, other: &Self, mut span: BeatSpan, runtime_data: &RuntimeData) -> Self::State {
+            let color = self.action.get_color()
+                .map(|c| c.resolve(&runtime_data.color_scheme));
+            if let Some(mut color) = color {
+                let brightness = if let LightAction::Transition(c2) = other.action {
+                    let dt = span.inverse_lerp_seconds(runtime_data);
+                    color = color.lerp(c2.resolve(&runtime_data.color_scheme), dt);
+                    self.brightness.lerp(other.brightness, dt)
+                } else {
+                    self.brightness
+                };
+                match self.action {
+                    LightAction::On(_) | LightAction::Transition(_) => color.lerp_brightness(brightness),
+                    LightAction::Fade(_) => {
+                        let elapsed = span.elapsed_seconds(runtime_data);
+                        let b = f32::lerp(1.2, 0., elapsed).clamp(0., 1.);
+                        color.lerp_brightness(b)
+                    }
+                    LightAction::Flash(_) => {
+                        let elapsed = span.elapsed_seconds(runtime_data);
+                        let b = f32::lerp(1.2, brightness, elapsed).clamp(0., 1.);
+                        color.lerp_brightness(b)
+                    }
+                    LightAction::Off => unreachable!("LightAction::Off is inaccessible if a color is attached")
+                }
             } else {
-                self.brightness
-            };
-            match self.action {
-                LightAction::On(_) | LightAction::Transition(_) => color.lerp_brightness(brightness),
-                LightAction::Fade(_) => {
-                    let elapsed = span.elapsed_seconds(runtime_data);
-                    let b = f32::lerp(1.2, 0., elapsed).clamp(0., 1.);
-                    color.lerp_brightness(b)
-                }
-                LightAction::Flash(_) => {
-                    let elapsed = span.elapsed_seconds(runtime_data);
-                    let b = f32::lerp(1.2, brightness, elapsed).clamp(0., 1.);
-                    color.lerp_brightness(b)
-                }
-                LightAction::Off => unreachable!("LightAction::Off is inaccessible if a color is attached")
+                BoostableColor::Unboostable(Vec4::ZERO)
             }
-        } else {
-            BoostableColor::Unboostable(Vec4::ZERO)
         }
     }
 }
