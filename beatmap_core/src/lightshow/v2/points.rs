@@ -1,7 +1,10 @@
-use crate::tracks::{Angle, BeatSpan};
+use std::borrow::Cow;
+use crate::tracks::{Angle, BeatSpan, Event, EventAnimator, Point, PointAnimator, Timeable, TimedData};
 use crate::{ColorScheme, RuntimeData};
 use glam::{FloatExt, Vec4};
-use beatcraft_editor_proc::point;
+use tiny_vec::TinyVec;
+use bs_mapping_data::easing::Easing;
+use crate::tracks::points::F32Point;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum ColorBoostState {
@@ -15,12 +18,13 @@ pub struct ColorBoostPoint {
     pub state: ColorBoostState,
 }
 
-point! {
-    ColorBoostPoint: ColorBoostState {
-        /// Color boosts is an on/off state, no interpolation exists
-        fn interpolate(&self, _other: &Self, _span: BeatSpan, _rt: &RuntimeData) -> Self::State {
-            self.state
-        }
+impl TimedData for ColorBoostPoint {
+    type Animator<T: Timeable<Data = Self>> = PointAnimator<Self>;
+    type State = ColorBoostState;
+}
+impl Point for ColorBoostPoint {
+    fn interpolate(&self, _other: &Self, _span: BeatSpan, _rt: &RuntimeData) -> Self::State {
+        self.state
     }
 }
 
@@ -40,18 +44,20 @@ pub struct RotationPoint {
     pub direction: RotationDirection,
 }
 
-point! {
-    RotationPoint: Angle {
-        fn interpolate(&self, _other: &Self, span: BeatSpan, rt: &RuntimeData) -> Self::State {
-            let start = rt.beat_to_seconds(span.start);
-            let now = span.now_seconds;
-            let delta = now - start;
-            let mut delta_rotation = delta * self.speed;
-            if self.direction == RotationDirection::CounterClockwise {
-                delta_rotation = -delta_rotation;
-            }
-            self.start + delta_rotation
+impl TimedData for RotationPoint {
+    type Animator<T: Timeable<Data = Self>> = PointAnimator<Self>;
+    type State = Angle;
+}
+impl Point for RotationPoint {
+    fn interpolate(&self, _other: &Self, mut span: BeatSpan, rt: &RuntimeData) -> Self::State {
+        let start = span.get_start_seconds(rt);
+        let now = span.now_seconds;
+        let delta = now - start;
+        let mut delta_rotation = delta * self.speed;
+        if self.direction == RotationDirection::CounterClockwise {
+            delta_rotation = -delta_rotation;
         }
+        self.start + delta_rotation
     }
 }
 
@@ -188,36 +194,72 @@ pub struct LightPoint {
     pub brightness: f32,
 }
 
-point! {
-    LightPoint: BoostableColor{
-        fn interpolate(&self, other: &Self, mut span: BeatSpan, runtime_data: &RuntimeData) -> Self::State {
-            let color = self.action.get_color()
-                .map(|c| c.resolve(&runtime_data.color_scheme));
-            if let Some(mut color) = color {
-                let brightness = if let LightAction::Transition(c2) = other.action {
-                    let dt = span.inverse_lerp_seconds(runtime_data);
-                    color = color.lerp(c2.resolve(&runtime_data.color_scheme), dt);
-                    self.brightness.lerp(other.brightness, dt)
-                } else {
-                    self.brightness
-                };
-                match self.action {
-                    LightAction::On(_) | LightAction::Transition(_) => color.lerp_brightness(brightness),
-                    LightAction::Fade(_) => {
-                        let elapsed = span.elapsed_seconds(runtime_data);
-                        let b = f32::lerp(1.2, 0., elapsed).clamp(0., 1.);
-                        color.lerp_brightness(b)
-                    }
-                    LightAction::Flash(_) => {
-                        let elapsed = span.elapsed_seconds(runtime_data);
-                        let b = f32::lerp(1.2, brightness, elapsed).clamp(0., 1.);
-                        color.lerp_brightness(b)
-                    }
-                    LightAction::Off => unreachable!("LightAction::Off is inaccessible if a color is attached")
-                }
+impl TimedData for LightPoint {
+    type Animator<T: Timeable<Data = Self>> = PointAnimator<Self>;
+    type State = BoostableColor;
+}
+impl Point for LightPoint {
+    fn interpolate(&self, other: &Self, mut span: BeatSpan, runtime_data: &RuntimeData) -> Self::State {
+        let color = self.action.get_color()
+            .map(|c| c.resolve(&runtime_data.color_scheme));
+        if let Some(mut color) = color {
+            let brightness = if let LightAction::Transition(c2) = other.action {
+                let dt = span.inverse_lerp_seconds(runtime_data);
+                color = color.lerp(c2.resolve(&runtime_data.color_scheme), dt);
+                self.brightness.lerp(other.brightness, dt)
             } else {
-                BoostableColor::Unboostable(Vec4::ZERO)
+                self.brightness
+            };
+            match self.action {
+                LightAction::On(_) | LightAction::Transition(_) => color.lerp_brightness(brightness),
+                LightAction::Fade(_) => {
+                    let elapsed = span.elapsed_seconds(runtime_data).clamp(0., 1.);
+                    let b = f32::lerp(1.2, 0., elapsed);
+                    color.lerp_brightness(b)
+                }
+                LightAction::Flash(_) => {
+                    let elapsed = span.elapsed_seconds(runtime_data).clamp(0., 1.);
+                    let b = f32::lerp(1.2, brightness, elapsed);
+                    color.lerp_brightness(b)
+                }
+                LightAction::Off => unreachable!("LightAction::Off is inaccessible if a color is attached")
             }
+        } else {
+            BoostableColor::Unboostable(Vec4::ZERO)
         }
     }
 }
+
+/// WIP
+#[derive(Clone, Default)]
+pub struct RingRotationEvent {
+    /// requires pre-comp based on ring index and propagation speed
+    pub start_time: f32,
+    /// how long after it starts spinning, to reach the end.
+    pub spin_time: f32,
+    /// calculating what this is meant to be is really difficult dut to how rings work
+    pub angle: Angle,
+}
+
+impl TimedData for RingRotationEvent {
+    type Animator<T: Timeable<Data = Self>> = EventAnimator<Self>;
+    type State = f32;
+}
+
+impl Event for RingRotationEvent {
+    type Point = F32Point;
+    fn get_points<'e, Timed: Timeable<Data = Self>>(
+        &'e self,
+        event_beat: f32,
+        previous: &Timed,
+        _next: Option<&Timed>,
+        _rt: &RuntimeData,
+    ) -> TinyVec<(f32, Cow<'e, Self::Point>), 4> {
+        TinyVec::from_array([
+            (event_beat, Cow::Owned(F32Point { v: previous.data().angle.to_radians(), easing_from_last: Easing::easeStep })),
+            (event_beat + self.start_time, Cow::Owned(F32Point { v: previous.data().angle.to_radians(), easing_from_last: Easing::easeStep })),
+            (event_beat + self.start_time + self.spin_time, Cow::Owned(F32Point { v: self.angle.to_radians(), easing_from_last: Easing::easeOutExpo })),
+        ])
+    }
+}
+

@@ -1,7 +1,8 @@
 use glam::Vec4;
 use crate::tracks::points::F32Point;
-use crate::tracks::{Angle, Track, TrackSet};
+use crate::tracks::{Angle, CacheableTimedEvent, Now, Timeable, Timed, Track, TrackSet};
 use points::{ColorBoostPoint, LightPoint, RotationPoint};
+use crate::lightshow::v2::points::RingRotationEvent;
 use crate::RuntimeData;
 
 pub mod points;
@@ -74,18 +75,18 @@ impl V2StateFrame {
 pub struct LightshowV2Controller {
     pub info: V2EnvironmentInfo,
 
-    pub color_boosts: Track<ColorBoostPoint>,
+    pub color_boosts: Track<Timed<ColorBoostPoint>>,
 
-    pub left_rotations: TrackSet<RotationPoint>,
-    pub right_rotations: TrackSet<RotationPoint>,
+    pub left_rotations: TrackSet<Timed<RotationPoint>>,
+    pub right_rotations: TrackSet<Timed<RotationPoint>>,
 
-    pub left_lasers: TrackSet<LightPoint>,
-    pub right_lasers: TrackSet<LightPoint>,
-    pub back_lasers: TrackSet<LightPoint>,
-    pub center_lasers: TrackSet<LightPoint>,
+    pub left_lasers: TrackSet<Timed<LightPoint>>,
+    pub right_lasers: TrackSet<Timed<LightPoint>>,
+    pub back_lasers: TrackSet<Timed<LightPoint>>,
+    pub center_lasers: TrackSet<Timed<LightPoint>>,
 
-    pub ring_zoom: TrackSet<F32Point>,
-    pub ring_rotation: TrackSet<F32Point>,
+    pub ring_zoom: TrackSet<Timed<F32Point>>,
+    pub ring_rotation: TrackSet<CacheableTimedEvent<RingRotationEvent>>,
 }
 
 
@@ -94,19 +95,20 @@ impl LightshowV2Controller {
     pub fn animate(&self, beat: f32, rt: &RuntimeData) -> V2StateFrame {
         let info = &self.info;
         let second = rt.beat_to_seconds(beat);
+        let now = Now { beat, second };
 
         let mut frame = V2StateFrame::new(info);
 
-        let boost_state = self.color_boosts.animate(beat, second, rt);
+        let boost_state = self.color_boosts.animate(now, rt);
 
-        self.left_lasers.iter_animate(beat, second, rt, info.left_laser_count, &mut frame.left_laser_colors, |c| c.resolve(boost_state));
-        self.left_rotations.iter_animate(beat, second, rt, info.left_spinning_count, &mut frame.left_laser_rotations, |r| r);
+        self.left_lasers.iter_animate(now, rt, info.left_laser_count, &mut frame.left_laser_colors, |c| c.resolve(boost_state));
+        self.left_rotations.iter_animate(now, rt, info.left_spinning_count, &mut frame.left_laser_rotations, |r| r);
 
-        self.right_lasers.iter_animate(beat, second, rt, info.right_laser_count, &mut frame.right_laser_colors, |c| c.resolve(boost_state));
-        self.right_rotations.iter_animate(beat, second, rt, info.right_spinning_count, &mut frame.right_laser_rotations, |r| r);
+        self.right_lasers.iter_animate(now, rt, info.right_laser_count, &mut frame.right_laser_colors, |c| c.resolve(boost_state));
+        self.right_rotations.iter_animate(now, rt, info.right_spinning_count, &mut frame.right_laser_rotations, |r| r);
 
-        self.back_lasers.iter_animate(beat, second, rt, info.back_laser_count, &mut frame.back_lasers, |c| c.resolve(boost_state));
-        self.center_lasers.iter_animate(beat, second, rt, info.center_laser_count, &mut frame.center_lasers, |c| c.resolve(boost_state));
+        self.back_lasers.iter_animate(now, rt, info.back_laser_count, &mut frame.back_lasers, |c| c.resolve(boost_state));
+        self.center_lasers.iter_animate(now, rt, info.center_laser_count, &mut frame.center_lasers, |c| c.resolve(boost_state));
 
         // TODO: ring lights
 
