@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 #[cfg(feature = "mesh-editor")]
 use std::sync::mpsc;
-
+use chrono::SubsecRound;
 use clap::Parser;
 #[cfg(feature = "mesh-editor")]
 use eframe::glow::{self, HasContext};
@@ -680,7 +680,7 @@ impl App {
                                             &[(
                                                 Cow::Borrowed("modified"),
                                                 FluentValue::String(
-                                                    modified.to_string().into()
+                                                    modified.round_subsecs(0).to_string().into()
                                                 )
                                             )].into()
                                         )

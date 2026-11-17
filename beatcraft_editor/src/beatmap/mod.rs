@@ -3,7 +3,7 @@ use std::fmt::Display;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
-
+use chrono::SubsecRound;
 use crate::config::ProjectType;
 use crate::data::map_editing::{EditingData, GlobalEditingData, ObjectSource};
 use crate::data::mesh::LightMeshData;
@@ -1813,7 +1813,7 @@ impl App {
                                     }
                                     ui.label(egui::RichText::new(label).strong())
                                         .on_hover_text(full_path);
-                                    ui.label(modified.to_string());
+                                    ui.label(modified.round_subsecs(0).to_string());
 
                                     ui.allocate_ui_with_layout(
                                         [225., ui.available_height().max(1.)].into(),
