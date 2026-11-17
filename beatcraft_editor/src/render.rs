@@ -61,7 +61,8 @@ pub enum RenderPass {
     Bloomfog = 2,
     Lights = 3,
     Obstacle = 4,
-    Highlight = 5,
+    ObstacleEdge = 5,
+    Highlight = 6,
 }
 
 impl From<RenderPass> for i32 {
@@ -2590,9 +2591,16 @@ impl BloomfogRenderer {
             let cam_rot = Quat::from_mat4(view);
 
             gl.enable(glow::CLIP_DISTANCE0);
-            gl.depth_mask(false);
-            gl.disable(glow::DEPTH_TEST);
             gl.disable(glow::BLEND);
+
+            // The default framebuffer's depth holds junk (last frame's obstacles, or nothing).
+            // glClear respects the depth mask, so enable it first. The scissor test is on,
+            // so this only clears the paint-callback rect.
+            gl.depth_mask(true);
+            gl.clear_depth_f32(1.0);
+            gl.clear(glow::DEPTH_BUFFER_BIT);
+            gl.enable(glow::DEPTH_TEST);
+            gl.depth_func(glow::LESS);
 
             gl.use_program(Some(renderer.mesh));
             renderer.set_mat4(gl, renderer.mesh, "u_view", view);
@@ -2613,7 +2621,6 @@ impl BloomfogRenderer {
                 Some(self.grab_target.depth),
                 2,
             );
-            renderer.set_int(gl, renderer.mesh, "passType", RenderPass::Obstacle.into());
             renderer.set_float(
                 gl,
                 renderer.mesh,
@@ -2623,24 +2630,36 @@ impl BloomfogRenderer {
             let mut u_camera_pos = Mat4::from_translation(cam_pos);
             u_camera_pos *= Mat4::from_quat(cam_rot.conjugate());
             renderer.set_mat4(gl, renderer.mesh, "u_camera_pos", &u_camera_pos);
-            for call in calls.iter() {
-                if !call.obstacle {
-                    continue;
+
+            for (faces, pass) in [(true, RenderPass::Obstacle), (false, RenderPass::ObstacleEdge)] {gl.depth_mask(faces);
+                if !faces {
+                    // keeps edges from z-fighting the faces they sit on
+                    gl.enable(glow::POLYGON_OFFSET_FILL);
+                    gl.polygon_offset(-2.0, -2.0);
                 }
-                if call.cull {
-                    gl.enable(glow::CULL_FACE);
+                renderer.set_int(gl, renderer.mesh, "passType", pass.into());
+                for call in calls.iter() {
+                    if !call.obstacle {
+                        continue;
+                    }
+                    if call.cull {
+                        gl.enable(glow::CULL_FACE);
+                    }
+                    gl.bind_vertex_array(Some(call.mesh.vao));
+                    renderer.set_int(
+                        gl,
+                        renderer.mesh,
+                        "u_render_mode",
+                        RenderMode::Beatcraft.into(),
+                    );
+                    call.mesh
+                        .draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
+                    if call.cull {
+                        gl.disable(glow::CULL_FACE);
+                    }
                 }
-                gl.bind_vertex_array(Some(call.mesh.vao));
-                renderer.set_int(
-                    gl,
-                    renderer.mesh,
-                    "u_render_mode",
-                    RenderMode::Beatcraft.into(),
-                );
-                call.mesh
-                    .draw_tris(gl, &call.instances, call.wireframe, renderer, renderer.mesh);
-                if call.cull {
-                    gl.disable(glow::CULL_FACE);
+                if !faces {
+                    gl.disable(glow::POLYGON_OFFSET_FILL);
                 }
             }
 

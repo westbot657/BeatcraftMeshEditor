@@ -235,8 +235,8 @@ impl ShaderStyle {
     }
     pub fn translation_text<'l>(&self, locale: &'l mut LocaleCache) -> &'l str {
         locale.get(match self {
-            ShaderStyle::None => "default",
-            ShaderStyle::Circle => "circle",
+            ShaderStyle::None => "shader-style-default",
+            ShaderStyle::Circle => "shader-style-circle",
         })
     }
     pub fn iter_all() -> impl Iterator<Item = Self> {
@@ -311,7 +311,7 @@ impl MaterialType {
             MaterialType::Arc => "Arc",
         }
     }
-    pub fn iter_all() -> impl Iterator<Item = Self> {
+    pub fn iter_all_environment() -> impl Iterator<Item = Self> {
         [
             Self::Solid,
             Self::SolidLight,

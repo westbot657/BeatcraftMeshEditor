@@ -305,6 +305,10 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             }
                         }
                     }
+                    
+                    if remove_settings {
+                        placement.shader_settings = None;
+                    }
 
                     ui.horizontal(|ui| {
                         let icon = if pt_collapsed.0[1] { R_ARROW } else { D_ARROW };
@@ -441,7 +445,7 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     egui::ComboBox::from_id_salt(egui::Id::new("material_id").with(di))
                         .selected_text(mat_label)
                         .show_ui(ui, |ui| {
-                            for v in MaterialType::iter_all() {
+                            for v in MaterialType::iter_all_environment() {
                                 ui.selectable_value(&mut current, v, v.name());
                             }
                         });

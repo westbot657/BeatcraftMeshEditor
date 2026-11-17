@@ -2596,7 +2596,7 @@ fn draw_map_gl(
             cull: false,
             bloomfog: false,
             solid: false,
-            bloom: false,
+            bloom: true,
             mirror: false,
             obstacle: true,
             highlight: false,

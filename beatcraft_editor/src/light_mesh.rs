@@ -514,7 +514,7 @@ impl Eq for HashableVec2 {}
 
 impl HashableVec3 {
     fn as_hashable(&self) -> [u32; 3] {
-        [self.0.x.to_bits(), self.0.y.to_bits(), self.0.y.to_bits()]
+        [self.0.x.to_bits(), self.0.y.to_bits(), self.0.z.to_bits()]
     }
 }
 impl Hash for HashableVec3 {

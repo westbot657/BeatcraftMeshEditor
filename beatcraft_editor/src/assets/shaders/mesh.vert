@@ -80,12 +80,13 @@ const int MAT_ARC               = 7;
 
 
 
-const int PASS_NORMAL      = 0;
-const int PASS_BLOOM       = 1;
-const int PASS_BLOOMFOG    = 2;
-const int PASS_LATE_LIGHTS = 3;
-const int PASS_OBSTACLE    = 4;
-const int PASS_HIGHLIGHT   = 5;
+const int PASS_NORMAL        = 0;
+const int PASS_BLOOM         = 1;
+const int PASS_BLOOMFOG      = 2;
+const int PASS_LATE_LIGHTS   = 3;
+const int PASS_OBSTACLE      = 4;
+const int PASS_OBSTACLE_EDGE = 5;
+const int PASS_HIGHLIGHT     = 6;
 
 
 const int MODE_BEATCRAFT        = 0;
@@ -99,6 +100,20 @@ const vec3 COLORS[8] = vec3[8](
     vec3(0.20,0.50,1.00), vec3(0.90,0.20,1.00),
     vec3(0.10,0.95,0.95), vec3(1.00,0.55,0.10)
 );
+
+// Edge i (flags bits 0-3 = i+1), in unit-cube coords (0/1 per axis).
+// 0-3: along X, 4-7: along Y, 8-11: along Z
+const vec3 EDGE_START[12] = vec3[12](
+        vec3(0,0,0), vec3(0,1,0), vec3(0,0,1), vec3(0,1,1),
+        vec3(0,0,0), vec3(1,0,0), vec3(0,0,1), vec3(1,0,1),
+        vec3(0,0,0), vec3(1,0,0), vec3(0,1,0), vec3(1,1,0)
+);
+const vec3 EDGE_DIR[12] = vec3[12](
+        vec3(1,0,0), vec3(1,0,0), vec3(1,0,0), vec3(1,0,0),
+        vec3(0,1,0), vec3(0,1,0), vec3(0,1,0), vec3(0,1,0),
+        vec3(0,0,1), vec3(0,0,1), vec3(0,0,1), vec3(0,0,1)
+);
+const float EDGE_HALF_WIDTH = 0.04;
 
 void main() {
     vec3 in_position = in_position_u.xyz;
@@ -180,16 +195,41 @@ void main() {
         float back = float((flags >> 1) & 1);
         float right = float(flags & 1) * 0.5;
         vec3 wall_size = c5.xyz;
+        int edge_axis = v_flags & 0xF;   // 0 = wall, 1/2/3 = capsule along X/Y/Z
 
-        vec3 wall_vert = vec3(
-            (left + right) * wall_size.x * in_position.x * 0.6,
-            top * wall_size.y * 0.6,
-            back * wall_size.z
-        );
+        if (edge_axis == 0) {
+            vec3 wall_vert = vec3(
+                    (left + right) * wall_size.x * in_position.x * 0.6,
+                    top * wall_size.y * 0.6,
+                    back * wall_size.z
+            );
+            pos = instance_model * vec4(wall_vert, 1.0);
+        } else {
+            // anchor corner: same box as the wall path, x sign from the left/right bit
+            vec3 corner_local = vec3(
+                    (left - right) * wall_size.x * 0.6,
+                    top * wall_size.y * 0.6,
+                    back * wall_size.z
+            );
+            vec3 corner = (instance_model * vec4(corner_local, 1.0)).xyz;
 
-        pos = instance_model * vec4(wall_vert, 1.0);
+            vec3 d    = (edge_axis == 1) ? vec3(1,0,0) : (edge_axis == 2) ? vec3(0,1,0) : vec3(0,0,1);
+            vec3 face = (edge_axis == 2) ? vec3(0,0,-1) : vec3(0,1,0);
+            mat3 m = mat3(instance_model);
+            vec3 axis = normalize(m * d);
+
+            vec3 camera_pos = (u_camera_pos * vec4(vec3(0.0), 1.0)).xyz;
+            vec3 to_cam = normalize(camera_pos - corner);
+            vec3 proj = to_cam - dot(to_cam, axis) * axis;
+            vec3 fwd = (length(proj) > 0.001) ? normalize(proj) : normalize(m * face);
+            vec3 across = normalize(cross(fwd, axis));
+
+            pos = vec4(corner + axis * in_position.x + across * in_position.y, 1.0);
+        }
+
+        float a = (edge_axis != 0) ? 1.0 : 0.5;
         if (passType == PASS_OBSTACLE) {
-            v_color = vec4(c0.rgb, 0.5);
+            v_color = vec4(c0.rgb, a);
         } else {
             v_color = vec4(c0.xyz, 0.1);
         }

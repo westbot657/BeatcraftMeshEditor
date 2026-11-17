@@ -39,12 +39,13 @@ const int MAT_OBSTACLE          = 6;
 const int MAT_ARC               = 7;
 
 
-const int PASS_NORMAL      = 0;
-const int PASS_BLOOM       = 1;
-const int PASS_BLOOMFOG    = 2;
-const int PASS_LATE_LIGHTS = 3;
-const int PASS_OBSTACLE    = 4;
-const int PASS_HIGHLIGHT   = 5;
+const int PASS_NORMAL        = 0;
+const int PASS_BLOOM         = 1;
+const int PASS_BLOOMFOG      = 2;
+const int PASS_LATE_LIGHTS   = 3;
+const int PASS_OBSTACLE      = 4;
+const int PASS_OBSTACLE_EDGE = 5;
+const int PASS_HIGHLIGHT     = 6;
 
 
 const int MODE_BEATCRAFT        = 0;
@@ -160,6 +161,8 @@ void main() {
         fragColor = vec4(vec3(0.4), 0.4);
         return;
     }
+    if (v_material == MAT_OBSTACLE && (v_flags & 0xF) != 0
+        && v_uv.x > 0.5 && length(v_uv - 0.5) > 0.5) discard;
     if (v_style == STYLE_CIRCLE) {
         if (length(v_uv - 0.5) > 0.5) {
             discard;
@@ -168,6 +171,33 @@ void main() {
     if (passType == PASS_HIGHLIGHT) {
         fragColor = v_color;
         return;
+    }
+
+    bool isEdge = (v_material == MAT_OBSTACLE) && ((v_flags & 0xF) != 0);
+
+    if (passType == PASS_BLOOM && v_material == MAT_OBSTACLE && !isEdge) discard;
+
+    if (isEdge) {
+        if (u_render_mode == MODE_EDITOR) {
+            fragColor = vec4(1.0);
+            return;
+        }
+        if (passType == PASS_BLOOM) {
+            vec2 uv = (screenUV.xy / (-screenUV.z * 2)) + 0.5;
+            float sceneDepth = texture(u_depth, uv).r;
+            if (sceneDepth < gl_FragCoord.z - 0.000001) discard;
+            float fadeHeight = clamp((v_pos.y - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0);
+            fragColor = vec4(vec3(1.0) * fadeHeight, 1.0);
+            return;
+        }
+        if (passType == PASS_OBSTACLE_EDGE) {
+            vec2 uv = (screenUV.xy / (-screenUV.z * 2)) + 0.5;
+            float depth = texture(u_depth, uv).r;
+            if (depth < gl_FragCoord.z - 0.000001) discard;
+            fragColor = vec4(1.0);
+            return;
+        }
+        discard; // normal / bloomfog / late-lights / obstacle-faces passes
     }
 
     if (u_render_mode == MODE_EDITOR) {
