@@ -205,7 +205,6 @@ void main() {
             );
             pos = instance_model * vec4(wall_vert, 1.0);
         } else {
-            // anchor corner: same box as the wall path, x sign from the left/right bit
             vec3 corner_local = vec3(
                     (left - right) * wall_size.x * 0.6,
                     top * wall_size.y * 0.6,
