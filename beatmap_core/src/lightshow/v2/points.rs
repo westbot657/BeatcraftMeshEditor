@@ -1,6 +1,6 @@
 use std::borrow::Cow;
-use crate::tracks::{Angle, BeatSpan, Event, EventAnimator, Point, PointAnimator, Timeable, TimedData};
-use crate::{ColorScheme, RuntimeData};
+use crate::tracks::{Angle, BeatSpan, Event, Point, Timeable};
+use crate::{timed, ColorScheme, RuntimeData};
 use glam::{FloatExt, Vec4};
 use tiny_vec::TinyVec;
 use bs_mapping_data::easing::Easing;
@@ -18,10 +18,8 @@ pub struct ColorBoostPoint {
     pub state: ColorBoostState,
 }
 
-impl TimedData for ColorBoostPoint {
-    type Animator<T: Timeable<Data = Self>> = PointAnimator<Self>;
-    type State = ColorBoostState;
-}
+timed!(point ColorBoostPoint: ColorBoostState);
+
 impl Point for ColorBoostPoint {
     fn interpolate(&self, _other: &Self, _span: BeatSpan, _rt: &RuntimeData) -> Self::State {
         self.state
@@ -44,10 +42,8 @@ pub struct RotationPoint {
     pub direction: RotationDirection,
 }
 
-impl TimedData for RotationPoint {
-    type Animator<T: Timeable<Data = Self>> = PointAnimator<Self>;
-    type State = Angle;
-}
+timed!(point RotationPoint: Angle);
+
 impl Point for RotationPoint {
     fn interpolate(&self, _other: &Self, mut span: BeatSpan, rt: &RuntimeData) -> Self::State {
         let start = span.get_start_seconds(rt);
@@ -194,10 +190,8 @@ pub struct LightPoint {
     pub brightness: f32,
 }
 
-impl TimedData for LightPoint {
-    type Animator<T: Timeable<Data = Self>> = PointAnimator<Self>;
-    type State = BoostableColor;
-}
+timed!(point LightPoint: BoostableColor);
+
 impl Point for LightPoint {
     fn interpolate(&self, other: &Self, mut span: BeatSpan, runtime_data: &RuntimeData) -> Self::State {
         let color = self.action.get_color()
@@ -241,10 +235,7 @@ pub struct RingRotationEvent {
     pub angle: Angle,
 }
 
-impl TimedData for RingRotationEvent {
-    type Animator<T: Timeable<Data = Self>> = EventAnimator<Self>;
-    type State = f32;
-}
+timed!(event RingRotationEvent: f32);
 
 impl Event for RingRotationEvent {
     type Point = F32Point;
@@ -252,7 +243,6 @@ impl Event for RingRotationEvent {
         &'e self,
         event_beat: f32,
         previous: &Timed,
-        _next: Option<&Timed>,
         _rt: &RuntimeData,
     ) -> TinyVec<(f32, Cow<'e, Self::Point>), 4> {
         TinyVec::from_array([

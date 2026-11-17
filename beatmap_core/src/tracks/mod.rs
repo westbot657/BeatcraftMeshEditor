@@ -198,7 +198,6 @@ pub trait Event: TimedData {
         &'e self,
         event_beat: f32,
         previous: &T,
-        next: Option<&T>,
         rt: &RuntimeData,
     ) -> TinyVec<(f32, Cow<'e, Self::Point>), 4>;
 
@@ -245,74 +244,83 @@ impl<E: Event, T: Timeable<Data = E>> Animator<E, T> for EventAnimator<E> {
             Some(j) => &data[j],
             None => default,
         };
-
         let b = i.checked_sub(1).map(|j| &data[j]);
+        let c = data.get(i);
 
-        let ab = b.unwrap_or(a);
-
-        let extended;
-        let c = match data.get(i) {
-            Some(e) => e,
-            None => {
-                extended = T::new(ab.data().extend(ab.beat(), last_beat, rt), last_beat);
-                &extended
+        let default_point: <E as Event>::Point = Default::default();
+        match (b, c) {
+            // Empty event list
+            (None, None) => {
+                let default_point = Timed::new(default_point, 0.);
+                animate_timed(
+                    &default_point,
+                    &[],
+                    last_beat,
+                    now,
+                    rt
+                )
             }
-        };
+            // first or last event, `a` is default when first event, and the previous event when last
+            (None, Some(e)) | (Some(e), None) => {
+                let default_point = Timed::new(Cow::Owned(default_point), 0.);
+                let points = e.get_points(a, rt);
+                let points: TinyVec<_, 4> = points.into_iter()
+                    .map(|(beat, data)| Timed::new(data, beat))
+                    .collect();
+                animate_timed(
+                    &default_point,
+                    points.as_slice(),
+                    last_beat,
+                    now,
+                    rt
+                )
+            }
+            // between 2 events
+            (Some(b), Some(c)) => {
+                let default_point = Timed::new(Cow::Owned(default_point), 0.);
 
-        let d = data.get(i + 1);
+                let b_points = b.get_points(a, rt);
+                debug_assert!(
+                    !b_points.is_empty(),
+                    "get_points returned an empty point list ({})",
+                    std::any::type_name::<E>()
+                );
+                debug_assert!(
+                    b_points.windows(2).all(|w| w[0].0 <= w[1].0),
+                    "get_points returned an unordered point list ({})",
+                    std::any::type_name::<E>()
+                );
 
-        let abc = b.map(|e| {
-            let abc = e.get_points(a, data.get(i), rt);
-            debug_assert!(
-                abc.windows(2).all(|w| w[0].0 <= w[1].0),
-                "get_points returned unordered points, {}",
-                std::any::type_name::<E>()
-            );
-            abc
-        });
+                let c_points = c.get_points(b, rt);
+                debug_assert!(
+                    !c_points.is_empty(),
+                    "get_points returned an empty point list ({})",
+                    std::any::type_name::<E>()
+                );
+                debug_assert!(
+                    c_points.windows(2).all(|w| w[0].0 <= w[1].0),
+                    "get_points returned an unordered point list ({})",
+                    std::any::type_name::<E>()
+                );
 
-        let bcd = c.get_points(ab, d, rt);
-        debug_assert!(
-            bcd.windows(2).all(|w| w[0].0 <= w[1].0),
-            "get_points returned unordered points, {}",
-            std::any::type_name::<E>(),
-        );
+                let cutoff = c_points.first().map_or(f32::INFINITY, |(beat, _)| *beat);
+                let b_points = E::clip(b_points, cutoff, rt);
 
-        let cutoff = if let Some(p0) = bcd.first() {
-            p0.0
-        } else {
-            #[cfg(feature = "tracing")]
-            tracing::error!("Event didn't return any points (at beat {})", now.beat);
-            let def = E::Point::default();
-            let end = def.extend(0., last_beat, rt);
-            let span = BeatSpan::new(now, 0., last_beat);
-            return def.interpolate(&end, span, rt);
-        };
+                let points: TinyVec<_, 8> = b_points.into_iter()
+                    .filter(|(beat, _)| *beat <= cutoff)
+                    .chain(c_points.into_iter())
+                    .map(|(beat, data)| Timed::new(data, beat))
+                    .collect();
 
-        let max_count = bcd.len() + abc.as_ref().map(|p| p.len()).unwrap_or_default();
-
-        let mut points: TinyVec<_, 6> = TinyVec::with_capacity(max_count);
-
-        if let Some(abc) = abc {
-            let abc = E::clip(abc, cutoff, rt);
-            for (beat, data) in abc {
-                if beat <= cutoff {
-                    points.push(Timed::new(data, beat))
-                }
+                animate_timed(
+                    &default_point,
+                    points.as_slice(),
+                    last_beat,
+                    now,
+                    rt
+                )
             }
         }
-
-        for (beat, data) in bcd {
-            points.push(Timed::new(data, beat));
-        }
-
-        animate_timed(
-            &Timed::new(Default::default(), 0.),
-            &points,
-            last_beat,
-            now,
-            rt,
-        )
     }
 }
 
@@ -332,7 +340,6 @@ pub trait Timeable: PrivateTimeable<Self::Data> {
     fn get_points<'e>(
         &'e self,
         previous: &Self,
-        next: Option<&Self>,
         rt: &RuntimeData,
     ) -> TinyVec<(f32, Cow<'e, <<Self as Timeable>::Data as Event>::Point>), 4>
     where
@@ -356,7 +363,7 @@ pub struct CacheableTimedEvent<E: Event> {
     // Box requires an allocation, but only requires it once, and gives the benefit
     // of a smaller struct and faster reading when not looking up cache.
     // Weather this is actually more useful is entirely dependent on the size of E::Point.
-    cache: OnceCell<Box<TinyVec<(f32, E::Point), 4>>>,
+    cache: OnceCell<Box<[(f32, E::Point)]>>,
 }
 
 pub struct Track<T: Timeable> {
@@ -428,13 +435,12 @@ impl<D: TimedData> Timeable for Timed<D> {
     fn get_points<'e>(
         &'e self,
         previous: &Self,
-        next: Option<&Self>,
         rt: &RuntimeData,
     ) -> TinyVec<(f32, Cow<'e, <<Self as Timeable>::Data as Event>::Point>), 4>
     where
         <Self as Timeable>::Data: Event,
     {
-        self.data.get_points(self.beat, previous, next, rt)
+        self.data.get_points(self.beat, previous, rt)
     }
 }
 
@@ -472,18 +478,16 @@ impl<E: Event> Timeable for CacheableTimedEvent<E> {
     fn get_points<'e>(
         &'e self,
         previous: &Self,
-        next: Option<&Self>,
         rt: &RuntimeData,
     ) -> TinyVec<(f32, Cow<'e, <Self::Data as Event>::Point>), 4>
     where
         Self::Data: Event,
     {
         let cached = self.cache.get_or_init(|| {
-            let mut out = Box::new(TinyVec::new());
-            for (b, c) in self.data.get_points(self.beat, previous, next, rt) {
-                out.push((b, c.into_owned()));
-            }
-            out
+            self.data.get_points(self.beat, previous, rt)
+                .into_iter()
+                .map(|(b, c)| (b, c.into_owned()))
+                .collect::<Box<[_]>>()
         });
         let mut out = TinyVec::with_capacity(cached.len());
         for (b, p) in cached.iter() {
@@ -530,12 +534,9 @@ pub(crate) fn animate_timed<P: Point, T: Timeable<Data =P>>(
         .interpolate(b.data(), BeatSpan::new(now, a.beat(), b.beat()), rt)
 }
 
-/// invalidates `i`'s neighbors. `i` is left alone since it's assumed to get invalidated by
+/// invalidates `i`+1. `i` is left alone since it's assumed to get invalidated by
 /// whatever operation caused this to be called in the first place.
 fn invalidate_neighbors<T: Timeable>(list: &mut [T], i: usize) {
-    if let Some(j) = i.checked_sub(1) && let Some(p) = list.get_mut(j) {
-        p.invalidate_cache();
-    }
     if let Some(p) = list.get_mut(i.saturating_add(1)) {
         p.invalidate_cache();
     }
@@ -807,3 +808,21 @@ impl<T: Timeable> UninitializedTrackSet<T> {
         TrackSet::from_vecs(self.tracks, self.last_beat)
     }
 }
+
+#[macro_export]
+macro_rules! timed {
+    (event $name:ident: $state:ty) => {
+        impl $crate::tracks::TimedData for $name {
+            type Animator<T: $crate::tracks::Timeable<Data=Self>> = $crate::tracks::EventAnimator<Self>;
+            type State = $state;
+        }
+    };
+    (point $name:ident: $state:ty) => {
+        impl $crate::tracks::TimedData for $name {
+            type Animator<T: $crate::tracks::Timeable<Data=Self>> = $crate::tracks::PointAnimator<Self>;
+            type State = $state;
+        }
+    };
+}
+
+pub use timed;
