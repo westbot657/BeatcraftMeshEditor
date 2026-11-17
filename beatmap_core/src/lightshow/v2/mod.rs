@@ -1,6 +1,6 @@
 use glam::Vec4;
 use crate::tracks::points::F32Point;
-use crate::tracks::{Angle, CacheableTimedEvent, Now, Timeable, Timed, Track, TrackSet};
+use crate::tracks::{points::Angle, CacheableTimed, Now, Timed, Track, TrackSet};
 use points::{ColorBoostPoint, LightPoint, RotationPoint};
 use crate::lightshow::v2::points::RingRotationEvent;
 use crate::RuntimeData;
@@ -86,7 +86,7 @@ pub struct LightshowV2Controller {
     pub center_lasers: TrackSet<Timed<LightPoint>>,
 
     pub ring_zoom: TrackSet<Timed<F32Point>>,
-    pub ring_rotation: TrackSet<CacheableTimedEvent<RingRotationEvent>>,
+    pub ring_rotation: TrackSet<CacheableTimed<RingRotationEvent>>,
 }
 
 

@@ -14,139 +14,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use tiny_vec::TinyVec;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum Angle {
-    Radians(f32),
-    Degrees(f32),
-}
-
-impl Default for Angle {
-    fn default() -> Self {
-        Self::Radians(0.)
-    }
-}
-
-impl Angle {
-    pub fn to_radians(self) -> f32 {
-        match self {
-            Self::Radians(r) => r,
-            Self::Degrees(r) => r.to_radians(),
-        }
-    }
-    pub fn to_degrees(self) -> f32 {
-        match self {
-            Self::Radians(r) => r.to_degrees(),
-            Self::Degrees(d) => d,
-        }
-    }
-}
-
-impl std::ops::Add for Angle {
-    type Output = Self;
-    fn add(self, rhs: Self) -> Self::Output {
-        match self {
-            Self::Radians(r) => Self::Radians(r + rhs.to_radians()),
-            Self::Degrees(r) => Self::Degrees(r + rhs.to_degrees()),
-        }
-    }
-}
-
-impl std::ops::Mul<f32> for Angle {
-    type Output = Self;
-    fn mul(self, rhs: f32) -> Self::Output {
-        match self {
-            Self::Radians(r) => Self::Radians(r * rhs),
-            Self::Degrees(d) => Self::Degrees(d * rhs),
-        }
-    }
-}
-
-impl std::ops::Mul<Angle> for f32 {
-    type Output = Angle;
-    fn mul(self, rhs: Angle) -> Self::Output {
-        rhs * self
-    }
-}
-
-impl std::ops::Sub for Angle {
-    type Output = Self;
-    fn sub(self, rhs: Self) -> Self::Output {
-        match self {
-            Self::Radians(r) => Self::Radians(r - rhs.to_radians()),
-            Self::Degrees(r) => Self::Degrees(r - rhs.to_degrees()),
-        }
-    }
-}
-
-impl std::ops::Neg for Angle {
-    type Output = Self;
-    fn neg(self) -> Self::Output {
-        match self {
-            Self::Radians(r) => Self::Radians(-r),
-            Self::Degrees(d) => Self::Degrees(-d),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct BeatSpan {
-    pub start: f32,
-    pub end: f32,
-    pub now: f32,
-    start_seconds: Option<f32>,
-    end_seconds: Option<f32>,
-    pub now_seconds: f32,
-}
-
-impl BeatSpan {
-    pub fn new(now: Now, start: f32, end: f32) -> Self {
-        Self {
-            start,
-            end,
-            now: now.beat,
-            start_seconds: None,
-            end_seconds: None,
-            now_seconds: now.second,
-        }
-    }
-
-    pub fn get_start_seconds(&mut self, rt: &RuntimeData) -> f32 {
-        *self
-            .start_seconds
-            .get_or_insert_with(|| rt.beat_to_seconds(self.start))
-    }
-
-    pub fn get_end_seconds(&mut self, rt: &RuntimeData) -> f32 {
-        *self
-            .end_seconds
-            .get_or_insert_with(|| rt.beat_to_seconds(self.end))
-    }
-
-    pub fn inverse_lerp_beats(&self) -> f32 {
-        if self.end <= self.start {
-            return 1.0;
-        }
-        f32::inverse_lerp(self.start, self.end, self.now).clamp(0., 1.)
-    }
-
-    pub fn inverse_lerp_seconds(&mut self, rt: &RuntimeData) -> f32 {
-        let s = self.get_start_seconds(rt);
-        let e = self.get_end_seconds(rt);
-        if e <= s {
-            return 1.0;
-        }
-        f32::inverse_lerp(s, e, self.now_seconds).clamp(0., 1.)
-    }
-
-    pub fn elapsed_beats(&self) -> f32 {
-        self.now - self.start
-    }
-
-    pub fn elapsed_seconds(&mut self, rt: &RuntimeData) -> f32 {
-        self.now_seconds - self.get_start_seconds(rt)
-    }
-}
-
+// Errors
 #[derive(thiserror::Error, Debug)]
 #[error("insertion beat {got} is out of bounds 0..={bound}")]
 pub struct TrackInsertionError {
@@ -162,6 +30,84 @@ pub enum TrackSetInsertionError {
     InvalidId { max: usize, id: usize },
 }
 
+
+// Helpers
+/// Handles base interpolation animation between points.
+pub(crate) fn animate_timed<P: Point, T: Timeable<Data =P>>(
+    default: &T,
+    data: &[T],
+    last_beat: f32,
+    now: Now,
+    rt: &RuntimeData,
+) -> P::State {
+    let i = data.partition_point(|p| p.beat() <= now.beat);
+
+    let a = match i.checked_sub(1) {
+        Some(j) => &data[j],
+        None => default,
+    };
+
+    let extended;
+    let b = match data.get(i) {
+        Some(p) => p,
+        None => {
+            extended = T::new(a.data().extend(a.beat(), last_beat, rt), last_beat);
+            &extended
+        }
+    };
+
+    a.data()
+        .interpolate(b.data(), TimeSpan::new(now, a.beat(), b.beat()), rt)
+}
+
+/// invalidates `i`+1. `i` is left alone since it's assumed to get invalidated by
+/// whatever operation caused this to be called in the first place.
+fn invalidate_neighbors<T: Timeable>(list: &mut [T], i: usize) {
+    if let Some(p) = list.get_mut(i.saturating_add(1)) {
+        p.invalidate_cache();
+    }
+}
+
+/// Clips any Data outside the song range and logs warnings.
+fn clip_vec<D: TimedData, T: Timeable<Data = D>>(data: &mut Vec<T>, last_beat: f32) {
+    #[cfg(feature = "tracing")]
+    let l = data.len();
+
+    data.retain(|t| (0f32..=last_beat).contains(&t.beat()));
+
+    #[cfg(feature = "tracing")]
+    if l != data.len() {
+        let diff = l - data.len();
+        let s = if diff == 1 { "" } else { "s" };
+        tracing::warn!("truncated {diff} element{s} outside the song bounds");
+    }
+}
+
+/// Handles insertion logic for both Track and TrackSet
+fn track_insert<D: TimedData, T: Timeable<Data = D>>(
+    list: &mut Vec<T>,
+    last_beat: f32,
+    beat: f32,
+    data: D,
+) -> Result<(), TrackInsertionError> {
+    if (0f32..=last_beat).contains(&beat) {
+        let i = list.partition_point(|p| p.beat() <= beat);
+
+        list.insert(i, T::new(data, beat));
+        invalidate_neighbors(list.as_mut_slice(), i);
+
+        Ok(())
+    } else {
+        Err(TrackInsertionError {
+            bound: last_beat,
+            got: beat,
+        })
+    }
+}
+
+
+// Traits
+/// Represents an Animator over data.
 pub trait Animator<D: TimedData, T: Timeable<Data = D>> {
     fn animate(
         default: &T,
@@ -172,27 +118,54 @@ pub trait Animator<D: TimedData, T: Timeable<Data = D>> {
     ) -> D::State;
 }
 
+/// Represents a type that sits at a point in time.
+/// this trait determines what Animator is needed, and what the output state is.
 pub trait TimedData: Clone + Default {
+    /// Which animator is needed to handle this data;
+    /// EventAnimator is for Events.
+    /// PointAnimator is for Points.
     type Animator<T: Timeable<Data = Self>>: Animator<Self, T>;
 
+    /// The output state of the data interpolation.
+    /// i.e. F32Point's State is f32, and an Event that produces F32Points also has an f32 State.
     type State: Clone + Default;
+}
 
+/// Points are interpolated to determine the State at the given time.
+/// Points can read the point directly ahead of itself to determine it's output state.
+pub trait Point: TimedData {
+    /// interpolates between this point and the next point.
+    fn interpolate(&self, next: &Self, span: TimeSpan, runtime_data: &RuntimeData) -> Self::State;
+
+    /// When animating at a time after the last point in the list, this is called on the last point
+    /// to determine the stand-in point.
+    /// By default, Clone is used, though this may not be desired in all cases.
     fn extend(&self, beat: f32, new_beat: f32, runtime_data: &RuntimeData) -> Self {
         let _ = (beat, new_beat, runtime_data);
         self.clone()
     }
 }
 
-pub trait Point: TimedData {
-    fn interpolate(&self, other: &Self, span: BeatSpan, runtime_data: &RuntimeData) -> Self::State;
-}
-
-/// For events that require multiple points to animate.
+/// Events are queried for Points that are then used for interpolation.
+/// during animation, up to 3 events are sampled, and up to 2 are queried for Points.
+/// Given the Events:
+/// ```ignore
+/// [A     B   | C]
+///        ... | ...
+/// ```
+/// where `|` is the current time,
+/// `B` is asked for point values, and given `A` as reference,
+/// `C` is then asked for more point values, given `B` as reference.
+/// Any points given by `B` that are placed after the first point given by `C` are discarded after
+/// all of `B`'s points are handed to `Event::clip`, where interrupted interpolations can
+/// have a new endpoint inserted at the cutoff time.
 pub trait Event: TimedData {
+    /// The Point type that this Event produces for interpolations.
     type Point: Point + TimedData<State = Self::State>;
 
     /// Return all points that this event turns into.
-    /// Track<E: Event> handles trimming so that points from this event don't appear after the next event's points
+    /// Track<E: Event> handles trimming so that points from
+    /// this event don't appear after the next event's points
     /// the returned points are assumed to be sorted, and is not checked.
     fn get_points<'e, T: Timeable<Data = Self>>(
         &'e self,
@@ -215,8 +188,185 @@ pub trait Event: TimedData {
     }
 }
 
+pub(crate) trait PrivateTimeable<D: TimedData> {
+    /// new is private.
+    fn new(data: D, beat: f32) -> Self;
+    /// take_data is private.
+    fn take_data(self) -> D;
+}
+
+/// Represents both Timed<D> and CacheableTimed<D>
+#[allow(private_bounds)]
+pub trait Timeable: PrivateTimeable<Self::Data> {
+    type Data: TimedData;
+    fn beat(&self) -> f32;
+    fn data(&self) -> &<Self as Timeable>::Data;
+    fn data_mut(&mut self) -> &mut <Self as Timeable>::Data;
+
+    /// for Events, this is used to get a Point list to be used for interpolations
+    fn get_points<'e>(
+        &'e self,
+        previous: &Self,
+        rt: &RuntimeData,
+    ) -> TinyVec<(f32, Cow<'e, <<Self as Timeable>::Data as Event>::Point>), 4>
+    where
+        <Self as Timeable>::Data: Event;
+
+    /// for CacheableTimed<D>, this clears the event's cache,
+    /// for Timed<D>, it's a no-op
+    fn invalidate_cache(&mut self) {}
+}
+
+
+// Structs
+/// Represents the span between 2 points and the current time.
+#[derive(Copy, Clone, Debug)]
+pub struct TimeSpan {
+    pub start_beat: f32,
+    pub end_beat: f32,
+    pub now_beat: f32,
+    start_seconds: Option<f32>,
+    end_seconds: Option<f32>,
+    pub now_seconds: f32,
+}
+
+/// Holds the beat and second representation of the current time.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Now {
+    pub beat: f32,
+    pub second: f32,
+}
+
+/// Animator for points.
+/// Directly interpolates between 2 points to determine the output state.
 pub struct PointAnimator<P: Point>(PhantomData<P>);
+
+/// Animator for events.
+/// First queries points from 2 target events, and then defers to PointAnimator.
 pub struct EventAnimator<E: Event>(PhantomData<E>);
+
+/// Simple timing wrapper, usable with both Points and Events.
+pub struct Timed<D: TimedData> {
+    pub data: D,
+    beat: f32,
+}
+
+/// Caching timing wrapper, only usable with Events, and caches the points from get_points
+/// to avoid repeated calculations.
+pub struct CacheableTimed<E: Event> {
+    data: E,
+    beat: f32,
+    // Box requires an allocation, but only requires it once, and gives the benefit
+    // of a smaller struct and faster reading when not looking up cache.
+    // Weather this is actually more useful is entirely dependent on the size of E::Point.
+    cache: OnceCell<Box<[(f32, E::Point)]>>,
+}
+
+/// Holds a single animation track.
+///
+/// Points are looked up by a binary search which is the fastest and simplest
+/// way to statelessly animate.
+///
+/// A track can use either Timed<D> or CacheableTimed<D> for Events,
+/// and only Timed<D> for Points.
+///
+/// CacheableTimed<D> is only recommended if the Event you're using has a get_points implementation
+/// that requires a lot of calculations or allocates memory.
+pub struct Track<T: Timeable> {
+    data: Vec<T>,
+    /// Holds a cached default element for interpolating when the data list
+    /// is empty or is animating before it's first element
+    default: T,
+    // only needed internally, the user should already
+    // have this value anyways since it comes from them
+    last_beat: f32,
+}
+
+/// Holds a set of animation tracks.
+///
+/// See Track<T> for more detail.
+pub struct TrackSet<T: Timeable> {
+    tracks: Vec<Vec<T>>,
+    /// Holds a cached default element for interpolating when the data list
+    /// is empty or is animating before it's first element
+    default: T,
+    // only needed internally, the user should already
+    // have this value anyways since it comes from them
+    last_beat: f32,
+}
+
+/// TrackSet builder for adding data elements quickly, and sorting at finalization time.
+pub struct UninitializedTrackSet<T: Timeable> {
+    tracks: Vec<Vec<T>>,
+    // only needed internally, the user should already
+    // have this value anyways since it comes from them
+    last_beat: f32,
+}
+
+
+// Implementations
+impl TimeSpan {
+    pub fn new(now: Now, start: f32, end: f32) -> Self {
+        Self {
+            start_beat: start,
+            end_beat: end,
+            now_beat: now.beat,
+            start_seconds: None,
+            end_seconds: None,
+            now_seconds: now.second,
+        }
+    }
+
+    pub fn get_start_seconds(&mut self, rt: &RuntimeData) -> f32 {
+        *self
+            .start_seconds
+            .get_or_insert_with(|| rt.beat_to_seconds(self.start_beat))
+    }
+
+    pub fn get_end_seconds(&mut self, rt: &RuntimeData) -> f32 {
+        *self
+            .end_seconds
+            .get_or_insert_with(|| rt.beat_to_seconds(self.end_beat))
+    }
+
+    pub fn inverse_lerp_beats(&self) -> f32 {
+        if self.end_beat <= self.start_beat {
+            return 1.0;
+        }
+        f32::inverse_lerp(self.start_beat, self.end_beat, self.now_beat).clamp(0., 1.)
+    }
+
+    pub fn inverse_lerp_seconds(&mut self, rt: &RuntimeData) -> f32 {
+        let s = self.get_start_seconds(rt);
+        let e = self.get_end_seconds(rt);
+        if e <= s {
+            return 1.0;
+        }
+        f32::inverse_lerp(s, e, self.now_seconds).clamp(0., 1.)
+    }
+
+    pub fn elapsed_beats(&self) -> f32 {
+        self.now_beat - self.start_beat
+    }
+
+    pub fn elapsed_seconds(&mut self, rt: &RuntimeData) -> f32 {
+        self.now_seconds - self.get_start_seconds(rt)
+    }
+}
+
+impl<'d, P: Point> TimedData for Cow<'d, P> {
+    type Animator<T: Timeable<Data = Cow<'d, P>>> = PointAnimator<Self>;
+    type State = P::State;
+}
+
+impl<'d, P: Point> Point for Cow<'d, P> {
+    fn interpolate(&self, next: &Self, span: TimeSpan, rt: &RuntimeData) -> Self::State {
+        P::interpolate(self, next, span, rt)
+    }
+    fn extend(&self, beat: f32, new_beat: f32, rt: &RuntimeData) -> Self {
+        Cow::Owned(P::extend(self, beat, new_beat, rt))
+    }
+}
 
 impl<P: Point, T: Timeable<Data = P>> Animator<P, T> for PointAnimator<P> {
     fn animate(
@@ -260,9 +410,13 @@ impl<E: Event, T: Timeable<Data = E>> Animator<E, T> for EventAnimator<E> {
                     rt
                 )
             }
-            // first or last event, `a` is default when first event, and the previous event when last
+            // first or last event, `a` is default when first event,
+            // and the previous event when last
             (None, Some(e)) | (Some(e), None) => {
-                let default_point = Timed::new(Cow::Owned(default_point), 0.);
+                let default_point = Timed::new(
+                    Cow::Owned(default_point),
+                    0.
+                );
                 let points = e.get_points(a, rt);
                 let points: TinyVec<_, 4> = points.into_iter()
                     .map(|(beat, data)| Timed::new(data, beat))
@@ -277,7 +431,10 @@ impl<E: Event, T: Timeable<Data = E>> Animator<E, T> for EventAnimator<E> {
             }
             // between 2 events
             (Some(b), Some(c)) => {
-                let default_point = Timed::new(Cow::Owned(default_point), 0.);
+                let default_point = Timed::new(
+                    Cow::Owned(default_point),
+                    0.
+                );
 
                 let b_points = b.get_points(a, rt);
                 debug_assert!(
@@ -303,7 +460,8 @@ impl<E: Event, T: Timeable<Data = E>> Animator<E, T> for EventAnimator<E> {
                     std::any::type_name::<E>()
                 );
 
-                let cutoff = c_points.first().map_or(f32::INFINITY, |(beat, _)| *beat);
+                let cutoff = c_points.first()
+                    .map_or(f32::INFINITY, |(beat, _)| *beat);
                 let b_points = E::clip(b_points, cutoff, rt);
 
                 let points: TinyVec<_, 8> = b_points.into_iter()
@@ -324,95 +482,17 @@ impl<E: Event, T: Timeable<Data = E>> Animator<E, T> for EventAnimator<E> {
     }
 }
 
-pub(crate) trait PrivateTimeable<D: TimedData> {
-    /// new is private.
-    fn new(data: D, beat: f32) -> Self;
-}
-
-#[allow(private_bounds)]
-pub trait Timeable: PrivateTimeable<Self::Data> {
-    type Data: TimedData;
-    fn beat(&self) -> f32;
-    fn data(&self) -> &<Self as Timeable>::Data;
-    fn data_mut(&mut self) -> &mut <Self as Timeable>::Data;
-    fn take_data(self) -> <Self as Timeable>::Data;
-
-    fn get_points<'e>(
-        &'e self,
-        previous: &Self,
-        rt: &RuntimeData,
-    ) -> TinyVec<(f32, Cow<'e, <<Self as Timeable>::Data as Event>::Point>), 4>
-    where
-        <Self as Timeable>::Data: Event;
-
-    fn invalidate_cache(&mut self) {}
-}
-
-pub struct Timed<D: TimedData> {
-    pub data: D,
-    beat: f32,
-}
-
-// intentionally doesn't have Clone or any other public ctor since this is essentially a private
-// struct. The only reason it's public is to allow reading a slice without having to transmute or
-// clone.
-// this one has even more reason to not be Cloneable due to the cache.
-pub struct CacheableTimedEvent<E: Event> {
-    data: E,
-    beat: f32,
-    // Box requires an allocation, but only requires it once, and gives the benefit
-    // of a smaller struct and faster reading when not looking up cache.
-    // Weather this is actually more useful is entirely dependent on the size of E::Point.
-    cache: OnceCell<Box<[(f32, E::Point)]>>,
-}
-
-pub struct Track<T: Timeable> {
-    data: Vec<T>,
-    /// Holds a cached default element for interpolating when the data list
-    /// is empty or is animating before it's first element
-    default: T,
-    // only needed internally, the user should already
-    // have this value anyways since it comes from them
-    last_beat: f32,
-}
-
-pub struct TrackSet<T: Timeable> {
-    tracks: Vec<Vec<T>>,
-    /// Holds a cached default element for interpolating when the data list
-    /// is empty or is animating before it's first element
-    default: T,
-    // only needed internally, the user should already
-    // have this value anyways since it comes from them
-    last_beat: f32,
-}
-
-pub struct UninitializedTrackSet<T: Timeable> {
-    tracks: Vec<Vec<T>>,
-    // only needed internally, the user should already
-    // have this value anyways since it comes from them
-    last_beat: f32,
-}
-
-impl<'d, P: Point> TimedData for Cow<'d, P> {
-    type Animator<T: Timeable<Data = Cow<'d, P>>> = PointAnimator<Self>;
-    type State = P::State;
-    fn extend(&self, beat: f32, new_beat: f32, rt: &RuntimeData) -> Self {
-        Cow::Owned(P::extend(self, beat, new_beat, rt))
-    }
-}
-
-impl<'d, P: Point> Point for Cow<'d, P> {
-    fn interpolate(&self, other: &Self, span: BeatSpan, rt: &RuntimeData) -> Self::State {
-        P::interpolate(self, other, span, rt)
-    }
-}
-
 impl<D: TimedData> PrivateTimeable<D> for Timed<D> {
     #[inline]
     fn new(data: D, beat: f32) -> Self {
         Self { data, beat }
     }
+    #[inline]
+    fn take_data(self) -> D {
+        self.data
+    }
 }
+
 impl<D: TimedData> Timeable for Timed<D> {
     type Data = D;
     #[inline]
@@ -428,10 +508,6 @@ impl<D: TimedData> Timeable for Timed<D> {
         &mut self.data
     }
     #[inline]
-    fn take_data(self) -> D {
-        self.data
-    }
-
     fn get_points<'e>(
         &'e self,
         previous: &Self,
@@ -444,7 +520,7 @@ impl<D: TimedData> Timeable for Timed<D> {
     }
 }
 
-impl<E: Event> PrivateTimeable<E> for CacheableTimedEvent<E> {
+impl<E: Event> PrivateTimeable<E> for CacheableTimed<E> {
     #[inline]
     fn new(data: E, beat: f32) -> Self {
         Self {
@@ -453,9 +529,13 @@ impl<E: Event> PrivateTimeable<E> for CacheableTimedEvent<E> {
             cache: Default::default(),
         }
     }
+    #[inline]
+    fn take_data(self) -> E {
+        self.data
+    }
 }
 
-impl<E: Event> Timeable for CacheableTimedEvent<E> {
+impl<E: Event> Timeable for CacheableTimed<E> {
     type Data = E;
     #[inline]
     fn beat(&self) -> f32 {
@@ -469,10 +549,6 @@ impl<E: Event> Timeable for CacheableTimedEvent<E> {
     fn data_mut(&mut self) -> &mut E {
         self.invalidate_cache();
         &mut self.data
-    }
-    #[inline]
-    fn take_data(self) -> E {
-        self.data
     }
 
     fn get_points<'e>(
@@ -498,82 +574,6 @@ impl<E: Event> Timeable for CacheableTimedEvent<E> {
 
     fn invalidate_cache(&mut self) {
         self.cache.take();
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct Now {
-    pub beat: f32,
-    pub second: f32,
-}
-
-pub(crate) fn animate_timed<P: Point, T: Timeable<Data =P>>(
-    default: &T,
-    data: &[T],
-    last_beat: f32,
-    now: Now,
-    rt: &RuntimeData,
-) -> P::State {
-    let i = data.partition_point(|p| p.beat() <= now.beat);
-
-    let a = match i.checked_sub(1) {
-        Some(j) => &data[j],
-        None => default,
-    };
-
-    let extended;
-    let b = match data.get(i) {
-        Some(p) => p,
-        None => {
-            extended = T::new(a.data().extend(a.beat(), last_beat, rt), last_beat);
-            &extended
-        }
-    };
-
-    a.data()
-        .interpolate(b.data(), BeatSpan::new(now, a.beat(), b.beat()), rt)
-}
-
-/// invalidates `i`+1. `i` is left alone since it's assumed to get invalidated by
-/// whatever operation caused this to be called in the first place.
-fn invalidate_neighbors<T: Timeable>(list: &mut [T], i: usize) {
-    if let Some(p) = list.get_mut(i.saturating_add(1)) {
-        p.invalidate_cache();
-    }
-}
-
-fn clip_vec<D: TimedData, T: Timeable<Data = D>>(data: &mut Vec<T>, last_beat: f32) {
-    #[cfg(feature = "tracing")]
-    let l = data.len();
-
-    data.retain(|t| (0f32..=last_beat).contains(&t.beat()));
-
-    #[cfg(feature = "tracing")]
-    if l != data.len() {
-        let diff = l - data.len();
-        let s = if diff == 1 { "" } else { "s" };
-        tracing::warn!("truncated {diff} element{s} outside the song bounds");
-    }
-}
-
-fn track_insert<D: TimedData, T: Timeable<Data = D>>(
-    list: &mut Vec<T>,
-    last_beat: f32,
-    beat: f32,
-    data: D,
-) -> Result<(), TrackInsertionError> {
-    if (0f32..=last_beat).contains(&beat) {
-        let i = list.partition_point(|p| p.beat() <= beat);
-
-        list.insert(i, T::new(data, beat));
-        invalidate_neighbors(list.as_mut_slice(), i);
-
-        Ok(())
-    } else {
-        Err(TrackInsertionError {
-            bound: last_beat,
-            got: beat,
-        })
     }
 }
 
@@ -809,17 +809,27 @@ impl<T: Timeable> UninitializedTrackSet<T> {
     }
 }
 
+
+// Macros
+/// Simplifies implementing TimedData for types.
+/// Usage:
+/// ```rs
+/// timed!(point MyPoint: f32); // sets State = f32, and Animator = PointAnimator
+/// timed!(event MyEvent: f32); // sets State = f32, and Animator = EventAnimator
+/// ```
 #[macro_export]
 macro_rules! timed {
     (event $name:ident: $state:ty) => {
         impl $crate::tracks::TimedData for $name {
-            type Animator<T: $crate::tracks::Timeable<Data=Self>> = $crate::tracks::EventAnimator<Self>;
+            type Animator<T: $crate::tracks::Timeable<Data=Self>>
+                = $crate::tracks::EventAnimator<Self>;
             type State = $state;
         }
     };
     (point $name:ident: $state:ty) => {
         impl $crate::tracks::TimedData for $name {
-            type Animator<T: $crate::tracks::Timeable<Data=Self>> = $crate::tracks::PointAnimator<Self>;
+            type Animator<T: $crate::tracks::Timeable<Data=Self>>
+                = $crate::tracks::PointAnimator<Self>;
             type State = $state;
         }
     };

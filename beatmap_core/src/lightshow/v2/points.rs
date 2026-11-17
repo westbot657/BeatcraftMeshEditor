@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use crate::tracks::{Angle, BeatSpan, Event, Point, Timeable};
+use crate::tracks::{points::Angle, TimeSpan, Event, Point, Timeable};
 use crate::{timed, ColorScheme, RuntimeData};
 use glam::{FloatExt, Vec4};
 use tiny_vec::TinyVec;
@@ -21,7 +21,7 @@ pub struct ColorBoostPoint {
 timed!(point ColorBoostPoint: ColorBoostState);
 
 impl Point for ColorBoostPoint {
-    fn interpolate(&self, _other: &Self, _span: BeatSpan, _rt: &RuntimeData) -> Self::State {
+    fn interpolate(&self, _next: &Self, _span: TimeSpan, _rt: &RuntimeData) -> Self::State {
         self.state
     }
 }
@@ -45,7 +45,7 @@ pub struct RotationPoint {
 timed!(point RotationPoint: Angle);
 
 impl Point for RotationPoint {
-    fn interpolate(&self, _other: &Self, mut span: BeatSpan, rt: &RuntimeData) -> Self::State {
+    fn interpolate(&self, _next: &Self, mut span: TimeSpan, rt: &RuntimeData) -> Self::State {
         let start = span.get_start_seconds(rt);
         let now = span.now_seconds;
         let delta = now - start;
@@ -193,14 +193,14 @@ pub struct LightPoint {
 timed!(point LightPoint: BoostableColor);
 
 impl Point for LightPoint {
-    fn interpolate(&self, other: &Self, mut span: BeatSpan, runtime_data: &RuntimeData) -> Self::State {
+    fn interpolate(&self, next: &Self, mut span: TimeSpan, runtime_data: &RuntimeData) -> Self::State {
         let color = self.action.get_color()
             .map(|c| c.resolve(&runtime_data.color_scheme));
         if let Some(mut color) = color {
-            let brightness = if let LightAction::Transition(c2) = other.action {
+            let brightness = if let LightAction::Transition(c2) = next.action {
                 let dt = span.inverse_lerp_seconds(runtime_data);
                 color = color.lerp(c2.resolve(&runtime_data.color_scheme), dt);
-                self.brightness.lerp(other.brightness, dt)
+                self.brightness.lerp(next.brightness, dt)
             } else {
                 self.brightness
             };
