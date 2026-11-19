@@ -16,7 +16,7 @@ use tracing::Level;
 use crate::beatmap::BeatmapEditor;
 use crate::config::AppData;
 #[cfg(feature = "mapper")]
-use crate::data::map_editing::ObjectSource;
+use crate::data::map_editing::object_data::ObjectSource;
 use crate::data::mesh::{
     EnvData, EnvMeshData, EnvPlacementData, EventGroup, IdList, LightGroup, LightMeshData,
     MeshType, SessionData, SpectrogramData, TypeData, VertexId,
@@ -36,8 +36,8 @@ use crate::render::{GpuMesh, InstanceData, LIGHT_COLORS, Renderer};
 use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, editor, load_app_data, save_app_data};
 #[cfg(feature = "mapper")]
 use beatcraft_audiolib::{AudioSystem, NativeOpenAL};
-use beatmap_core::beatmap::{BombNote, ChainNote, ColorNote, ObjectType, Obstacle};
 use beatmap_core::RuntimeData;
+use beatmap_core::beatmap::{BombNote, ChainNote, ColorNote, ObjectType, Obstacle};
 use bs_mapping_data::{AudioDataFile, InfoFile};
 
 #[derive(Copy, Clone)]

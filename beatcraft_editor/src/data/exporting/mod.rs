@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
+use super::map_editing::EditingData;
+use crate::data::map_editing::resolver::{ResolveError, Value};
 use glam::{Vec2, Vec4};
-
-use super::map_editing::{EditingData, ResolveError, Value};
 
 pub mod v2;
 pub mod v3;

@@ -63,9 +63,9 @@ impl RuntimeData {
         Self::calc_jumps(self.njs, self.bpm, self.spawn_offset)
     }
 
-    pub fn jumps(&self, beat: f32) -> (f32, f32) {
-        let bpm = self.bpm(TimeUnit::Beat(beat));
-        Self::calc_jumps(self.njs, bpm, self.spawn_offset)
+    pub fn jumps(&self, offset_override: Option<f32>) -> (f32, f32) {
+        // let bpm = self.bpm(TimeUnit::Beat(beat));
+        Self::calc_jumps(self.njs, self.bpm, offset_override.unwrap_or(self.spawn_offset))
     }
 
     pub fn seconds_to_beat(&self, seconds: f32) -> f32 {

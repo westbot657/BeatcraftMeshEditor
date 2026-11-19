@@ -1,14 +1,19 @@
 #version 450 core
 
+flat in int v_material;
+flat in int v_style;
+flat in int v_flags;
+flat in int v_index;
+
 in vec2 v_uv;
 in vec4 v_color;
 in vec3 v_pos;
 in vec3 v_normal;
-flat in int v_material;
-flat in int v_style;
-flat in int v_flags;
 in vec3 screenUV;
 in vec3 worldPos;
+in vec3 v_local_pos;
+flat in vec4 v_slice;
+flat in float v_dissolve;
 
 uniform int passType;
 uniform sampler2D u_texture;
@@ -155,7 +160,7 @@ vec4 blendColors(vec4 bgColor, vec4 fgColor) {
     return vec4(outRGB, outAlpha);
 }
 
-void main() {
+void shade() {
     bool overrideBlack = (v_flags & (1 << FLAG_OVERRIDE_BLACK_BIT)) != 0;
     if (u_render_mode == MODE_EDITOR_WIREFRAME) {
         fragColor = vec4(vec3(0.4), 0.4);
@@ -187,7 +192,7 @@ void main() {
             float sceneDepth = texture(u_depth, uv).r;
             if (sceneDepth < gl_FragCoord.z - 0.000001) discard;
             float fadeHeight = clamp((v_pos.y - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0);
-            fragColor = vec4(vec3(1.0) * fadeHeight, 1.0);
+            fragColor = vec4(v_color.rgb * fadeHeight, 1.0);
             return;
         }
         if (passType == PASS_OBSTACLE_EDGE) {
@@ -243,12 +248,17 @@ void main() {
             : vec4(1.0)) * v_color;
 
         if (passType == PASS_NORMAL && v_material != MAT_TRANSPARENT_LIGHT) {
+            if (v_material == MAT_OBSTACLE) {
+                fragColor = vec4(vec3(0.0), 1.0);
+                return;
+            }
             vec4 tex = tex_sample;
             if (overrideBlack) {
                 tex = vec4(vec3(0.0), 1.0);
-            }
-            else if (v_material == MAT_SOLID_LIGHT) {
+            } else if (v_material == MAT_SOLID_LIGHT) {
                 tex = vec4(tex.rgb, 1.0);
+            } else if (v_material == MAT_NOTE || v_material == MAT_ARROW) {
+
             }
             vec4 fog = texture(u_bloomfog, (screenUV.xy/(-screenUV.z*4.0))+0.5);
             float fadeHeight = clamp((v_pos.y - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0);
@@ -298,4 +308,41 @@ void main() {
             discard;
         }
     }
+}
+
+void main() {
+    float whiteMix = 0.0;
+
+    if (passType != PASS_HIGHLIGHT && u_render_mode != MODE_EDITOR_WIREFRAME) {
+        const float EDGE_DIST = 0.05;
+        vec3 clamped = floor(v_local_pos * 18.01) / 18.01;
+
+        // slice plane
+        float sliceT = 0.0;
+        if (abs(v_slice.x) + abs(v_slice.y) + abs(v_slice.z) != 0.0) {
+            vec3 n = normalize(v_slice.xyz);
+            float d = dot(n, clamped) + v_slice.w;
+            if (d < 0.0) {
+                discard;
+            } else if (d < EDGE_DIST * 2.0) {
+                sliceT = min(1.0, (EDGE_DIST * 2.0 - d) / (EDGE_DIST * 2.0));
+            }
+        }
+
+        // noise dissolve
+        float dissolveT = 0.0;
+        float noise01 = (cnoise(clamped + vec3(0.0, float(v_index), 0.0)) + 1.0) * 0.5;
+        float noise = noise01 * (1.0 - EDGE_DIST) + EDGE_DIST;
+        if (v_dissolve > noise) {
+            discard;
+        } else if (v_dissolve + EDGE_DIST > noise) {
+            dissolveT = ((v_dissolve + EDGE_DIST) - noise) / EDGE_DIST;
+        }
+
+        // the old shader applied the two mixes one after the other
+        whiteMix = 1.0 - (1.0 - sliceT) * (1.0 - dissolveT);
+    }
+
+    shade();
+    fragColor.rgb = mix(fragColor.rgb, vec3(1.0), whiteMix);
 }

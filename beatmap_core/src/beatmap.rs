@@ -7,6 +7,8 @@ use bs_mapping_data::{Color, CutDirection};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec3Swizzles, Vec4, FloatExt};
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::ops::Deref;
+use bs_mapping_data::custom_data::{OptVec2, OptVec3};
 
 pub trait CutDirectionExt {
     fn angle_degrees(&self) -> f32;
@@ -70,11 +72,20 @@ pub trait GameObject<ObjectSource>: Debug {
     fn duration(&self) -> f32 {
         0.
     }
+    fn physical_length(&self) -> f32 {
+        self.duration()
+    }
     fn arrow_type(&self) -> ArrowType {
         ArrowType::None
     }
     fn lane_rotation_degrees(&self) -> f32 {
         0.
+    }
+    fn custom_njs(&self) -> Option<f32> {
+        None
+    }
+    fn custom_njs_offset(&self) -> Option<f32> {
+        None
     }
 
     fn upcast_chain_head(&self) -> Option<&ChainNote<ObjectSource>> {
@@ -150,8 +161,8 @@ pub trait GameObject<ObjectSource>: Debug {
         let b = self.beat();
         let dur = self.duration();
 
-        let (_, jd) = data.base_jumps();
-        let njs = data.njs;
+        let (_, jd) = data.jumps(self.custom_njs_offset());
+        let njs = self.custom_njs().unwrap_or(data.njs);
         let half_jump_distance = jd / 2.0;
         let reaction_time = half_jump_distance / njs;
 
@@ -187,7 +198,7 @@ pub trait GameObject<ObjectSource>: Debug {
             f32::lerp(JUMP_FAR_Z, z_at_spawn, p)
         } else if in_post_roll {
             let p = f32::inverse_lerp(d_time, post_roll_end_time, current_time).clamp(0., 1.);
-            f32::lerp(z_at_despawn, -JUMP_FAR_Z, p)
+            f32::lerp(z_at_despawn, -JUMP_FAR_Z - self.physical_length(), p)
         } else {
             (object_time - current_time) * njs
         };
@@ -327,6 +338,72 @@ pub enum ObjectType {
 }
 
 #[derive(Debug)]
+pub struct CustomData {
+    pub custom_njs_offset: Option<f32>,
+    pub custom_njs: Option<f32>,
+    pub local_rotation: Quat, // q.rotY, q.rotX, q.rotZ
+    pub world_rotation: Quat,
+    pub coordinates: OptVec2,
+    // pub track: Option<?>,
+    // pub animation: Option<?>,
+}
+
+#[derive(Debug)]
+pub struct NoteCustomData {
+    pub base: CustomData,
+}
+impl Deref for NoteCustomData {
+    type Target = CustomData;
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+#[derive(Debug)]
+pub struct BombCustomData {
+    pub base: CustomData,
+}
+impl Deref for BombCustomData {
+    type Target = CustomData;
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+#[derive(Debug)]
+pub struct ObstacleCustomData {
+    pub base: CustomData,
+}
+impl Deref for ObstacleCustomData {
+    type Target = CustomData;
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+#[derive(Debug)]
+pub struct ChainCustomData {
+    pub base: CustomData,
+}
+impl Deref for ChainCustomData {
+    type Target = CustomData;
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+#[derive(Debug)]
+pub struct ArcCustomData {
+    pub base: CustomData,
+}
+impl Deref for ArcCustomData {
+    type Target = CustomData;
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+#[derive(Debug)]
 pub struct ColorNote<ObjectSource> {
     pub spawn_orientation: Quat,
     pub beat: f32,
@@ -335,9 +412,10 @@ pub struct ColorNote<ObjectSource> {
     pub angle_offset_deg: f32,
     pub grid_pos: Vec2,
     pub lane_rotation_deg: f32,
-
     pub dissolve: f32,
     pub index: u32,
+
+    pub custom_data: NoteCustomData,
 
     pub source: ObjectSource,
 }
@@ -348,9 +426,10 @@ pub struct BombNote<ObjectSource> {
     pub color: ObjectColor<Self>,
     pub grid_pos: Vec2,
     pub lane_rotation_deg: f32,
-
     pub dissolve: f32,
     pub index: u32,
+
+    pub custom_data: BombCustomData,
 
     pub source: ObjectSource,
 }
@@ -372,10 +451,10 @@ pub struct Obstacle<ObjectSource> {
     pub duration: f32,
     pub size: Vec3,
     pub lane_rotation_deg: f32,
-
     pub dissolve: f32,
     pub index: u32,
 
+    pub custom_data: ObstacleCustomData,
     pub noodle_logic: bool,
 
     pub source: ObjectSource,
@@ -409,9 +488,10 @@ pub struct ChainNote<ObjectSource> {
     pub tail_grid_pos: Vec2,
     pub squish_factor: f32,
     pub links: Vec<ChainNoteLinkData>,
-
     pub dissolve: f32,
     pub index: u32,
+
+    pub custom_data: ChainCustomData,
 
     pub source: ObjectSource,
 }
@@ -430,6 +510,8 @@ pub struct Arc<ObjectSource> {
     pub has_head_note: bool,
     pub has_tail_note: bool,
 
+    pub noodle_data: ArcCustomData,
+
     pub source: ObjectSource,
 }
 
@@ -441,7 +523,10 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ColorNote<ObjectSource> {
         self.grid_pos
     }
     fn get_orientation(&self) -> Quat {
-        self.cut_direction.to_quat() * Quat::from_rotation_z(self.angle_offset_deg.to_radians())
+        self.custom_data.world_rotation *
+            self.custom_data.local_rotation *
+            self.cut_direction.to_quat() *
+            Quat::from_rotation_z(self.angle_offset_deg.to_radians())
     }
     fn spawn_orientation(&self) -> Quat {
         self.spawn_orientation
@@ -465,6 +550,12 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ColorNote<ObjectSource> {
     fn lane_rotation_degrees(&self) -> f32 {
         self.lane_rotation_deg
     }
+    fn custom_njs(&self) -> Option<f32> {
+        self.custom_data.custom_njs
+    }
+    fn custom_njs_offset(&self) -> Option<f32> {
+        self.custom_data.custom_njs_offset
+    }
 }
 
 impl<ObjectSource: Debug> GameObject<ObjectSource> for BombNote<ObjectSource> {
@@ -475,7 +566,7 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for BombNote<ObjectSource> {
         self.grid_pos
     }
     fn get_orientation(&self) -> Quat {
-        Quat::IDENTITY
+        self.custom_data.world_rotation * self.custom_data.local_rotation
     }
     fn do_gravity(&self) -> bool {
         true
@@ -486,6 +577,12 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for BombNote<ObjectSource> {
     fn lane_rotation_degrees(&self) -> f32 {
         self.lane_rotation_deg
     }
+    fn custom_njs(&self) -> Option<f32> {
+        self.custom_data.custom_njs
+    }
+    fn custom_njs_offset(&self) -> Option<f32> {
+        self.custom_data.custom_njs_offset
+    }
 }
 
 impl<ObjectSource: Debug> GameObject<ObjectSource> for Obstacle<ObjectSource> {
@@ -493,16 +590,35 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for Obstacle<ObjectSource> {
         self.beat
     }
     fn grid_pos(&self) -> Vec2 {
-        self.grid_pos + Vec2::new((self.size.x / 2.) - 0.5, -0.8)
+        let mut base = self.grid_pos + Vec2::new((self.size.x / 2.) - 0.5, -0.8);
+        if let Some(x) = self.custom_data.coordinates.x() {
+            base.x = x + 1.5 + (self.size.x/2.);
+        }
+        if let Some(y) = self.custom_data.coordinates.y() {
+            base.y = y - 0.8;
+        }
+        base
     }
     fn get_orientation(&self) -> Quat {
-        Quat::IDENTITY
+        self.custom_data.world_rotation * self.custom_data.local_rotation
+    }
+    fn spawn_orientation(&self) -> Quat {
+        self.custom_data.world_rotation * self.custom_data.local_rotation
     }
     fn duration(&self) -> f32 {
         self.duration
     }
+    fn physical_length(&self) -> f32 {
+        self.size.z
+    }
     fn lane_rotation_degrees(&self) -> f32 {
         self.lane_rotation_deg
+    }
+    fn custom_njs(&self) -> Option<f32> {
+        self.custom_data.custom_njs
+    }
+    fn custom_njs_offset(&self) -> Option<f32> {
+        self.custom_data.custom_njs_offset
     }
     fn editor_hitbox(&self, beat_spacing: Option<f32>) -> HitBox {
         let z = if let Some(bs) = beat_spacing
@@ -556,6 +672,12 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ChainNote<ObjectSource> {
     }
     fn lane_rotation_degrees(&self) -> f32 {
         self.head_lane_rotation_deg
+    }
+    fn custom_njs(&self) -> Option<f32> {
+        self.custom_data.custom_njs
+    }
+    fn custom_njs_offset(&self) -> Option<f32> {
+        self.custom_data.custom_njs_offset
     }
     fn upcast_chain_head(&self) -> Option<&ChainNote<ObjectSource>> {
         Some(self)

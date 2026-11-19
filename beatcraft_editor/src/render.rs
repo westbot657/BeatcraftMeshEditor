@@ -2463,8 +2463,8 @@ impl BloomfogRenderer {
                 Some(self.light_depth.depth),
                 2,
             );
-            renderer.set_int(gl, renderer.mesh, "u_render_mode", 0);
-            renderer.set_int(gl, renderer.mesh, "passType", 0);
+            renderer.set_int(gl, renderer.mesh, "u_render_mode", RenderMode::Beatcraft.into());
+            renderer.set_int(gl, renderer.mesh, "passType", RenderPass::Normal.into());
             for call in calls {
                 if !call.solid {
                     continue;
@@ -2487,7 +2487,7 @@ impl BloomfogRenderer {
                     renderer.mesh,
                 );
             }
-            renderer.set_int(gl, renderer.mesh, "passType", 1);
+            renderer.set_int(gl, renderer.mesh, "passType", RenderPass::Bloom.into());
             for call in calls {
                 if !call.solid {
                     continue;

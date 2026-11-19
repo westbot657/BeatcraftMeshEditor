@@ -10,8 +10,9 @@ use crate::{
 };
 use crate::{bool_u8_serde, easing_as_i8};
 use crate::{default_u, is_value_f, is_value_u};
+use crate::custom_v3::{CustomArcDataV3, CustomBombDataV3, CustomChainDataV3, CustomNoteDataV3, CustomObstacleDataV3};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColorNoteV3 {
     #[serde(rename = "b")]
@@ -26,9 +27,13 @@ pub struct ColorNoteV3 {
     pub cut_direction: CutDirection,
     #[serde(rename = "a")]
     pub angle_offset: i32,
+    #[cfg(feature = "custom_data")]
+    #[serde(rename = "customData")]
+    #[serde(default, skip_serializing_if = "CustomNoteDataV3::is_empty")]
+    pub custom_data: CustomNoteDataV3,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BombNoteV3 {
     #[serde(rename = "b")]
@@ -37,9 +42,13 @@ pub struct BombNoteV3 {
     pub line_index: f32,
     #[serde(rename = "y")]
     pub line_layer: f32,
+    #[cfg(feature = "custom_data")]
+    #[serde(rename = "customData")]
+    #[serde(default, skip_serializing_if = "CustomBombDataV3::is_empty")]
+    pub custom_data: CustomBombDataV3,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ObstacleV3 {
     #[serde(rename = "b")]
@@ -54,9 +63,13 @@ pub struct ObstacleV3 {
     pub width: f32,
     #[serde(rename = "h")]
     pub height: f32,
+    #[cfg(feature = "custom_data")]
+    #[serde(rename = "customData")]
+    #[serde(default, skip_serializing_if = "CustomObstacleDataV3::is_empty")]
+    pub custom_data: CustomObstacleDataV3,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArcV3 {
     #[serde(rename = "c")]
@@ -83,9 +96,13 @@ pub struct ArcV3 {
     pub tail_ctrl_magnitude: f32,
     #[serde(rename = "m")]
     pub mid_anchor_mode: ArcMidAnchorMode,
+    #[cfg(feature = "custom_data")]
+    #[serde(rename = "customData")]
+    #[serde(default, skip_serializing_if = "CustomArcDataV3::is_empty")]
+    pub custom_data: CustomArcDataV3,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChainV3 {
     #[serde(rename = "c")]
@@ -108,9 +125,13 @@ pub struct ChainV3 {
     pub slice_count: u8,
     #[serde(rename = "s")]
     pub squish_factor: f32,
+    #[cfg(feature = "custom_data")]
+    #[serde(rename = "customData")]
+    #[serde(default, skip_serializing_if = "CustomChainDataV3::is_empty")]
+    pub custom_data: CustomChainDataV3,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LegacySpawnRotationEventV3 {
     #[serde(rename = "b")]
@@ -121,7 +142,7 @@ pub struct LegacySpawnRotationEventV3 {
     pub rotation_angle: SpawnRotationAngle,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpawnRotationEventV3 {
     #[serde(rename = "b")]
@@ -132,7 +153,7 @@ pub struct SpawnRotationEventV3 {
     pub magnitude: f32,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LegacyBPMEventV3 {
     #[serde(rename = "b")]
@@ -142,7 +163,7 @@ pub struct LegacyBPMEventV3 {
     pub value: f32,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BPMEventV3 {
     #[serde(rename = "b")]
@@ -229,7 +250,7 @@ pub struct RingLightEventV3 {
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpinningLaserEventV3 {
     #[serde(rename = "b")]
@@ -244,7 +265,7 @@ pub struct SpinningLaserEventV3 {
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HydraulicsEventV3 {
     #[serde(rename = "b")]
@@ -259,7 +280,7 @@ pub struct HydraulicsEventV3 {
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GagaEventV3 {
     #[serde(rename = "b")]

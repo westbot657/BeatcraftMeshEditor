@@ -190,11 +190,11 @@ pub struct GraphicsOptionsV2 {
     #[serde(rename = "_mainEffectGraphicsSettings")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// "Bloom Post Process". Disabling switches to baked/fake "Quest style" bloom.
-    pub main_effect_graphics_settings: Option<MainEffectGraphicsSettings>,
+    pub main_effect_graphics_settings: Option<bool>,
     #[serde(rename = "_smokeGraphicsSettings")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// Also enables depth texture / "Soft Particles" when used.
-    pub smoke_graphics_settings: Option<SmokeGraphicsSettings>,
+    pub smoke_graphics_settings: Option<bool>,
     #[serde(rename = "_burnMarkTrailsEnabled")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// Hidden setting: hides burn trails left by sabers.
@@ -218,23 +218,23 @@ pub enum MirrorGraphicsSettings {
 }
 convert_u8! { MirrorGraphicsSettings : 0..=3 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
-#[repr(u8)]
-pub enum MainEffectGraphicsSettings {
-    Off = 0,
-    On = 1,
-}
-convert_u8! { MainEffectGraphicsSettings : 0 | 1 }
+// #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+// #[serde(try_from = "u8", into = "u8")]
+// #[repr(u8)]
+// pub enum MainEffectGraphicsSettings {
+//     Off = 0,
+//     On = 1,
+// }
+// convert_u8! { MainEffectGraphicsSettings : 0 | 1 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
-#[repr(u8)]
-pub enum SmokeGraphicsSettings {
-    Off = 0,
-    On = 1,
-}
-convert_u8! { SmokeGraphicsSettings : 0 | 1 }
+// #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+// #[serde(try_from = "u8", into = "u8")]
+// #[repr(u8)]
+// pub enum SmokeGraphicsSettings {
+//     Off = 0,
+//     On = 1,
+// }
+// convert_u8! { SmokeGraphicsSettings : 0 | 1 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]

@@ -1,6 +1,6 @@
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
-
+use crate::custom_v2::{CustomArcDataV2, CustomBombDataV2, CustomNoteDataV2, CustomObstacleDataV2};
 use super::convert_u8;
 use super::{
     ArcMidAnchorMode, Color, CutDirection, Sentinel, SpawnRotationAngle, SpawnRotationExecutionTime,
@@ -9,7 +9,7 @@ use super::{default_f, is_value_f};
 use crate::MapVersion;
 use crate::v2_v3::*;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColorNoteV2 {
     #[serde(rename = "_time")]
@@ -26,11 +26,11 @@ pub struct ColorNoteV2 {
     pub cut_direction: CutDirection,
     #[cfg(feature = "custom_data")]
     #[serde(rename = "_customData")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_data: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "CustomNoteDataV2::is_empty")]
+    pub custom_data: CustomNoteDataV2,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BombNoteV2 {
     #[serde(rename = "_time")]
@@ -46,8 +46,8 @@ pub struct BombNoteV2 {
     pub cut_direction: CutDirection,
     #[cfg(feature = "custom_data")]
     #[serde(rename = "_customData")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_data: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "CustomBombDataV2::is_empty")]
+    pub custom_data: CustomBombDataV2,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,7 +60,7 @@ pub enum ObstacleV2Type {
 }
 convert_u8! { ObstacleV2Type: 0..=2 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ObstacleV2 {
     #[serde(rename = "_type")]
@@ -83,11 +83,11 @@ pub struct ObstacleV2 {
     pub height: f32,
     #[cfg(feature = "custom_data")]
     #[serde(rename = "_customData")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_data: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "CustomObstacleDataV2::is_empty")]
+    pub custom_data: CustomObstacleDataV2,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArcV2 {
     #[serde(rename = "_colorType")]
@@ -120,8 +120,8 @@ pub struct ArcV2 {
     pub mid_anchor_mode: ArcMidAnchorMode,
     #[cfg(feature = "custom_data")]
     #[serde(rename = "_customData")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_data: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "CustomArcDataV2::is_empty")]
+    pub custom_data: CustomArcDataV2,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -176,6 +176,7 @@ pub struct LightEventV2 {
     pub typ: LightEventTypeV2,
     #[serde(rename = "_value")]
     pub value: LightEventValueV2,
+    #[cfg(feature = "custom_data")]
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
@@ -190,6 +191,7 @@ pub struct RingLightEventV2 {
     pub typ: RingLightEventTypeV2,
     #[serde(rename = "_value")]
     pub value: u32,
+    #[cfg(feature = "custom_data")]
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
@@ -204,6 +206,7 @@ pub struct SpinningLaserEventV2 {
     pub typ: SpinningLaserSideV2,
     #[serde(rename = "_value")]
     pub value: u32,
+    #[cfg(feature = "custom_data")]
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
@@ -218,6 +221,7 @@ pub struct HydraulicsEventV2 {
     pub typ: HydraulicsTypeV2,
     #[serde(rename = "_value")]
     pub value: u32,
+    #[cfg(feature = "custom_data")]
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
@@ -232,6 +236,7 @@ pub struct GagaEventV2 {
     pub typ: GagaSideV2,
     #[serde(rename = "_value")]
     pub value: u32,
+    #[cfg(feature = "custom_data")]
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
@@ -246,6 +251,7 @@ pub struct ColorBoostV2 {
     typ: Sentinel<5>,
     #[serde(rename = "_value")]
     value: ColorBoostValueV2,
+    #[cfg(feature = "custom_data")]
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
@@ -271,6 +277,7 @@ pub struct BeatmapFileV2 {
     pub arcs: Vec<ArcV2>,
     #[serde(rename = "_events")]
     pub events: Vec<V2Event>,
+    #[cfg(feature = "custom_data")]
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,

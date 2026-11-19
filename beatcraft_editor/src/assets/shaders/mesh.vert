@@ -56,15 +56,20 @@ uniform mat4 u_camera_pos;
 
 uniform int u_render_mode;
 
+flat out int v_material;
+flat out int v_style;
+flat out int v_flags;
+flat out int v_index;
+
 out vec2 v_uv;
 out vec4 v_color;
 out vec3 v_pos;
 out vec3 v_normal;
-flat out int v_material;
-flat out int v_style;
-flat out int v_flags;
 out vec3 screenUV;
 out vec3 worldPos;
+out vec3 v_local_pos;
+flat out vec4 v_slice;
+flat out float v_dissolve;
 
 const int MAT_SOLID             = 0;
 const int MAT_SOLID_LIGHT       = 1;
@@ -117,6 +122,7 @@ const float EDGE_HALF_WIDTH = 0.04;
 
 void main() {
     vec3 in_position = in_position_u.xyz;
+    v_local_pos = in_position;
     vec3 in_normal = in_normal_v.xyz;
     vec2 in_uv = vec2(in_position_u.w, in_normal_v.w);
     int colorLayer = in_colorLayer_materialLayer_flags.x;
@@ -182,12 +188,18 @@ void main() {
         }
     } else if (v_material == MAT_NOTE) {
         v_color = c0;
+        v_dissolve = c6.x;
+        v_index = floatBitsToInt(c6.y);
+        v_slice = c7;
     } else if (v_material == MAT_ARROW) {
         if (passType == PASS_BLOOM) {
             v_color = c0;
         } else {
             v_color = vec4(1.0);
         }
+        v_dissolve = c6.x;
+        v_index = floatBitsToInt(c6.y);
+        v_slice = c7;
     } else if (v_material == MAT_OBSTACLE) {
         int flags = (v_flags >> 8) & 0xF;
         float left = float((flags >> 3) & 1) * 0.5;
@@ -196,7 +208,9 @@ void main() {
         float right = float(flags & 1) * 0.5;
         vec3 wall_size = c5.xyz;
         int edge_axis = v_flags & 0xF;   // 0 = wall, 1/2/3 = capsule along X/Y/Z
-
+        v_dissolve = c6.x;
+        v_index = floatBitsToInt(c6.y);
+        v_slice = c7;
         if (edge_axis == 0) {
             vec3 wall_vert = vec3(
                     (left + right) * wall_size.x * in_position.x * 0.6,

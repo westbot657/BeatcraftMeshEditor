@@ -280,3 +280,59 @@ pub fn deserialize_noodle_map_files_v2() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn test_note_v2() -> Result<()> {
+    let s = r#"
+    {
+        "_time": 6.21392,
+        "_lineIndex": 3,
+        "_lineLayer": 0,
+        "_type": 1,
+        "_cutDirection": 1,
+        "_customData": {
+            "_track": "noteChild",
+            "_disableSpawnEffect": true,
+            "_disableNoteGravity": true,
+            "_noteJumpMovementSpeed": 12,
+            "_noteJumpStartBeatOffset": 8,
+            "_animation": {
+                "_position": [
+                    [0,0,-20,0],
+                    [0,0,0,0.5,"easeOutSine"]
+                ],
+                "_rotation": [
+                    [-2,5,151,0],
+                    [0,0,0,0.4375,"easeOutQuad"]
+                ],
+                "_localRotation": [
+                    [9,8,-10,0],
+                    [0,0,0,0.4375,"easeInOutCubic"]
+                ],
+                "_dissolve": [
+                    [0,0.2499],
+                    [0.15,0.25],
+                    [0,0.4325,"easeInOutQuad"]
+                ],
+                "_scale": [
+                    [0.25,0.25,0.25,0.25],
+                    [1.5,1.5,0.9,0.4325,"easeInCubic"]
+                ],
+                "_dissolveArrow": [
+                    [0,0.2499],
+                    [0.3,0.25],
+                    [0,0.47,"easeInCubic"]
+                ]
+            },
+            "_fake": true,
+            "_interactable": false
+        }
+    }"#;
+
+    let note: bs_mapping_data::v2::V2Note = serde_json::from_str(s)?;
+
+    println!("{note:?}");
+
+    Ok(())
+
+}

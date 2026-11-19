@@ -1,11 +1,5 @@
-use std::collections::{HashMap, HashSet};
-use std::fmt::Display;
-use std::path::PathBuf;
-use std::sync::mpsc;
-use std::thread;
-use chrono::SubsecRound;
 use crate::config::ProjectType;
-use crate::data::map_editing::{EditingData, GlobalEditingData, ObjectSource};
+use crate::data::map_editing::{EditingData, GlobalEditingData};
 use crate::data::mesh::LightMeshData;
 use crate::editor::{
     App, EditorContext, MINECRAFT_F, RoutineAction, SOURCE_CODE_F, Selection, ViewStyle,
@@ -20,11 +14,17 @@ use crate::{
 };
 use beatcraft_audiolib::{Audio, AudioError, AudioSystem, NativeOpenAL};
 use beatcraft_editor_proc::hex;
+use chrono::SubsecRound;
 use eframe::glow::{self, Context, HasContext};
 use egui::{Align, Align2, Color32, FontId, FontSelection, Id, ImageSource, Pos2, Rect, RichText, Sense, TextStyle, TextWrapMode, Ui, WidgetText};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use rand::rngs::ThreadRng;
+use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
+use std::path::PathBuf;
+use std::sync::mpsc;
+use std::thread;
 
 use self::data::obstacle_font::{HorizontalAlign, ObstacleFont, ObstacleFontData, TextLayout, VerticalAlign};
 use self::object::GameObjectExt;
@@ -34,6 +34,7 @@ use bs_mapping_data::{ArcMidAnchorMode, AudioDataFile, BeatmapFile, Color, CutDi
 
 use crate::beatmap::widgets::cut_direction_selector::{CutDirectionSelector, SelectorLayout};
 use crate::beatmap::widgets::song_overview::SongOverview;
+use crate::data::map_editing::object_data::ObjectSource;
 use crate::widgets::bar_slider::BarSlider;
 use crate::widgets::keybind_hint::{Corner, ExtensionAxis, ExtensionCorner, HintItem, KeybindHint, KeybindHintList};
 use crate::widgets::math_values::MathDragValue;

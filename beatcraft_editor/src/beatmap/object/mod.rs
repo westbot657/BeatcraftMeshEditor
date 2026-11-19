@@ -3,7 +3,7 @@ use std::f32;
 use glam::{Mat4, Quat, Vec3, Vec4};
 use rand::{RngExt, rngs::ThreadRng};
 
-use crate::data::map_editing::ObjectSource;
+use crate::data::map_editing::object_data::ObjectSource;
 use crate::render::GameObjectInstanceData;
 
 
@@ -93,7 +93,7 @@ impl GameObjectExt for Obstacle<ObjectSource> {
             self.color.color(cs),
             self.dissolve,
             self.index,
-            Vec3::new(self.size.x, self.size.y, self.duration * beat_distance),
+            Vec3::new(self.size.x, self.size.y, if self.noodle_logic { self.size.z } else { self.duration * beat_distance }),
         )
     }
 }

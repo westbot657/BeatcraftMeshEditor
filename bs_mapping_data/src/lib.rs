@@ -45,6 +45,8 @@ pub mod settings_v2;
 
 #[cfg(all(feature = "v2", feature = "noodle"))]
 pub mod noodle_v2;
+#[cfg(all(feature = "v3", feature = "noodle"))]
+pub mod noodle_v3;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum VersionClass {
@@ -728,5 +730,36 @@ pub(crate) mod vec4_array_opt {
             Some(Repr::Xyz([x, y, z])) => Ok(Some(Vec4::new(x, y, z, 1.0))),
             Some(Repr::Xyzw([x, y, z, w])) => Ok(Some(Vec4::new(x, y, z, w))),
         }
+    }
+}
+
+pub(crate) mod vec_or_string {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum VecOrStr {
+        Str(String),
+        Vec(Vec<String>),
+    }
+
+    pub fn serialize<S>(values: &[String], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match values {
+            [single] => serializer.serialize_str(single),
+            _ => values.serialize(serializer),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(match VecOrStr::deserialize(deserializer)? {
+            VecOrStr::Str(s) => vec![s],
+            VecOrStr::Vec(v) => v,
+        })
     }
 }

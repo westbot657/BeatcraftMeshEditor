@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use bs_mapping_data::v2::{ArcV2, BeatmapFileV2, BombNoteV2, ColorNoteV2, ObstacleV2, ObstacleV2Type, V2Note};
 use bs_mapping_data::{Color, CutDirection, MapVersion};
 
-use crate::data::map_editing::{DataElement, EditingData, Value};
-use beatmap_core::beatmap::NoteColor;
-
 use super::{ExportResult, Exportable};
+use crate::data::map_editing::resolver::Value;
+use crate::data::map_editing::{DataElement, EditingData};
+use beatmap_core::beatmap::NoteColor;
 
 
 impl Exportable for BeatmapFileV2 {
@@ -55,7 +55,7 @@ impl Exportable for BeatmapFileV2 {
                                 line_layer,
                                 typ,
                                 cut_direction,
-                                custom_data: None, // TODO
+                                custom_data: Default::default(), // TODO
                             }
                         ))
                     },
@@ -75,7 +75,7 @@ impl Exportable for BeatmapFileV2 {
                                 line_layer,
                                 _type: bs_mapping_data::Sentinel,
                                 cut_direction: CutDirection::Up,
-                                custom_data: None, // TODO
+                                custom_data: Default::default(), // TODO
                             }
                         ));
                     },
@@ -104,7 +104,7 @@ impl Exportable for BeatmapFileV2 {
                                 line_layer,
                                 width,
                                 height,
-                                custom_data: None,
+                                custom_data: Default::default(), // TODO
                             }
                         );
                     },
@@ -149,7 +149,7 @@ impl Exportable for BeatmapFileV2 {
                                 tail_cut_direction,
                                 tail_ctrl_magnitude,
                                 mid_anchor_mode,
-                                custom_data: None, // TODO
+                                custom_data: Default::default(), // TODO
                             }
                         );
                     },
