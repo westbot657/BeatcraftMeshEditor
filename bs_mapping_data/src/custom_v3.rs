@@ -34,9 +34,9 @@ pub struct CommonCustomDataV3 {
     #[cfg(feature = "noodle")]
     #[serde(skip_serializing_if = "Not::not")]
     pub uninteractable: bool,
-    #[cfg(feature = "noodle")]
+    #[cfg(feature = "tracks")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub animation: Option<crate::noodle_v3::AnimationDataV3>,
+    pub animation: Option<crate::animation_v3::AnimationDataV3>,
 
     #[cfg(feature = "chroma")]
     #[serde(skip_serializing_if = "Option::is_none")]

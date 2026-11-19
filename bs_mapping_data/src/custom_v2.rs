@@ -44,10 +44,10 @@ pub struct CommonCustomDataV2 {
     #[serde(rename = "_uninteractable")]
     #[serde(skip_serializing_if = "Not::not")]
     pub uninteractable: bool,
-    #[cfg(feature = "noodle")]
+    #[cfg(feature = "tracks")]
     #[serde(rename = "_animation")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub animation: Option<crate::noodle_v2::AnimationDataV2>,
+    pub animation: Option<crate::animation_v2::AnimationDataV2>,
 
     #[cfg(feature = "chroma")]
     #[serde(rename = "_color")]

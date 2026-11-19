@@ -43,10 +43,12 @@ pub mod custom_v3;
 #[cfg(all(any(feature = "v2", feature = "v3"), feature = "settings_setter"))]
 pub mod settings_v2;
 
-#[cfg(all(feature = "v2", feature = "noodle"))]
-pub mod noodle_v2;
-#[cfg(all(feature = "v3", feature = "noodle"))]
-pub mod noodle_v3;
+#[cfg(all(any(feature = "v2", feature = "v3"), feature = "tracks"))]
+pub mod animation;
+#[cfg(all(feature = "v2", feature = "tracks"))]
+pub mod animation_v2;
+#[cfg(all(feature = "v3", feature = "tracks"))]
+pub mod animation_v3;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum VersionClass {
