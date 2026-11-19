@@ -313,7 +313,13 @@ void shade() {
 void main() {
     float whiteMix = 0.0;
 
-    if (passType != PASS_HIGHLIGHT && u_render_mode != MODE_EDITOR_WIREFRAME) {
+    if (passType != PASS_HIGHLIGHT
+        && u_render_mode != MODE_EDITOR_WIREFRAME
+        && (v_material == MAT_NOTE
+            || v_material == MAT_ARROW
+            || v_material == MAT_OBSTACLE
+        )
+    ) {
         const float EDGE_DIST = 0.05;
         vec3 clamped = floor(v_local_pos * 18.01) / 18.01;
 

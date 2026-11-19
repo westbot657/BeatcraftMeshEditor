@@ -501,6 +501,10 @@ impl crate::data::map_editing::object_data::NoteCustomData {
     ) -> Result<NoteCustomData, ResolveError> {
         Ok(NoteCustomData {
             base: self.base.resolve(values)?,
+            disable_note_gravity: self.disable_note_gravity.resolve(values, Default::default())?,
+            disable_note_look: self.disable_note_look.resolve(values, Default::default())?,
+            spawn_effect: self.spawn_effect.resolve(values, Default::default())?,
+            disable_debris: self.disable_debris.resolve(values, Default::default())?,
         })
     }
 }
@@ -512,6 +516,7 @@ impl crate::data::map_editing::object_data::BombCustomData {
     ) -> Result<BombCustomData, ResolveError> {
         Ok(BombCustomData {
             base: self.base.resolve(values)?,
+            disable_note_gravity: self.disable_note_gravity.resolve(values, Default::default())?,
         })
     }
 }
@@ -534,6 +539,11 @@ impl crate::data::map_editing::object_data::ChainCustomData {
     ) -> Result<ChainCustomData, ResolveError> {
         Ok(ChainCustomData {
             base: self.base.resolve(values)?,
+            disable_note_gravity: self.disable_note_gravity.resolve(values, Default::default())?,
+            disable_note_look: self.disable_note_look.resolve(values, Default::default())?,
+            spawn_effect: self.spawn_effect.resolve(values, Default::default())?,
+            disable_debris: self.disable_debris.resolve(values, Default::default())?,
+            tail_coordinates: self.tail_coordinates.resolve(values, Default::default())?,
         })
     }
 }

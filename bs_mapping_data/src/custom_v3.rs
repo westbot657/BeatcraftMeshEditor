@@ -102,6 +102,12 @@ pub struct CustomNoteDataV3 {
     pub disable_bad_cut_saber_type: bool,
     #[cfg(feature = "noodle")]
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub spawn_effect: Option<bool>,
+    #[cfg(feature = "noodle")]
+    #[serde(skip_serializing_if = "Not::not")]
+    pub disable_debris: bool,
+    #[cfg(feature = "noodle")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
 
     #[serde(flatten)]
@@ -199,6 +205,15 @@ pub struct CustomChainDataV3 {
     #[cfg(feature = "noodle")]
     #[serde(skip_serializing_if = "Not::not")]
     pub disable_note_gravity: bool,
+    #[cfg(feature = "noodle")]
+    #[serde(skip_serializing_if = "Not::not")]
+    pub disable_note_look: bool,
+    #[cfg(feature = "noodle")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spawn_effect: Option<bool>,
+    #[cfg(feature = "noodle")]
+    #[serde(skip_serializing_if = "Not::not")]
+    pub disable_debris: bool,
     #[cfg(feature = "noodle")]
     #[serde(skip_serializing_if = "OptVec2::is_none")]
     pub tail_coordinates: OptVec2,

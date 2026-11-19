@@ -1335,8 +1335,8 @@ impl Renderer {
                 glow::ZERO,
                 glow::ONE,
             );
-            self.set_mat4(gl, grid, "view", view);
-            self.set_mat4(gl, grid, "proj", proj);
+            self.set_mat4(gl, grid, "u_view", view);
+            self.set_mat4(gl, grid, "u_proj", proj);
             gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
             gl.bind_vertex_array(None);
             gl.blend_func_separate(
@@ -1589,6 +1589,8 @@ impl Renderer {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_matrix_4_f32_slice(Some(&l), false, &m.to_cols_array());
+            } else {
+                tracing::error!(target: DB_RENDER, "mat4 uniform name not found: '{}'", name);
             }
         }
     }
@@ -1603,65 +1605,75 @@ impl Renderer {
     pub(crate) fn set_vec3(
         &self,
         gl: &glow::Context,
-        prog: glow::NativeProgram,
+        prog: NativeProgram,
         name: &str,
         v: Vec3,
     ) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_3_f32(Some(&l), v.x, v.y, v.z);
-            }
-        }
-    }
-    pub(crate) fn set_float(
-        &self,
-        gl: &glow::Context,
-        prog: glow::NativeProgram,
-        name: &str,
-        v: f32,
-    ) {
-        unsafe {
-            if let Some(l) = gl.get_uniform_location(prog, name) {
-                gl.uniform_1_f32(Some(&l), v);
+            } else {
+                tracing::error!(target: DB_RENDER, "vec3 uniform name not found: '{}'", name)
             }
         }
     }
     pub(crate) fn set_vec2(
         &self,
         gl: &glow::Context,
-        prog: glow::NativeProgram,
+        prog: NativeProgram,
         name: &str,
         v: Vec2,
     ) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_2_f32(Some(&l), v.x, v.y);
+            } else {
+                tracing::error!(target: DB_RENDER, "vec2 uniform name not found: '{}'", name)
+            }
+        }
+    }
+    pub(crate) fn set_float(
+        &self,
+        gl: &glow::Context,
+        prog: NativeProgram,
+        name: &str,
+        v: f32,
+    ) {
+        unsafe {
+            if let Some(l) = gl.get_uniform_location(prog, name) {
+                gl.uniform_1_f32(Some(&l), v);
+            } else {
+                tracing::error!(target: DB_RENDER, "float uniform name not found: '{}'", name)
             }
         }
     }
     pub(crate) fn set_int(
         &self,
         gl: &glow::Context,
-        prog: glow::NativeProgram,
+        prog: NativeProgram,
         name: &str,
         v: i32,
     ) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_1_i32(Some(&l), v);
+            } else {
+                tracing::warn!(target: DB_RENDER, "int uniform name not found: '{}'", name)
             }
         }
     }
     pub(crate) fn set_uint(
         &self,
         gl: &glow::Context,
-        prog: glow::NativeProgram,
+        prog: NativeProgram,
         name: &str,
         v: u32,
     ) {
         unsafe {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_1_u32(Some(&l), v);
+            } else {
+                tracing::warn!(target: DB_RENDER, "uint uniform name not found: '{}'", name)
             }
         }
     }

@@ -78,8 +78,8 @@ pub trait GameObject<ObjectSource>: Debug {
     fn arrow_type(&self) -> ArrowType {
         ArrowType::None
     }
-    fn lane_rotation_degrees(&self) -> f32 {
-        0.
+    fn lane_rotation(&self) -> Quat {
+        Quat::IDENTITY
     }
     fn custom_njs(&self) -> Option<f32> {
         None
@@ -116,7 +116,7 @@ pub trait GameObject<ObjectSource>: Debug {
 
             let gp = Vec2::new(1.5 - gp.x, gp.y + 0.5) * 0.6;
 
-            m *= Mat4::from_rotation_y(-self.lane_rotation_degrees().to_radians());
+            m *= Mat4::from_quat(self.lane_rotation());
 
             m *= Mat4::from_translation(gp.extend((b - beat) * beat_spacing));
             m *= Mat4::from_quat(self.get_orientation());
@@ -217,7 +217,7 @@ pub trait GameObject<ObjectSource>: Debug {
 
         let jump_mat = Mat4::from_translation(Vec3::new(gp.x, y, z));
 
-        m *= Mat4::from_rotation_y(-self.lane_rotation_degrees().to_radians());
+        m *= Mat4::from_quat(self.lane_rotation());
         m *= Mat4::from_translation(Vec3::new(0., 0.8, 1.));
         m *= jump_mat;
 
@@ -337,7 +337,9 @@ pub enum ObjectType {
     ArcTail,
 }
 
-#[derive(Debug)]
+
+
+#[derive(Debug, Clone)]
 pub struct CustomData {
     pub custom_njs_offset: Option<f32>,
     pub custom_njs: Option<f32>,
@@ -351,6 +353,13 @@ pub struct CustomData {
 #[derive(Debug)]
 pub struct NoteCustomData {
     pub base: CustomData,
+
+    pub disable_note_gravity: bool,
+    pub disable_note_look: bool,
+    
+    pub spawn_effect: Option<bool>,
+    pub disable_debris: bool,
+
 }
 impl Deref for NoteCustomData {
     type Target = CustomData;
@@ -362,6 +371,8 @@ impl Deref for NoteCustomData {
 #[derive(Debug)]
 pub struct BombCustomData {
     pub base: CustomData,
+
+    pub disable_note_gravity: bool,
 }
 impl Deref for BombCustomData {
     type Target = CustomData;
@@ -381,9 +392,17 @@ impl Deref for ObstacleCustomData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ChainCustomData {
     pub base: CustomData,
+    
+    pub disable_note_gravity: bool,
+    pub disable_note_look: bool,
+    
+    pub spawn_effect: Option<bool>,
+    pub disable_debris: bool,
+    
+    pub tail_coordinates: OptVec2,
 }
 impl Deref for ChainCustomData {
     type Target = CustomData;
@@ -497,6 +516,22 @@ pub struct ChainNote<ObjectSource> {
 }
 
 #[derive(Debug)]
+pub struct ChainNoteLink<ObjectSource> {
+    pub grid_pos: Vec2,
+    pub beat: f32,
+    pub orientation: Quat,
+    pub lane_rotation_deg: f32,
+    pub spawn_orientation: Quat,
+    pub color: NoteColor,
+    pub index: u32,
+    pub dissolve: f32,
+
+    pub custom_data: ChainCustomData,
+
+    pub _source: PhantomData<ObjectSource>,
+}
+
+#[derive(Debug)]
 pub struct Arc<ObjectSource> {
     pub head_beat: f32,
     pub tail_beat: f32,
@@ -532,10 +567,10 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ColorNote<ObjectSource> {
         self.spawn_orientation
     }
     fn do_gravity(&self) -> bool {
-        true
+        !self.custom_data.disable_note_gravity
     }
     fn do_look(&self) -> bool {
-        true
+        !self.custom_data.disable_note_look
     }
     fn do_spawn_rotation(&self) -> bool {
         true
@@ -547,8 +582,9 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ColorNote<ObjectSource> {
             ArrowType::Arrow
         }
     }
-    fn lane_rotation_degrees(&self) -> f32 {
-        self.lane_rotation_deg
+    fn lane_rotation(&self) -> Quat {
+        self.custom_data.world_rotation *
+        Quat::from_rotation_y(-self.lane_rotation_deg.to_radians())
     }
     fn custom_njs(&self) -> Option<f32> {
         self.custom_data.custom_njs
@@ -569,13 +605,14 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for BombNote<ObjectSource> {
         self.custom_data.world_rotation * self.custom_data.local_rotation
     }
     fn do_gravity(&self) -> bool {
-        true
+        !self.custom_data.disable_note_gravity
     }
     fn do_spawn_rotation(&self) -> bool {
         true
     }
-    fn lane_rotation_degrees(&self) -> f32 {
-        self.lane_rotation_deg
+    fn lane_rotation(&self) -> Quat {
+        self.custom_data.world_rotation *
+        Quat::from_rotation_y(-self.lane_rotation_deg.to_radians())
     }
     fn custom_njs(&self) -> Option<f32> {
         self.custom_data.custom_njs
@@ -611,8 +648,9 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for Obstacle<ObjectSource> {
     fn physical_length(&self) -> f32 {
         self.size.z
     }
-    fn lane_rotation_degrees(&self) -> f32 {
-        self.lane_rotation_deg
+    fn lane_rotation(&self) -> Quat {
+        self.custom_data.world_rotation *
+        Quat::from_rotation_y(-self.lane_rotation_deg.to_radians())
     }
     fn custom_njs(&self) -> Option<f32> {
         self.custom_data.custom_njs
@@ -635,18 +673,6 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for Obstacle<ObjectSource> {
     }
 }
 
-#[derive(Debug)]
-pub struct ChainNoteLink<ObjectSource> {
-    pub grid_pos: Vec2,
-    pub beat: f32,
-    pub orientation: Quat,
-    pub lane_rotation_deg: f32,
-    pub spawn_orientation: Quat,
-    pub color: NoteColor,
-    pub index: u32,
-    pub dissolve: f32,
-    pub _source: PhantomData<ObjectSource>,
-}
 
 impl<ObjectSource: Debug> GameObject<ObjectSource> for ChainNote<ObjectSource> {
     fn beat(&self) -> f32 {
@@ -670,8 +696,9 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ChainNote<ObjectSource> {
     fn do_spawn_rotation(&self) -> bool {
         true
     }
-    fn lane_rotation_degrees(&self) -> f32 {
-        self.head_lane_rotation_deg
+    fn lane_rotation(&self) -> Quat {
+        self.custom_data.world_rotation *
+        Quat::from_rotation_y(-self.head_lane_rotation_deg.to_radians())
     }
     fn custom_njs(&self) -> Option<f32> {
         self.custom_data.custom_njs
@@ -723,6 +750,7 @@ impl<ObjectSource> ChainNote<ObjectSource> {
                 color: self.color,
                 index: self.index * 5 + i as u32 * 2,
                 dissolve: self.dissolve,
+                custom_data: self.custom_data.clone(),
                 _source: PhantomData
             });
         }
@@ -752,8 +780,9 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ChainNoteLink<ObjectSourc
     fn do_spawn_rotation(&self) -> bool {
         true
     }
-    fn lane_rotation_degrees(&self) -> f32 {
-        self.lane_rotation_deg
+    fn lane_rotation(&self) -> Quat {
+        self.custom_data.world_rotation *
+        Quat::from_rotation_y(-self.lane_rotation_deg.to_radians())
     }
     fn editor_hitbox(&self, _bs: Option<f32>) -> HitBox {
         CHAIN_LINK_HITBOX
@@ -771,6 +800,10 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for Arc<ObjectSource> {
 
     fn get_orientation(&self) -> Quat {
         Quat::IDENTITY
+    }
+
+    fn duration(&self) -> f32 {
+        self.tail_beat - self.head_beat
     }
 
 }

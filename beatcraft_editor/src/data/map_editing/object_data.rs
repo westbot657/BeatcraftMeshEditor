@@ -101,7 +101,13 @@ impl Deref for ObstacleCustomData {
 pub struct ChainCustomData {
     #[serde(flatten)]
     pub base: CustomData,
+    
     pub disable_note_gravity: BoolValue,
+    pub disable_note_look: BoolValue,
+    
+    pub spawn_effect: OptionalBoolValue,
+    pub disable_debris: BoolValue,
+    
     pub tail_coordinates: OptVec2Value,
 }
 impl Deref for ChainCustomData {
@@ -309,6 +315,9 @@ impl From<&CustomChainDataV3> for ChainCustomData {
         Self {
             base: (&value.base).into(),
             disable_note_gravity: value.disable_note_gravity.into(),
+            disable_note_look: value.disable_note_look.into(),
+            spawn_effect: value.spawn_effect.into(),
+            disable_debris: value.disable_debris.into(),
             tail_coordinates: value.tail_coordinates.into(),
         }
     }
