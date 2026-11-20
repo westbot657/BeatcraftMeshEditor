@@ -1037,6 +1037,7 @@ impl Renderer {
             gl.detach_shader(p, f);
             gl.delete_shader(v);
             gl.delete_shader(f);
+            tracing::debug!(target: DB_RENDER, "Built vert/frag program {p:?}");
             Ok(p)
         }
     }
@@ -1065,6 +1066,7 @@ impl Renderer {
             gl.delete_shader(v);
             gl.delete_shader(g);
             gl.delete_shader(f);
+            tracing::debug!(target: DB_RENDER, "Built vert/geo/frag program {p:?}");
             Ok(p)
         }
     }
@@ -1590,7 +1592,7 @@ impl Renderer {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_matrix_4_f32_slice(Some(&l), false, &m.to_cols_array());
             } else {
-                tracing::error!(target: DB_RENDER, "mat4 uniform name not found: '{}'", name);
+                tracing::error!(target: DB_RENDER, ?prog, "mat4 uniform name not found: '{}'", name);
             }
         }
     }
@@ -1613,7 +1615,7 @@ impl Renderer {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_3_f32(Some(&l), v.x, v.y, v.z);
             } else {
-                tracing::error!(target: DB_RENDER, "vec3 uniform name not found: '{}'", name)
+                tracing::error!(target: DB_RENDER, ?prog, "vec3 uniform name not found: '{}'", name)
             }
         }
     }
@@ -1628,7 +1630,7 @@ impl Renderer {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_2_f32(Some(&l), v.x, v.y);
             } else {
-                tracing::error!(target: DB_RENDER, "vec2 uniform name not found: '{}'", name)
+                tracing::error!(target: DB_RENDER, ?prog, "vec2 uniform name not found: '{}'", name)
             }
         }
     }
@@ -1643,7 +1645,7 @@ impl Renderer {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_1_f32(Some(&l), v);
             } else {
-                tracing::error!(target: DB_RENDER, "float uniform name not found: '{}'", name)
+                tracing::error!(target: DB_RENDER, ?prog, "float uniform name not found: '{}'", name)
             }
         }
     }
@@ -1658,7 +1660,7 @@ impl Renderer {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_1_i32(Some(&l), v);
             } else {
-                tracing::warn!(target: DB_RENDER, "int uniform name not found: '{}'", name)
+                tracing::warn!(target: DB_RENDER, ?prog, "int uniform name not found: '{}'", name)
             }
         }
     }
@@ -1673,7 +1675,7 @@ impl Renderer {
             if let Some(l) = gl.get_uniform_location(prog, name) {
                 gl.uniform_1_u32(Some(&l), v);
             } else {
-                tracing::warn!(target: DB_RENDER, "uint uniform name not found: '{}'", name)
+                tracing::warn!(target: DB_RENDER, ?prog, "uint uniform name not found: '{}'", name)
             }
         }
     }
@@ -2812,7 +2814,7 @@ impl BloomfogRenderer {
                 );
             } else if pass == PassType::Comp {
                 renderer.set_sampler(gl, shader, "Sampler1", None, 1);
-            } else {
+            } else if matches!(pass, PassType::GaussianH | PassType::GaussianV) {
                 renderer.set_vec2(
                     gl,
                     shader,

@@ -1,10 +1,9 @@
 #![allow(non_snake_case, static_mut_refs)]
 
+use std::cell::RefCell;
 use std::mem::MaybeUninit;
-use std::sync::LazyLock;
 use jni::objects::JClass;
 use jni::refs::Global;
-use parking_lot::RwLock;
 use crate::type_map::TypeMap;
 
 pub mod classes;
@@ -37,12 +36,15 @@ pub struct JavaTypes {
 
 pub static mut TYPES: MaybeUninit<JavaTypes> = MaybeUninit::uninit();
 
-/// Safety:
-/// Passing raw pointers to java may be unsafe (in the modding environment at least),
-/// so as a precaution, all objects are ID'd and
-/// must be looked up, instead of assuming pointers are valid.
-pub static DATA: LazyLock<RwLock<TypeMap>>
-    = LazyLock::new(Default::default);
+thread_local! {
+    /// Safety:
+    /// Passing raw pointers to java may be unsafe (in the modding environment at least),
+    /// so as a precaution, all objects are ID'd and
+    /// must be looked up, instead of assuming pointers are valid.
+    pub static DATA: RefCell<TypeMap> = Default::default();
+}
+// pub static DATA: LazyLock<RwLock<TypeMap>>
+//     = LazyLock::new(Default::default);
 
 
 

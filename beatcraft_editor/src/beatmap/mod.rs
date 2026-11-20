@@ -8,10 +8,7 @@ use crate::editor::{
 use crate::light_mesh::LightMesh;
 use crate::render::{GpuMesh, GridType, InstanceData, MeshDrawCall, Renderer};
 use crate::widgets::ImageCard;
-use crate::{
-    DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, MISSING_EDITOR_ICON, RefDuper, UnsafeMutRef, editor,
-    get_data_folder,
-};
+use crate::{editor, get_data_folder, ContextScrollExt, RefDuper, UnsafeMutRef, DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, MISSING_EDITOR_ICON, BUTTON_ROW_HEIGHT};
 use beatcraft_audiolib::{Audio, AudioError, AudioSystem, NativeOpenAL};
 use beatcraft_editor_proc::hex;
 use chrono::SubsecRound;
@@ -796,7 +793,7 @@ fn note_color_selector<'c>(
 
     let row = ui.horizontal(|ui| {
         let r = ui.add_sized(
-            [w2, 20.],
+            [w2, BUTTON_ROW_HEIGHT],
             egui::Button::new(left_str).selected(*data.note_type == Color::Red),
         );
         hovered |= r.hovered();
@@ -806,7 +803,7 @@ fn note_color_selector<'c>(
         }
 
         let r = ui.add_sized(
-            [w2, 20.],
+            [w2, BUTTON_ROW_HEIGHT],
             egui::Button::new(right_str).selected(*data.note_type == Color::Blue),
         );
         hovered |= r.hovered();
@@ -859,7 +856,7 @@ fn object_color_selector<'c>(
 
     let row = ui.horizontal(|ui| {
         let r = ui.add_sized(
-            [w3, 20.],
+            [w3, BUTTON_ROW_HEIGHT],
             egui::Button::new(default_color_str).selected(*obj.mode == ColorMode::Default),
         );
         hovered |= r.hovered();
@@ -869,7 +866,7 @@ fn object_color_selector<'c>(
         }
 
         let r = ui.add_sized(
-            [w3, 20.],
+            [w3, BUTTON_ROW_HEIGHT],
             egui::Button::new(rgba_str).selected(*obj.mode == ColorMode::Color),
         );
         hovered |= r.hovered();
@@ -881,7 +878,7 @@ fn object_color_selector<'c>(
         let g = ui.add_enabled_ui(false, |ui| {
             let r = ui
                 .add_sized(
-                    [w3, 20.],
+                    [w3, BUTTON_ROW_HEIGHT],
                     egui::Button::new(gradient_str).selected(*obj.mode == ColorMode::Gradient),
                 )
                 .on_disabled_hover_text(gradient_tooltip);
@@ -912,13 +909,13 @@ fn object_color_selector<'c>(
     match *obj.mode {
         ColorMode::Default => {
             let padding = ui.spacing().item_spacing.y;
-            ui.add_space(20. + padding);
+            ui.add_space(BUTTON_ROW_HEIGHT + padding);
         }
         ColorMode::Color => {
             let rgba = obj.color;
             let mut col = egui::Rgba::from_rgba_premultiplied(rgba.x, rgba.y, rgba.z, rgba.w);
             let spacing = ui.spacing().interact_size;
-            ui.spacing_mut().interact_size = egui::Vec2::new(width, 20.);
+            ui.spacing_mut().interact_size = egui::Vec2::new(width, BUTTON_ROW_HEIGHT);
             egui::color_picker::color_edit_button_rgba(ui, &mut col, egui::color_picker::Alpha::OnlyBlend);
             ui.spacing_mut().interact_size = spacing;
             *rgba = Vec4::new(col.r(), col.g(), col.b(), col.a())
@@ -1048,7 +1045,7 @@ impl App {
 
     pub fn draw_beatmap_editor(
         &mut self,
-        ctx: &egui::Context,
+        ui: &mut Ui,
         frame: &mut eframe::Frame,
         _shift: bool,
         _ctrl: bool,
@@ -1056,7 +1053,7 @@ impl App {
     ) {
         let gl = frame.gl().unwrap();
 
-        egui::TopBottomPanel::top("menu_bar_beatmap_editor").show(ctx, |ui| {
+        egui::Panel::top("menu_bar_beatmap_editor").show(ui, |ui| {
             ui.add_space(2.);
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button(self.data.locale.get("file-menu-label").to_string(), |ui| {
@@ -1090,7 +1087,7 @@ impl App {
                     }
                     let mut minecraft_font: bool = ui.memory_mut(|m| {
                         m.data
-                            .get_persisted("use_minecraft_font".into())
+                            .get_persisted(Id::unique("use_minecraft_font"))
                             .unwrap_or(true)
                     });
                     let old = minecraft_font;
@@ -1100,13 +1097,13 @@ impl App {
                     );
                     if old != minecraft_font {
                         if minecraft_font {
-                            setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], ctx);
+                            setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], ui.ctx());
                         } else {
-                            setup_fonts(&[SOURCE_CODE_F, MINECRAFT_F], ctx);
+                            setup_fonts(&[SOURCE_CODE_F, MINECRAFT_F], ui.ctx());
                         }
                         ui.memory_mut(|m| {
                             m.data
-                                .insert_persisted("use_minecraft_font".into(), minecraft_font)
+                                .insert_persisted(Id::unique("use_minecraft_font"), minecraft_font)
                         });
                     }
                 });
@@ -1176,10 +1173,10 @@ impl App {
             });
         });
 
-        egui::TopBottomPanel::bottom("scrub_controls")
-            .exact_height(200.)
+        egui::Panel::bottom("scrub_controls")
+            .exact_size(200.)
             .resizable(false)
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 let s = unsafe { UnsafeMutRef::new(self) };
                 match self.map_editor.map.as_ref() {
                     None => {
@@ -1358,7 +1355,7 @@ impl App {
                             let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
 
                             if resp.hovered() {
-                                let scroll = ctx.input(|i| i.raw_scroll_delta.y);
+                                let scroll = ui.ctx().raw_scroll_axis(false);
                                 if scroll != 0.0 {
                                     if alt {
                                         if let Some(audio) = map.audio.as_ref()
@@ -1459,10 +1456,10 @@ impl App {
 
             });
 
-        egui::SidePanel::left("left_panel")
-            .exact_width(300.)
+        egui::Panel::left("left_panel")
+            .exact_size(300.)
             .resizable(false)
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 match self.map_editor.map.as_ref() {
                     None => {
                         // No map selected
@@ -1673,15 +1670,15 @@ impl App {
                                         vars.insert("y".to_string(), target.y);
                                         vars.insert("z".to_string(), target.z);
                                         ui.add_sized(
-                                            [width, 20.],
+                                            [width, BUTTON_ROW_HEIGHT],
                                             MathDragValue::new(&mut target.x, &mut vars).speed(0.01),
                                         );
                                         ui.add_sized(
-                                            [width, 20.],
+                                            [width, BUTTON_ROW_HEIGHT],
                                             MathDragValue::new(&mut target.y, &mut vars).speed(0.01),
                                         );
                                         ui.add_sized(
-                                            [width, 20.],
+                                            [width, BUTTON_ROW_HEIGHT],
                                             MathDragValue::new(&mut target.z, &mut vars).speed(0.01),
                                         );
                                     });
@@ -1694,26 +1691,26 @@ impl App {
 
             });
 
-        egui::SidePanel::right("right_panel")
-            .exact_width(300.)
+        egui::Panel::right("right_panel")
+            .exact_size(300.)
             .resizable(false)
-            .show(ctx, |_ui| {
+            .show(ui, |_ui| {
                 //
             });
 
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::default()
-                    .fill(ctx.theme().default_visuals().panel_fill)
+                    .fill(ui.ctx().theme().default_visuals().panel_fill)
                     .inner_margin(0.),
             )
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 let rd = RefDuper;
                 let self2 = unsafe { rd.detach_mut_ref(self) };
                 match self2.map_editor.map.as_mut() {
                     None => {
                         // No map selected
-                        self.draw_map_selection_screen(self2, ctx, ui);
+                        self.draw_map_selection_screen(self2, ui);
                     }
                     Some(map) => match map.controller.as_ref() {
                         None => {
@@ -1729,7 +1726,7 @@ impl App {
                             );
                         }
                         Some((controller, _)) => {
-                            self.draw_beatmap_scene(ctx, ui, gl, map, controller);
+                            self.draw_beatmap_scene(ui, gl, map, controller);
                         }
                     },
                 }
@@ -1739,7 +1736,6 @@ impl App {
     pub fn draw_map_selection_screen(
         &mut self,
         self2: &mut Self,
-        ctx: &egui::Context,
         ui: &mut egui::Ui,
     ) {
         ui.allocate_ui_with_layout(
@@ -1772,7 +1768,7 @@ impl App {
 
         let mut to_open = None;
         let mut to_remove = None;
-        let scroll = ctx.input(|i| i.smooth_scroll_delta);
+        let scroll = ui.ctx().input(|i| i.smooth_scroll_delta);
         egui::ScrollArea::horizontal()
             .max_width(ui.available_width())
             .id_salt("recent beatmap panel")
@@ -1852,7 +1848,6 @@ impl App {
 
     fn draw_beatmap_scene(
         &mut self,
-        ctx: &egui::Context,
         ui: &mut egui::Ui,
         gl: &glow::Context,
         map: &BeatmapProject,
@@ -1864,7 +1859,7 @@ impl App {
         let h = rect.height();
 
         let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
-        self.handle_3d_input(&resp, ctx, gl);
+        self.handle_3d_input(&resp, ui.ctx(), gl);
         let (click, shift) = ui.input(|i| (i.pointer.primary_clicked(), i.modifiers.shift));
         let raw_mouse = ui.input(|i| i.pointer.latest_pos());
         let mouse_pos = raw_mouse.map(|p| Vec2::new(p.x - rect.min.x, p.y - rect.min.y));
@@ -2039,7 +2034,7 @@ fn draw_map_diffs(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
                             };
                             if ui
                                 .add_sized(
-                                    [180., 25.],
+                                    [180., BUTTON_ROW_HEIGHT],
                                     egui::Button::new(diff.difficulty.display_name()).selected(sel),
                                 )
                                 .clicked()

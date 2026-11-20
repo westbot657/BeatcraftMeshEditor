@@ -7,6 +7,7 @@ use crate::ui_elements::*;
 use crate::widgets::TextInput;
 use crate::{
     App, D_ARROW, R_ARROW, RefDuper, SMALL_X, UnsafeMutRef, close_environment, data, editor,
+    BUTTON_ROW_HEIGHT
 };
 use bs_mapping_data::easing::Easing;
 use eframe::glow;
@@ -21,21 +22,25 @@ use std::sync::mpsc;
 
 pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let mut to_remove = None;
-    let w = ui.available_width();
-    let w2 = (w - ui.spacing().item_spacing.x) / 2.0;
-    let w3 = (w - ui.spacing().item_spacing.x * 2.0) / 3.0;
+    let spacing = ui.spacing().item_spacing.x;
+    let w = ui.available_width() - spacing;
+    let w2 = (w - spacing * 1.) / 2.0;
+    let w3 = (w - spacing * 2.) / 3.0;
     let rd = RefDuper;
     let s2 = unsafe { rd.detach_mut_ref(s) };
     let s3 = unsafe { rd.detach_mut_ref(s) };
     let s4 = unsafe { rd.detach_mut_ref(s) };
 
-    ui.horizontal(|ui| {
+    ui.allocate_ui_with_layout(
+        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+        egui::Layout::left_to_right(egui::Align::Min),
+        |ui| {
         let icon = if s2.state.ui.meshes_collapse {
             R_ARROW
         } else {
             D_ARROW
         };
-        if ui.small_button(icon).clicked() {
+        if ui.button(icon).clicked() {
             s2.state.ui.meshes_collapse = !s2.state.ui.meshes_collapse;
         }
         ui.label(s.data.locale.get("meshes"));
@@ -50,10 +55,9 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         {
             ui.add_space(2.0);
             let selected = s.state.ui.view_mesh == Some(id.clone());
-            let available = ui.available_size_before_wrap();
             if ui
                 .add_sized(
-                    egui::Vec2::new(available.x, 20.0),
+                    egui::Vec2::new(ui.available_width() - spacing, BUTTON_ROW_HEIGHT),
                     egui::Button::selectable(selected, id.as_str()),
                 )
                 .clicked()
@@ -62,22 +66,22 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             };
             ui.add_space(2.0);
 
-            if ui
-                .horizontal(|ui| {
+            if ui.allocate_ui_with_layout(
+                [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.add_space(spacing);
+                    if ui.button(s.data.locale.get("button-close")).clicked() {
+                        to_remove = Some(id.clone());
+                    }
+                    if ui.button(s.data.locale.get("button-edit")).clicked() {
+                        s.editor.mesh = Some(id.clone());
+                        s.mode = editor::EditorMode::Assembly;
+                        s2.rebuild_meshes(gl);
+                        return true;
+                    }
                     ui.checkbox(&mut mesh.visible, "");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(s.data.locale.get("button-close")).clicked() {
-                            to_remove = Some(id.clone());
-                        }
-                        if ui.button(s.data.locale.get("button-edit")).clicked() {
-                            s.editor.mesh = Some(id.clone());
-                            s.mode = editor::EditorMode::Assembly;
-                            s2.rebuild_meshes(gl);
-                            return true;
-                        }
-                        false
-                    })
-                    .inner
+                    false
                 })
                 .inner
             {
@@ -106,7 +110,7 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         if ui
             .add_sized(
-                [w, 20.],
+                [ui.available_width() - spacing, BUTTON_ROW_HEIGHT],
                 egui::Button::new(s.data.locale.get("button-create-mesh")),
             )
             .clicked()
@@ -155,33 +159,33 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         Some(spect) => {
             let spect2 = unsafe { rd.detach_ref(spect) };
 
-            ui.horizontal(|ui| {
-                ui.allocate_ui_with_layout(
-                    [w, 20.].into(),
-                    Layout::right_to_left(egui::Align::Min),
-                    |ui| {
-                        if ui.small_button(SMALL_X).clicked() {
-                            remove_spect = true;
-                        }
-                        ui.allocate_ui_with_layout(
-                            [w - 25., 20.].into(),
-                            Layout::left_to_right(egui::Align::Min),
-                            |ui| {
-                                let icon = if s2.state.ui.spectrogram_collapse {
-                                    R_ARROW
-                                } else {
-                                    D_ARROW
-                                };
-                                if ui.small_button(icon).clicked() {
-                                    s2.state.ui.spectrogram_collapse =
-                                        !s2.state.ui.spectrogram_collapse;
-                                }
-                                ui.label(s.data.locale.get("spectrogram"));
-                            },
-                        );
-                    },
-                );
-            });
+            ui.allocate_ui_with_layout(
+                [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                Layout::left_to_right(egui::Align::Min),
+                |ui| {
+                    let icon = if s2.state.ui.spectrogram_collapse {
+                        R_ARROW
+                    } else {
+                        D_ARROW
+                    };
+                    if ui.button(icon).clicked() {
+                        s2.state.ui.spectrogram_collapse =
+                            !s2.state.ui.spectrogram_collapse;
+                    }
+                    ui.label(s.data.locale.get("spectrogram"));
+                    ui.allocate_ui_with_layout(
+                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                        Layout::right_to_left(egui::Align::Min),
+                        |ui| {
+                            ui.add_space(spacing);
+                            if ui.button(SMALL_X).clicked() {
+                                remove_spect = true;
+                            }
+                        },
+                    );
+                },
+            );
+
 
             if !s2.state.ui.spectrogram_collapse {
                 ui.label(s.data.locale.get("position"));
@@ -212,111 +216,120 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     |s| s3.add_history(editor::HistoryEntry::Spectrogram(s)),
                     || s4.rebuild_meshes(gl),
                 );
-                ui.horizontal(|ui| {
-                    ui.allocate_ui_with_layout(
-                        [w2, 45.].into(),
-                        Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            ui.label(s.data.locale.get("item-count"));
-                            let resp = ui.add_sized(
-                                [w2, 20.],
-                                egui::DragValue::new(&mut spect.count)
-                                    .speed(0.25)
-                                    .range(1..=500),
-                            );
-                            trigger_history(
-                                ui,
-                                &[resp],
-                                || spect2.clone(),
-                                |x| s2.add_history(editor::HistoryEntry::Spectrogram(Some(x))),
-                                || s3.rebuild_meshes(gl),
-                            );
-                        },
-                    );
-                    ui.allocate_ui_with_layout(
-                        [w2, 45.].into(),
-                        Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            ui.label(s.data.locale.get("visual-style"));
-                            let old = spect.style;
-                            ui.allocate_ui_with_layout(
-                                [w2, 20.].into(),
-                                Layout::left_to_right(egui::Align::Max),
-                                |ui| {
-                                    egui::ComboBox::from_id_salt("spect-style")
-                                        .selected_text(spect.style.name())
-                                        .width(w2)
-                                        .show_ui(ui, |ui| {
-                                            ui.selectable_value(
-                                                &mut spect.style,
-                                                data::mesh::TowerStyle::Cuboid,
-                                                "cuboid",
-                                            );
-                                        })
-                                },
-                            );
-                            if old != spect.style {
-                                let mut old_s = spect.clone();
-                                old_s.style = old;
-                                s2.add_history(editor::HistoryEntry::Spectrogram(Some(old_s)));
-                                s2.rebuild_meshes(gl);
-                            }
-                        },
-                    );
-                });
-                ui.horizontal(|ui| {
-                    if ui
-                        .allocate_ui_with_layout(
-                            [w2, 45.].into(),
+                ui.allocate_ui_with_layout(
+                    [ui.available_width(), BUTTON_ROW_HEIGHT * 2.].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
+                        ui.allocate_ui_with_layout(
+                            [w2, BUTTON_ROW_HEIGHT * 2.].into(),
                             Layout::top_down(egui::Align::Min),
                             |ui| {
-                                ui.label(s.data.locale.get("tower-half-split"));
-                                ui.add_sized(
-                                    [w2, 20.],
-                                    egui::Button::new(if spect.half_split {
-                                        s.data.locale.get("enabled")
-                                    } else {
-                                        s.data.locale.get("disabled")
-                                    }),
-                                )
+                                ui.label(s.data.locale.get("item-count"));
+                                let resp = ui.add_sized(
+                                    [w2, BUTTON_ROW_HEIGHT],
+                                    egui::DragValue::new(&mut spect.count)
+                                        .speed(0.25)
+                                        .range(1..=500),
+                                );
+                                trigger_history(
+                                    ui,
+                                    &[resp],
+                                    || spect2.clone(),
+                                    |x| s2.add_history(editor::HistoryEntry::Spectrogram(Some(x))),
+                                    || s3.rebuild_meshes(gl),
+                                );
                             },
-                        )
-                        .inner
-                        .clicked()
-                    {
-                        s2.add_history(editor::HistoryEntry::Spectrogram(Some(spect.clone())));
-                        spect.half_split = !spect.half_split;
-                        s2.rebuild_meshes(gl);
-                    }
-                    ui.allocate_ui_with_layout(
-                        [w2, 45.].into(),
-                        Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            ui.label(s.data.locale.get("tower-height-modifier"));
-                            let resp = ui.add_sized(
-                                [w2, 20.],
-                                egui::DragValue::new(&mut spect.level_modifier)
-                                    .speed(0.01)
-                                    .range(0..=5),
-                            );
-                            trigger_history(
-                                ui,
-                                &[resp],
-                                || spect2.clone(),
-                                |x| s2.add_history(editor::HistoryEntry::Spectrogram(Some(x))),
-                                || s3.rebuild_meshes(gl),
-                            );
-                        },
+                        );
+                        ui.allocate_ui_with_layout(
+                            [w2, BUTTON_ROW_HEIGHT * 2.].into(),
+                            Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                ui.label(s.data.locale.get("visual-style"));
+                                let old = spect.style;
+                                ui.allocate_ui_with_layout(
+                                    [w2, BUTTON_ROW_HEIGHT].into(),
+                                    Layout::left_to_right(egui::Align::Max),
+                                    |ui| {
+                                        egui::ComboBox::from_id_salt("spect-style")
+                                            .selected_text(spect.style.name())
+                                            .width(w2)
+                                            .show_ui(ui, |ui| {
+                                                ui.selectable_value(
+                                                    &mut spect.style,
+                                                    data::mesh::TowerStyle::Cuboid,
+                                                    "cuboid",
+                                                );
+                                            })
+                                    },
+                                );
+                                if old != spect.style {
+                                    let mut old_s = spect.clone();
+                                    old_s.style = old;
+                                    s2.add_history(editor::HistoryEntry::Spectrogram(Some(old_s)));
+                                    s2.rebuild_meshes(gl);
+                                }
+                            },
                     );
                 });
-                ui.horizontal(|ui| {
+                ui.allocate_ui_with_layout(
+                    [ui.available_width() - spacing, BUTTON_ROW_HEIGHT * 2.].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
+                        if ui
+                            .allocate_ui_with_layout(
+                                [w2, BUTTON_ROW_HEIGHT * 2.].into(),
+                                Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    ui.label(s.data.locale.get("tower-half-split"));
+                                    ui.add_sized(
+                                        [w2, BUTTON_ROW_HEIGHT],
+                                        egui::Button::new(if spect.half_split {
+                                            s.data.locale.get("enabled")
+                                        } else {
+                                            s.data.locale.get("disabled")
+                                        }),
+                                    )
+                                },
+                            )
+                            .inner
+                            .clicked()
+                        {
+                            s2.add_history(editor::HistoryEntry::Spectrogram(Some(spect.clone())));
+                            spect.half_split = !spect.half_split;
+                            s2.rebuild_meshes(gl);
+                        }
+                        ui.allocate_ui_with_layout(
+                            [w2, BUTTON_ROW_HEIGHT * 2.].into(),
+                            Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                ui.label(s.data.locale.get("tower-height-modifier"));
+                                let resp = ui.add_sized(
+                                    [w2, BUTTON_ROW_HEIGHT],
+                                    egui::DragValue::new(&mut spect.level_modifier)
+                                        .speed(0.01)
+                                        .range(0..=5),
+                                );
+                                trigger_history(
+                                    ui,
+                                    &[resp],
+                                    || spect2.clone(),
+                                    |x| s2.add_history(editor::HistoryEntry::Spectrogram(Some(x))),
+                                    || s3.rebuild_meshes(gl),
+                                );
+                            },
+                        );
+                });
+                ui.allocate_ui_with_layout(
+                    [ui.available_width() - spacing, BUTTON_ROW_HEIGHT * 2.].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
                     ui.allocate_ui_with_layout(
-                        [w3, 45.].into(),
+                        [w3, BUTTON_ROW_HEIGHT * 2.].into(),
                         Layout::top_down(egui::Align::Min),
                         |ui| {
                             ui.label(s.data.locale.get("tower-height-position"));
                             let resp = ui.add_sized(
-                                [w3 + 5., 20.],
+                                [w3 + 5., BUTTON_ROW_HEIGHT],
                                 egui::DragValue::new(&mut spect.base_height)
                                     .speed(1.)
                                     .range(0..=800),
@@ -331,13 +344,13 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         },
                     );
                     ui.allocate_ui_with_layout(
-                        [w2, 45.].into(),
+                        [w2, BUTTON_ROW_HEIGHT * 2.].into(),
                         Layout::top_down(egui::Align::Min),
                         |ui| {
                             ui.label(s.data.locale.get("easing"));
                             let old = spect.easing;
                             ui.allocate_ui_with_layout(
-                                [w - w3 - 12.5, 22.].into(),
+                                [w - w3 - 12.5, BUTTON_ROW_HEIGHT].into(),
                                 Layout::left_to_right(egui::Align::Max),
                                 |ui| {
                                     egui::ComboBox::from_id_salt("spectrogram-easing")
@@ -370,24 +383,32 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 match spect.mirror.as_mut() {
                     Some(v4) => {
                         remove_plane = ui
-                            .with_layout(Layout::right_to_left(egui::Align::Min), |ui| {
-                                let clicked = ui.small_button(SMALL_X).clicked();
-                                ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
+                            .allocate_ui_with_layout(
+                                [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                                Layout::left_to_right(egui::Align::Min),
+                                |ui| {
                                     ui.label(s.data.locale.get("mirror-geometry-plane"));
-                                });
-                                clicked
+                                    ui.allocate_ui_with_layout(
+                                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                                        Layout::right_to_left(egui::Align::Min),
+                                        |ui| {
+                                            ui.add_space(spacing);
+                                            ui.button(SMALL_X).clicked()
+                                    }).inner
                             })
                             .inner;
-                        let (a, b) = ui
-                            .horizontal(|ui| {
+                        let (a, b) = ui.allocate_ui_with_layout(
+                            [ui.available_width() - spacing, BUTTON_ROW_HEIGHT * 2.].into(),
+                            egui::Layout::left_to_right(egui::Align::Min),
+                            |ui| {
                                 let a = ui
                                     .allocate_ui_with_layout(
-                                        [w2, 45.].into(),
+                                        [w2, BUTTON_ROW_HEIGHT * 2.].into(),
                                         Layout::top_down(egui::Align::Min),
                                         |ui| {
                                             ui.label("X");
                                             ui.add_sized(
-                                                [w2, 20.],
+                                                [w2, BUTTON_ROW_HEIGHT],
                                                 egui::DragValue::new(&mut v4.x)
                                                     .speed(0.001)
                                                     .range(-1..=1),
@@ -397,12 +418,12 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                     .inner;
                                 let b = ui
                                     .allocate_ui_with_layout(
-                                        [w2, 45.].into(),
+                                        [w2, BUTTON_ROW_HEIGHT * 2.].into(),
                                         Layout::top_down(egui::Align::Min),
                                         |ui| {
                                             ui.label("Y");
                                             ui.add_sized(
-                                                [w2, 20.],
+                                                [w2, BUTTON_ROW_HEIGHT],
                                                 egui::DragValue::new(&mut v4.y)
                                                     .speed(0.001)
                                                     .range(-1..=1),
@@ -413,16 +434,18 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 (a, b)
                             })
                             .inner;
-                        let (c, d) = ui
-                            .horizontal(|ui| {
+                        let (c, d) = ui.allocate_ui_with_layout(
+                            [ui.available_width() - spacing, BUTTON_ROW_HEIGHT * 2.].into(),
+                            egui::Layout::left_to_right(egui::Align::Min),
+                            |ui| {
                                 let c = ui
                                     .allocate_ui_with_layout(
-                                        [w2, 45.].into(),
+                                        [w2, BUTTON_ROW_HEIGHT * 2.].into(),
                                         Layout::top_down(egui::Align::Min),
                                         |ui| {
                                             ui.label("Z");
                                             ui.add_sized(
-                                                [w2, 20.],
+                                                [w2, BUTTON_ROW_HEIGHT],
                                                 egui::DragValue::new(&mut v4.z)
                                                     .speed(0.001)
                                                     .range(-1..=1),
@@ -432,12 +455,12 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                     .inner;
                                 let d = ui
                                     .allocate_ui_with_layout(
-                                        [w2, 45.].into(),
+                                        [w2, BUTTON_ROW_HEIGHT * 2.].into(),
                                         Layout::top_down(egui::Align::Min),
                                         |ui| {
                                             ui.label(s.data.locale.get("offset"));
                                             ui.add_sized(
-                                                [w2, 20.],
+                                                [w2, BUTTON_ROW_HEIGHT],
                                                 egui::DragValue::new(&mut v4.w)
                                                     .speed(0.001)
                                                     .range(-1..=1),
@@ -459,7 +482,7 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                         if ui
                             .add_sized(
-                                [w, 20.],
+                                [ui.available_width() - spacing, BUTTON_ROW_HEIGHT],
                                 egui::Button::new(s.data.locale.get("normalize-vector-button")),
                             )
                             .clicked()
@@ -472,7 +495,7 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     None => {
                         add_plane = ui
                             .add_sized(
-                                [w, 20.],
+                                [ui.available_width(), BUTTON_ROW_HEIGHT],
                                 egui::Button::new(s.data.locale.get("add-mirror-plane")),
                             )
                             .clicked();
@@ -493,7 +516,7 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         None => {
             if ui
                 .add_sized(
-                    [w, 20.],
+                    [ui.available_width(), BUTTON_ROW_HEIGHT],
                     egui::Button::new(s.data.locale.get("add-spectrogram")),
                 )
                 .clicked()
@@ -513,74 +536,85 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let mut remove_mirror = false;
     match s.view.mirror_id.as_mut() {
         Some(id) => {
-            ui.horizontal(|ui| {
-                ui.allocate_ui_with_layout(
-                    [w, 20.].into(),
-                    Layout::right_to_left(egui::Align::Min),
-                    |ui| {
-                        if ui
-                            .add_sized(
-                                [w2, 20.],
-                                egui::Button::new(s.data.locale.get("button-edit"))
-                                    .selected(s2.state.ui.show_mirror_window),
-                            )
-                            .clicked()
-                        {
-                            s2.state.ui.show_mirror_window = !s2.state.ui.show_mirror_window;
-                        }
-                        ui.allocate_ui_with_layout(
-                            [w2, 20.].into(),
-                            Layout::left_to_right(egui::Align::Min),
-                            |ui| {
-                                ui.label(s.data.locale.get("mirror"));
-                            },
-                        );
-                    },
-                );
-            });
-            ui.horizontal(|ui| {
-                ui.add_sized([w - 50., 20.], egui::TextEdit::singleline(id));
-                if ui
-                    .small_button(if s2.view.mirror_path.is_some() {
-                        "R"
-                    } else {
-                        "?"
-                    })
-                    .clicked()
-                {
-                    let (sx, rx) = mpsc::channel();
-                    let title = s.data.locale.get("open-mirror-file").to_string();
-                    std::thread::spawn(move || {
-                        if let Some(path) = rfd::FileDialog::new()
-                            .set_title(title)
-                            .add_filter("json", &["json"])
-                            .pick_file()
-                        {
-                            let _ = sx.send(path);
-                        }
-                    });
-                    s2.add_routine(Box::new(move |s, gl| match rx.try_recv() {
-                        Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
-                        Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
-                        Ok(src) => {
-                            if let Err(e) = s.load_mirror(src.as_path(), gl) {
-                                let st = s.data.locale.get("failed-to-load-mirror").to_string();
-                                s.set_status(None, st, 2.);
-                                eprintln!("Failed to load mirror geometry: {e}");
-                            } else {
-                                s.view.mirror_path = Some(src);
-                                s.rebuild_meshes(gl);
+            ui.allocate_ui_with_layout(
+                [ui.available_width() - spacing, BUTTON_ROW_HEIGHT * 2.].into(),
+                egui::Layout::left_to_right(egui::Align::Min),
+                |ui| {
+                    ui.label(s.data.locale.get("mirror"));
+                    ui.allocate_ui_with_layout(
+                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                        Layout::right_to_left(egui::Align::Min),
+                        |ui| {
+                            if ui
+                                .add_sized(
+                                    [w2, BUTTON_ROW_HEIGHT],
+                                    egui::Button::new(s.data.locale.get("button-edit"))
+                                        .selected(s2.state.ui.show_mirror_window),
+                                )
+                                .clicked()
+                            {
+                                s2.state.ui.show_mirror_window = !s2.state.ui.show_mirror_window;
                             }
-                            RoutineAction::Remove
-                        }
-                    }));
-                }
-                remove_mirror = ui.small_button(SMALL_X).clicked();
+                        },
+                    );
             });
+            ui.allocate_ui_with_layout(
+                [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                egui::Layout::left_to_right(egui::Align::Min),
+                |ui| {
+                    ui.add_sized([ui.available_width() - 72., BUTTON_ROW_HEIGHT], egui::TextEdit::singleline(id));
+                    ui.allocate_ui_with_layout(
+                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                        egui::Layout::right_to_left(egui::Align::Min),
+                        |ui| {
+                            ui.add_space(spacing);
+                            remove_mirror = ui.button(SMALL_X).clicked();
+                            if ui
+                                .button(if s2.view.mirror_path.is_some() {
+                                    "R"
+                                } else {
+                                    "?"
+                                })
+                                .clicked()
+                            {
+                                let (sx, rx) = mpsc::channel();
+                                let title = s.data.locale.get("open-mirror-file").to_string();
+                                std::thread::spawn(move || {
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .set_title(title)
+                                        .add_filter("json", &["json"])
+                                        .pick_file()
+                                    {
+                                        let _ = sx.send(path);
+                                    }
+                                });
+                                s2.add_routine(
+                                    Box::new(move |s, gl| match rx.try_recv() {
+                                        Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                                        Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+                                        Ok(src) => {
+                                            if let Err(e) = s.load_mirror(src.as_path(), gl) {
+                                                let st = s.data.locale.get("failed-to-load-mirror").to_string();
+                                                s.set_status(None, st, 2.);
+                                                eprintln!("Failed to load mirror geometry: {e}");
+                                            } else {
+                                                s.view.mirror_path = Some(src);
+                                                s.rebuild_meshes(gl);
+                                            }
+                                            RoutineAction::Remove
+                                        }
+                                    })
+                                );
+                            }
+                        }
+                    );
+
+
+                });
         }
         None => {
             if ui
-                .add_sized([w, 20.], egui::Button::new(s.data.locale.get("add-mirror")))
+                .add_sized([ui.available_width(), BUTTON_ROW_HEIGHT], egui::Button::new(s.data.locale.get("add-mirror")))
                 .clicked()
             {
                 s.add_history(editor::HistoryEntry::Mirror(
@@ -611,35 +645,53 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let mut remove_heights = false;
     match s.view.fog_heights.as_mut() {
         Some(heights) => {
-            ui.label(s.data.locale.get("fog-heights"));
-            ui.horizontal(|ui| {
-                let [low, high] = *heights;
-                let r0 = ui.add_sized(
-                    [w2 - 12.5, 20.],
-                    egui::DragValue::new(&mut heights[0])
-                        .range(-500f32..=high)
-                        .speed(1.),
-                );
-                let r1 = ui.add_sized(
-                    [w2 - 12.5, 20.],
-                    egui::DragValue::new(&mut heights[1])
-                        .range(low..=500f32)
-                        .speed(1.),
-                );
-                trigger_history(
-                    ui,
-                    &[r0, r1],
-                    || s2.view.fog_heights,
-                    |x| s3.add_history(editor::HistoryEntry::FogHeights(x)),
-                    || (), // Intentional no-op
-                );
-                remove_heights = ui.small_button(SMALL_X).clicked();
-            });
+            ui.allocate_ui_with_layout(
+                [ui.available_width(), BUTTON_ROW_HEIGHT * 2.].into(),
+                egui::Layout::left_to_right(egui::Align::Min),
+                |ui| {
+                    ui.label(s.data.locale.get("fog-heights"));
+                    ui.allocate_ui_with_layout(
+                        [ui.available_width(), BUTTON_ROW_HEIGHT * 2.].into(),
+                        egui::Layout::right_to_left(egui::Align::Min),
+                        |ui| {
+                            ui.add_space(spacing);
+                            remove_heights = ui.button(SMALL_X).clicked();
+                        }
+                    );
+                }
+            );
+
+            ui.allocate_ui_with_layout(
+                [ui.available_width(), BUTTON_ROW_HEIGHT * 2.].into(),
+                egui::Layout::left_to_right(egui::Align::Min),
+                |ui| {
+                    let [low, high] = *heights;
+                    let r0 = ui.add_sized(
+                        [w2, BUTTON_ROW_HEIGHT],
+                        egui::DragValue::new(&mut heights[0])
+                            .range(-500f32..=high)
+                            .speed(1.),
+                    );
+                    let r1 = ui.add_sized(
+                        [w2, BUTTON_ROW_HEIGHT],
+                        egui::DragValue::new(&mut heights[1])
+                            .range(low..=500f32)
+                            .speed(1.),
+                    );
+                    trigger_history(
+                        ui,
+                        &[r0, r1],
+                        || s2.view.fog_heights,
+                        |x| s3.add_history(editor::HistoryEntry::FogHeights(x)),
+                        || (), // Intentional no-op
+                    );
+                }
+            );
         }
         None => {
             if ui
                 .add_sized(
-                    [w, 20.],
+                    [w, BUTTON_ROW_HEIGHT],
                     egui::Button::new(s.data.locale.get("add-fog-heights")),
                 )
                 .clicked()
@@ -659,13 +711,14 @@ pub fn draw_view_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     if s.view.session.is_some()
         && ui
             .add_sized(
-                [w, 20.],
+                [w, BUTTON_ROW_HEIGHT],
                 egui::Button::new(s.data.locale.get("close-environment")),
             )
             .clicked()
     {
         close_environment(s, gl);
     }
+    ui.add_space(5.);
 }
 
 pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
@@ -684,7 +737,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             "rename-asset",
             &[(Cow::Borrowed("name"), FluentValue::String(sel.into()))].into(),
         );
-        ui.add_sized([w, 20.], TextInput::new(&rename, &mut renamed));
+        ui.add_sized([w, BUTTON_ROW_HEIGHT], TextInput::new(&rename, &mut renamed));
         if let Some(new_name) = renamed {
             let mut meshes = std::mem::take(&mut s2.view.meshes);
             for (id, _) in meshes.iter_mut2() {
@@ -811,7 +864,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                 ui.horizontal(|ui| {
                     ui.allocate_ui_with_layout(
-                        egui::Vec2::new(w3, 20.0),
+                        egui::Vec2::new(w3, BUTTON_ROW_HEIGHT),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             ui.add(
@@ -880,15 +933,15 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 ui.label(s.data.locale.get("id-label"));
                 ui.horizontal(|ui| {
                     let layout = Layout::left_to_right(egui::Align::Min);
-                    ui.allocate_ui_with_layout([w2, 20.].into(), layout, |ui| {
+                    ui.allocate_ui_with_layout([w2, BUTTON_ROW_HEIGHT].into(), layout, |ui| {
                         ui.set_width(w2);
                         ui.label("ID group")
                     });
-                    ui.allocate_ui_with_layout([w2 / 2. - 15., 20.].into(), layout, |ui| {
+                    ui.allocate_ui_with_layout([w2 / 2. - 15., BUTTON_ROW_HEIGHT].into(), layout, |ui| {
                         ui.set_width(w2 / 2. - 15.);
                         ui.label("ID")
                     });
-                    ui.allocate_ui_with_layout([w2 / 2. - 15., 20.].into(), layout, |ui| {
+                    ui.allocate_ui_with_layout([w2 / 2. - 15., BUTTON_ROW_HEIGHT].into(), layout, |ui| {
                         ui.set_width(w2 / 2. - 15.);
                         ui.label("Step")
                     });
@@ -927,7 +980,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 }
                                 let mut id2 = *id;
                                 let resp = ui.add_sized(
-                                    [(w2 / 2.) - 15., 20.],
+                                    [(w2 / 2.) - 15., BUTTON_ROW_HEIGHT],
                                     egui::DragValue::new(&mut id2).speed(0.25).range(1..=500),
                                 );
 
@@ -935,7 +988,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                     Some(step) if placement.count > 1 => {
                                         let mut step2 = *step;
                                         let resp = ui.add_sized(
-                                            [w2 / 2. - 15., 20.],
+                                            [w2 / 2. - 15., BUTTON_ROW_HEIGHT],
                                             egui::DragValue::new(&mut step2)
                                                 .speed(0.25)
                                                 .range(-500..=500),
@@ -957,7 +1010,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                         *step = step2;
                                     }
                                     _ => {
-                                        ui.add_sized([w2 / 2. - 15., 20.], egui::Label::new("--"));
+                                        ui.add_sized([w2 / 2. - 15., BUTTON_ROW_HEIGHT], egui::Label::new("--"));
                                     }
                                 }
                                 trigger_history(
@@ -976,18 +1029,18 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                 );
                                 *id = id2;
                                 if ids_len - 1 == idx {
-                                    pop_entry = ui.small_button(SMALL_X).clicked();
+                                    pop_entry = ui.button(SMALL_X).clicked();
                                 }
                             });
                         }
                         (true, None) => {
                             add_entry = ui
-                                .add_sized([w, 20.], egui::Button::new(s.data.locale.get("add-id")))
+                                .add_sized([w, BUTTON_ROW_HEIGHT], egui::Button::new(s.data.locale.get("add-id")))
                                 .clicked();
                             first_none = false;
                         }
                         (false, None) => {
-                            ui.add_sized([w, 20.], egui::Label::new("---"));
+                            ui.add_sized([w, BUTTON_ROW_HEIGHT], egui::Label::new("---"));
                         }
                     }
                 }
@@ -1033,14 +1086,14 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         }
 
                         ui.allocate_ui_with_layout(
-                            [w, 20.].into(),
+                            [w, BUTTON_ROW_HEIGHT].into(),
                             Layout::right_to_left(egui::Align::Min),
                             |ui| {
-                                if axis.is_some() && ui.small_button(SMALL_X).clicked() {
+                                if axis.is_some() && ui.button(SMALL_X).clicked() {
                                     *axis = None;
                                 }
                                 ui.allocate_ui_with_layout(
-                                    [w - if axis.is_some() { 25. } else { 0. }, 20.].into(),
+                                    [w - if axis.is_some() { 25. } else { 0. }, BUTTON_ROW_HEIGHT].into(),
                                     Layout::left_to_right(egui::Align::Min),
                                     |ui| ui.label(s.data.locale.get("spin-axis")),
                                 );
@@ -1052,7 +1105,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             None => {
                                 set_axis = ui
                                     .add_sized(
-                                        [w, 20.],
+                                        [w, BUTTON_ROW_HEIGHT],
                                         egui::Button::new(s.data.locale.get("set-spin-axis")),
                                     )
                                     .clicked();
@@ -1083,7 +1136,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                         if ui
                             .add_sized(
-                                [w, 20.],
+                                [w, BUTTON_ROW_HEIGHT],
                                 egui::Button::new(s.data.locale.get("remove-action")),
                             )
                             .clicked()
@@ -1125,14 +1178,14 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         }
 
                         ui.allocate_ui_with_layout(
-                            [w, 20.].into(),
+                            [w, BUTTON_ROW_HEIGHT].into(),
                             Layout::right_to_left(egui::Align::Min),
                             |ui| {
-                                if start.is_some() && ui.small_button(SMALL_X).clicked() {
+                                if start.is_some() && ui.button(SMALL_X).clicked() {
                                     *start = None;
                                 }
                                 ui.allocate_ui_with_layout(
-                                    [w - if start.is_some() { 25. } else { 0. }, 20.].into(),
+                                    [w - if start.is_some() { 25. } else { 0. }, BUTTON_ROW_HEIGHT].into(),
                                     Layout::left_to_right(egui::Align::Min),
                                     |ui| ui.label(s.data.locale.get("default-positions")),
                                 );
@@ -1149,7 +1202,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                                 ui.label(s.data.locale.get("inner-ring-angle"));
                                                 let mut ia = *in_angle;
                                                 let a = ui.add_sized(
-                                                    [w2, 20.],
+                                                    [w2, BUTTON_ROW_HEIGHT],
                                                     egui::DragValue::new(&mut ia)
                                                         .speed(1.)
                                                         .range(-360..=360),
@@ -1158,7 +1211,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                                 ui.label(s.data.locale.get("inner-ring-offset"));
                                                 let mut io = *in_offset;
                                                 let b = ui.add_sized(
-                                                    [w2, 20.],
+                                                    [w2, BUTTON_ROW_HEIGHT],
                                                     egui::DragValue::new(&mut io)
                                                         .speed(1.)
                                                         .range(-360..=360),
@@ -1172,7 +1225,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                                 ui.label(s.data.locale.get("outer-ring-angle"));
                                                 let mut ia = *out_angle;
                                                 let a = ui.add_sized(
-                                                    [w2, 20.],
+                                                    [w2, BUTTON_ROW_HEIGHT],
                                                     egui::DragValue::new(&mut ia)
                                                         .speed(1.)
                                                         .range(-360..=360),
@@ -1181,7 +1234,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                                 ui.label(s.data.locale.get("outer-ring-offset"));
                                                 let mut io = *out_offset;
                                                 let b = ui.add_sized(
-                                                    [w2, 20.],
+                                                    [w2, BUTTON_ROW_HEIGHT],
                                                     egui::DragValue::new(&mut io)
                                                         .speed(1.)
                                                         .range(-360..=360),
@@ -1215,7 +1268,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             None => {
                                 add_start = ui
                                     .add_sized(
-                                        [w, 20.],
+                                        [w, BUTTON_ROW_HEIGHT],
                                         egui::Button::new(
                                             s.data.locale.get("add-default-positions"),
                                         ),
@@ -1228,7 +1281,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         }
 
                         ui.allocate_ui_with_layout(
-                            [w, 20.].into(),
+                            [w, BUTTON_ROW_HEIGHT].into(),
                             Layout::left_to_right(egui::Align::Min),
                             |ui| {
                                 ui.allocate_ui_with_layout(
@@ -1244,7 +1297,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                                             ui.horizontal(|ui| {
                                                 let resp = ui.add_sized(
-                                                    [w2 - 25., 20.],
+                                                    [w2 - 25., BUTTON_ROW_HEIGHT],
                                                     egui::DragValue::new(&mut current_angle)
                                                         .speed(1.)
                                                         .range(-360..=360),
@@ -1268,7 +1321,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                                 if current_angle != *angle {
                                                     *angle = current_angle;
                                                 }
-                                                if ui.small_button(SMALL_X).clicked() {
+                                                if ui.button(SMALL_X).clicked() {
                                                     to_remove = Some(i)
                                                 }
                                             });
@@ -1278,7 +1331,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                         }
                                         if ui
                                             .add_sized(
-                                                [w2, 20.],
+                                                [w2, BUTTON_ROW_HEIGHT],
                                                 egui::Button::new(s.data.locale.get("add")),
                                             )
                                             .clicked()
@@ -1300,7 +1353,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                                             ui.horizontal(|ui| {
                                                 let resp = ui.add_sized(
-                                                    [w2 - 25., 20.],
+                                                    [w2 - 25., BUTTON_ROW_HEIGHT],
                                                     egui::DragValue::new(&mut current_angle)
                                                         .speed(1.)
                                                         .range(-360..=360),
@@ -1324,7 +1377,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                                 if current_angle != *angle {
                                                     *angle = current_angle;
                                                 }
-                                                if ui.small_button(SMALL_X).clicked() {
+                                                if ui.button(SMALL_X).clicked() {
                                                     to_remove = Some(i)
                                                 }
                                             });
@@ -1334,7 +1387,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                                         }
                                         if ui
                                             .add_sized(
-                                                [w2, 20.],
+                                                [w2, BUTTON_ROW_HEIGHT],
                                                 egui::Button::new(s.data.locale.get("add")),
                                             )
                                             .clicked()
@@ -1350,7 +1403,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                         if ui
                             .add_sized(
-                                [w, 20.],
+                                [w, BUTTON_ROW_HEIGHT],
                                 egui::Button::new(s.data.locale.get("remove-action")),
                             )
                             .clicked()
@@ -1362,7 +1415,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         ui.horizontal(|ui| {
                             if ui
                                 .add_sized(
-                                    [w2, 20.],
+                                    [w2, BUTTON_ROW_HEIGHT],
                                     egui::Button::new(s.data.locale.get("add-spinning")),
                                 )
                                 .clicked()
@@ -1374,7 +1427,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             }
                             if ui
                                 .add_sized(
-                                    [w2, 20.],
+                                    [w2, BUTTON_ROW_HEIGHT],
                                     egui::Button::new(s.data.locale.get("add-rings")),
                                 )
                                 .clicked()
@@ -1403,7 +1456,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
                 if ui
                     .add_sized(
-                        [ui.available_width(), 20.0],
+                        [ui.available_width(), BUTTON_ROW_HEIGHT],
                         egui::Button::new(s.data.locale.get("delete")),
                     )
                     .clicked()
@@ -1427,7 +1480,7 @@ pub fn draw_view_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         if ui
             .add_sized(
-                [w, 20.],
+                [w, BUTTON_ROW_HEIGHT],
                 egui::Button::new(s.data.locale.get("add-Placement")),
             )
             .clicked()

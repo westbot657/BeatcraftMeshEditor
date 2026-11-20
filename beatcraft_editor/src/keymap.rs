@@ -1,11 +1,11 @@
 use crate::widgets::keybind_hint::HintPart;
 use crate::{DB_KEYMAP, DB_LOGIC};
 use bitflags::bitflags;
-use egui::{Color32, Event, Id, Modifiers, Response, Ui, Widget};
+use egui::{Color32, Event, Id, IdSalt, Modifiers, Response, Ui, Widget};
 use keybinds::{Key, KeyInput, KeySeq, Match, Mods};
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::ops::{BitAnd, BitOr, Not};
 use std::rc::Rc;
@@ -131,7 +131,7 @@ impl Display for ContextCondition {
             Self::And(a) => {
                 write!(f, "(")?;
                 for (i, c) in a.iter().enumerate() {
-                    c.fmt(f)?;
+                    Display::fmt(&c, f)?;
                     if i < a.len() - 1 {
                         write!(f, " & ")?;
                     }
@@ -141,7 +141,7 @@ impl Display for ContextCondition {
             Self::Or(a) => {
                 write!(f, "(")?;
                 for (i, c) in a.iter().enumerate() {
-                    c.fmt(f)?;
+                    Display::fmt(&c, f)?;
                     if i < a.len() - 1 {
                         write!(f, " | ")?;
                     }
@@ -150,7 +150,7 @@ impl Display for ContextCondition {
             }
             Self::Not(c) => {
                 write!(f, "!")?;
-                c.fmt(f)
+                Display::fmt(&c, f)
             }
         }
     }
@@ -584,7 +584,7 @@ impl KeymapSystem {
         }
         self.recording_frame = false;
 
-        let text_focus = ctx.wants_keyboard_input();
+        let text_focus = ctx.egui_wants_keyboard_input();
         if text_focus {
             self.push_ctx(TEXT_FOCUS);
         } else {
@@ -954,7 +954,7 @@ pub fn paint_hint_parts(
 ) {
     use std::sync::Arc;
 
-    let style = ctx.style();
+    let style = ctx.theme().default_style();
     let v = &style.visuals;
     let font = egui::TextStyle::Monospace.resolve(&style);
     let (cap_pad, cap_gap, seq_gap, part_gap, margin) =
@@ -1156,21 +1156,21 @@ impl<'a> Widget for SingleKeyEdit<'a> {
 }
 
 impl<'a> SingleKeyEdit<'a> {
-    fn make_id(id_salt: impl Hash) -> Id {
-        Id::new(("single_key_edit", id_salt))
+    fn make_id(id_salt: impl Hash + Debug) -> Id {
+        Id::unique(("single_key_edit", id_salt))
     }
 
-    pub fn new(id_salt: impl Hash, key: &'a mut Option<KeyInput>) -> Self {
+    pub fn new(id_salt: impl Hash + Debug, key: &'a mut Option<KeyInput>) -> Self {
         Self { id: Self::make_id(id_salt), key, conflicts: Vec::new() }
     }
 
-    pub fn start_recording(ctx: &egui::Context, id_salt: impl Hash) {
+    pub fn start_recording(ctx: &egui::Context, id_salt: impl Hash + Debug) {
         let mods = ctx.input(|i| i.modifiers.to_mods());
         ctx.data_mut(|d| d.insert_temp(Self::make_id(id_salt), (true, mods)));
         KeymapSystem::mark_recording(ctx);
     }
 
-    pub fn is_recording(ctx: &egui::Context, id_salt: impl Hash) -> bool {
+    pub fn is_recording(ctx: &egui::Context, id_salt: impl Hash + Debug) -> bool {
         ctx.data(|d| d.get_temp::<(bool, Mods)>(Self::make_id(id_salt)))
             .is_some_and(|(active, _)| active)
     }
@@ -1282,8 +1282,8 @@ impl<'a> Widget for SingleKeyListEdit<'a> {
 }
 
 impl<'a> SingleKeyListEdit<'a> {
-    pub fn new(id_salt: impl Hash, seqs: &'a mut Vec<KeySeq>) -> Self {
-        Self { id: Id::new(("single_key_list", id_salt)), seqs, conflicts: Vec::new() }
+    pub fn new(id_salt: impl Hash + Debug, seqs: &'a mut Vec<KeySeq>) -> Self {
+        Self { id: Id::unique(("single_key_list", id_salt)), seqs, conflicts: Vec::new() }
     }
 
     pub fn conflicts_per_seq(mut self, per_seq: Vec<Vec<String>>) -> Self {
@@ -1385,8 +1385,8 @@ impl<'a> Widget for KeySeqEdit<'a> {
 }
 
 impl<'a> KeySeqEdit<'a> {
-    pub fn new(id_salt: impl Hash, seqs: &'a mut Vec<KeySeq>) -> Self {
-        Self { id: Id::new(("key_seq_edit", id_salt)), seqs, conflicts: Vec::new(), idle: 0.9 }
+    pub fn new(id_salt: impl Hash + Debug, seqs: &'a mut Vec<KeySeq>) -> Self {
+        Self { id: Id::unique(("key_seq_edit", id_salt)), seqs, conflicts: Vec::new(), idle: 0.9 }
     }
 
     pub fn conflicts_per_seq(mut self, per_seq: Vec<Vec<String>>) -> Self {

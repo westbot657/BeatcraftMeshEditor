@@ -10,12 +10,12 @@ spectrogram = ["dep:rustfft", "dep:glow", "dep:bytemuck"]
 link_open_al = []
 
 [dependencies]
-parking_lot = "0.12"
+parking_lot = "0.13"
 symphonia = "0.6.0"
 thiserror = "2"
 
 rustfft = { version = "6.4.1", optional = true }
-glow = { version = "0.16.0", optional = true }
+glow = { version = "0.17.0", optional = true }
 bytemuck = { version = "1", features = ["derive"], optional = true }
 
 tracing = { version = "0.1.44", optional = true }

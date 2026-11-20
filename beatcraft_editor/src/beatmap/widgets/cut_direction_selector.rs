@@ -5,6 +5,7 @@ use crate::widgets::toggle::ToggleSwitch;
 use beatmap_core::beatmap::CutDirectionExt as _;
 use bs_mapping_data::CutDirection;
 use egui::{Color32, ImageSource, Response, Ui, Widget};
+use crate::BUTTON_ROW_HEIGHT;
 
 pub static ARROW: ImageSource =
     egui::include_image!("../../assets/textures/svg/cut_dir_arrow.svg");
@@ -192,17 +193,17 @@ impl<'c> CutDirectionSelector<'c> {
             egui::Layout::top_down(egui::Align::Center),
             |ui| {
                 let top = ui.allocate_ui_with_layout(
-                    [width, 20.].into(),
+                    [width, BUTTON_ROW_HEIGHT].into(),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         let toggle = ui.add_sized(
-                            [20., 20.],
+                            [BUTTON_ROW_HEIGHT, BUTTON_ROW_HEIGHT],
                             ToggleSwitch::new(self.use_cut_offset),
                         );
 
                         let drag = ui.add_enabled_ui(*self.use_cut_offset, |ui| {
                             ui.add_sized(
-                                [width - padding - 20., 20.],
+                                [width - padding - BUTTON_ROW_HEIGHT, BUTTON_ROW_HEIGHT],
                                 egui::DragValue::new(*cut_offset)
                                     .range(-45f32..=45.)
                                     .speed(0.5)
@@ -260,7 +261,7 @@ impl<'c> CutDirectionSelector<'c> {
                         dial = dial.image_angle(self.cut_direction.angle_degrees());
                     };
 
-                    ui.add_sized([width, width - padding - 20.], dial)
+                    ui.add_sized([width, width - padding - BUTTON_ROW_HEIGHT], dial)
                 });
 
                 top.inner

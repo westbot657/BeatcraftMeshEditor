@@ -10,7 +10,7 @@ use chrono::SubsecRound;
 use clap::Parser;
 #[cfg(feature = "mesh-editor")]
 use eframe::glow::{self, HasContext};
-use egui::{Align2, Color32, Context, ImageSource, Layout, RawInput, Ui};
+use egui::{Align2, Color32, Context, Id, ImageSource, Layout, RawInput, ScrollArea, Ui};
 #[cfg(feature = "mesh-editor")]
 use egui::{Frame, Sense};
 use fluent_templates::LanguageIdentifier;
@@ -66,6 +66,7 @@ pub const SMALL_X: &str = "×";
 pub const R_ARROW: &str = "▶";
 pub const D_ARROW: &str = "▼";
 pub const SMALL_R_ARROW: &str = "→";
+pub const BUTTON_ROW_HEIGHT: f32 = 25.;
 
 pub static ENVIRONMENT_EDITOR_ICON: ImageSource =
     egui::include_image!("assets/textures/environment_editor.png");
@@ -171,11 +172,41 @@ impl RefDuper {
     }
 }
 
-impl eframe::App for App {
-    fn raw_input_hook(&mut self, ctx: &Context, raw_input: &mut RawInput) {
-        self.data.keymaps.poll_events(ctx, raw_input);
+pub trait ContextScrollExt {
+    /// Unsmoothed scroll this frame, in points (sum of all mouse-wheel events).
+    fn raw_scroll_delta(&self) -> egui::Vec2;
+
+    /// Raw scroll along one axis: `.x` if `horizontal`, otherwise `.y`.
+    fn raw_scroll_axis(&self, horizontal: bool) -> f32 {
+        let d = self.raw_scroll_delta();
+        if horizontal { d.x } else { d.y }
     }
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+}
+
+impl ContextScrollExt for egui::Context {
+    fn raw_scroll_delta(&self) -> egui::Vec2 {
+        self.input(|i| {
+            let line_speed = if cfg!(target_arch = "wasm32") { 8. } else { 40. };
+            let page_height = i.content_rect().height();
+
+            i.events
+                .iter()
+                .filter_map(|e| match e {
+                    egui::Event::MouseWheel { unit, delta, .. } => Some(match unit {
+                        egui::MouseWheelUnit::Point => *delta * 2.,
+                        egui::MouseWheelUnit::Line => *delta * line_speed,
+                        egui::MouseWheelUnit::Page => *delta * page_height,
+                    }),
+                    _ => None,
+                })
+                .fold(egui::Vec2::ZERO, |acc, d| acc + d)
+        })
+    }
+}
+
+impl eframe::App for App {
+    fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
+        let ctx = ui.ctx();
         let gl = frame.gl().unwrap();
 
         self.data.keymaps.poll_held(ctx);
@@ -230,7 +261,7 @@ impl eframe::App for App {
         if let Some(settings_page) = self.state.settings_screen.as_mut() {
             if !Self::draw_settings_page(
                 &mut self.data.locale,
-                ctx,
+                ui,
                 &mut self.data.keymaps,
                 settings_page,
             ) {
@@ -242,7 +273,7 @@ impl eframe::App for App {
                 editor::EditorContext::Model(model_editor_context) => match model_editor_context {
                     editor::ModelEditorContext::Environment => {
                         let _scope = self.data.keymaps.scope_ctx(vec!["editor", "mesh"]);
-                        self.draw_environment_editor(ctx, frame, shift, ctrl);
+                        self.draw_environment_editor(ui, frame, shift, ctrl);
                     }
                     editor::ModelEditorContext::Saber => todo!(),
                     editor::ModelEditorContext::Notes => todo!(),
@@ -251,16 +282,19 @@ impl eframe::App for App {
                 editor::EditorContext::Map(map_editor_context) => match map_editor_context {
                     editor::MapEditorContext::Beatmap => {
                         let _scope = self.data.keymaps.scope_ctx(vec!["editor", "beatmap"]);
-                        self.draw_beatmap_editor(ctx, frame, shift, ctrl, alt);
+                        self.draw_beatmap_editor(ui, frame, shift, ctrl, alt);
                     }
                     editor::MapEditorContext::Lightshow => todo!(),
                     editor::MapEditorContext::Audio => todo!(),
                 },
-                editor::EditorContext::None => self.draw_welcome_page(ctx, frame),
+                editor::EditorContext::None => self.draw_welcome_page(ui, frame),
             }
         }
 
-        ctx.request_repaint();
+        ui.ctx().request_repaint();
+    }
+    fn raw_input_hook(&mut self, ctx: &Context, raw_input: &mut RawInput) {
+        self.data.keymaps.poll_events(ctx, raw_input);
     }
 }
 
@@ -297,13 +331,13 @@ impl App {
 
     fn draw_settings_page(
         lang: &mut LocaleCache,
-        ctx: &egui::Context,
+        ui: &mut Ui,
         keymaps: &mut KeymapSystem,
         settings: &mut SettingsScreen,
     ) -> bool {
-        if !egui::SidePanel::new(egui::panel::Side::Left, "setting selector")
-            .exact_width(300.)
-            .show(ctx, |ui| {
+        if !egui::Panel::left("setting selector")
+            .exact_size(300.)
+            .show(ui, |ui| {
                 ui.allocate_ui_with_layout(
                     ui.available_size(),
                     egui::Layout::top_down(egui::Align::Center),
@@ -349,7 +383,7 @@ impl App {
             return false;
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| match settings.page {
+        egui::CentralPanel::default().show(ui, |ui| match settings.page {
             SettingsPage::Keymaps => {
                 ui.allocate_ui_with_layout(
                     ui.available_size(),
@@ -389,18 +423,18 @@ impl App {
                                     (@ $ui:expr, $id:literal, $lang_key:literal, $func:ident) => {{
                                         let w = $ui.available_width();
                                         $ui.allocate_ui_with_layout(
-                                            [w * 0.8, 20.].into(),
+                                            [w * 0.8, BUTTON_ROW_HEIGHT].into(),
                                             egui::Layout::left_to_right(egui::Align::Min),
                                             |ui| {
                                                 ui.allocate_ui_with_layout(
-                                                    [w * 0.4, 20.].into(),
+                                                    [w * 0.4, BUTTON_ROW_HEIGHT].into(),
                                                     egui::Layout::right_to_left(egui::Align::Center),
                                                     |ui| {
                                                         ui.label(lang.get($lang_key));
                                                     },
                                                 );
                                                 ui.allocate_ui_with_layout(
-                                                    [w * 0.4, 20.].into(),
+                                                    [w * 0.4, BUTTON_ROW_HEIGHT].into(),
                                                     egui::Layout::left_to_right(egui::Align::Min),
                                                     |ui| {
                                                         keymaps.$func(ui, $id);
@@ -519,7 +553,7 @@ impl App {
 
                         if ui
                             .add_sized(
-                                [200., 20.],
+                                [400., BUTTON_ROW_HEIGHT],
                                 egui::Button::new(lang.get("revert-keys-label")),
                             )
                             .clicked()
@@ -529,7 +563,7 @@ impl App {
                         }
                         ui.add_space(10.);
                         if ui
-                            .add_sized([200., 20.], egui::Button::new(lang.get("reset-keys-label")))
+                            .add_sized([400., BUTTON_ROW_HEIGHT], egui::Button::new(lang.get("reset-keys-label")))
                             .clicked()
                         {
                             *keymaps = Default::default();
@@ -586,8 +620,8 @@ impl App {
         true
     }
 
-    fn draw_welcome_page(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("WelcomeTopBar").show(ctx, |ui| {
+    fn draw_welcome_page(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        egui::Panel::top("WelcomeTopBar").show(ui, |ui| {
             ui.add_space(2.);
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button(self.data.locale.get("settings-label").to_string(), |ui| {
@@ -596,7 +630,7 @@ impl App {
                     }
                     let mut minecraft_font: bool = ui.memory_mut(|m| {
                         m.data
-                            .get_persisted("use_minecraft_font".into())
+                            .get_persisted(Id::unique("use_minecraft_font"))
                             .unwrap_or(true)
                     });
                     let old = minecraft_font;
@@ -606,13 +640,13 @@ impl App {
                     );
                     if old != minecraft_font {
                         if minecraft_font {
-                            setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], ctx);
+                            setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], ui.ctx());
                         } else {
-                            setup_fonts(&[SOURCE_CODE_F, MINECRAFT_F], ctx);
+                            setup_fonts(&[SOURCE_CODE_F, MINECRAFT_F], ui.ctx());
                         }
                         ui.memory_mut(|m| {
                             m.data
-                                .insert_persisted("use_minecraft_font".into(), minecraft_font)
+                                .insert_persisted(Id::unique("use_minecraft_font"), minecraft_font)
                         });
                     }
                 });
@@ -625,100 +659,103 @@ impl App {
         //
         //     });
 
-        egui::SidePanel::left("WelcomeLeftPanel")
+        egui::Panel::left("WelcomeLeftPanel")
+            .frame(Frame::side_top_panel(ui.style()).inner_margin(egui::Margin { left: 5, right: 0, top: 5, bottom: 5 }))
             .resizable(false)
-            .exact_width(300.)
-            .show(ctx, |ui| {
+            .exact_size(300.)
+            .show(ui, |ui| {
                 ui.vertical_centered(|ui| {
-                    ui.add_space(8.);
-                    ui.add(egui::Label::new(egui::RichText::new(self.data.locale.get("recent-projects")).size(20.).strong()));
+                    ScrollArea::vertical()
+                        .show(ui, |ui| {
+                            ui.add_space(8.);
+                            ui.add(egui::Label::new(egui::RichText::new(self.data.locale.get("recent-projects")).size(20.).strong()));
 
-                    let mut to_open = None;
-                    for RecentProject { modified, path, kind } in self.data.recents.iter() {
-                        #[cfg(not(feature = "mesh-editor"))]
-                        if matches!(kind.kind(), ProjectKind::EnvironmentMesh | ProjectKind::NoteMesh | ProjectKind::SaberMesh) { continue }
-                        #[cfg(not(feature = "mapper"))]
-                        if matches!(kind.kind(), ProjectKind::Beatmap | ProjectKind::Lightshow) { continue }
-                        let ext = path.with_extension("");
-                        let Some(label) = ext.file_name() else { continue };
-                        let label = label.to_string_lossy();
-                        let full_path = path.to_string_lossy();
-                        ui.add_space(8.);
-                        ui.allocate_ui_with_layout(
-                            [280., 80.].into(),
-                            Layout::top_down(egui::Align::Min),
-                            |ui| {
-                                ui.horizontal(|ui| {
-                                    let total_width = 280.0;
-                                    let button_width = 50.0;
-                                    ui.allocate_ui_with_layout(
-                                        [total_width, 20.].into(),
-                                        egui::Layout::left_to_right(egui::Align::Center),
-                                        |ui| {
-                                            egui::ScrollArea::horizontal()
-                                                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-                                                .id_salt(("label_scroll", path))
-                                                .max_width(total_width - button_width)
-                                                .show(ui, |ui| {
-                                                    ui.label(egui::RichText::new(label).strong())
-                                                        .on_hover_text(full_path);
-                                                });
+                            let mut to_open = None;
+                            for RecentProject { modified, path, kind } in self.data.recents.iter() {
+                                #[cfg(not(feature = "mesh-editor"))]
+                                if matches!(kind.kind(), ProjectKind::EnvironmentMesh | ProjectKind::NoteMesh | ProjectKind::SaberMesh) { continue }
+                                #[cfg(not(feature = "mapper"))]
+                                if matches!(kind.kind(), ProjectKind::Beatmap | ProjectKind::Lightshow) { continue }
+                                let ext = path.with_extension("");
+                                let Some(label) = ext.file_name() else { continue };
+                                let label = label.to_string_lossy();
+                                let full_path = path.to_string_lossy();
+                                ui.add_space(8.);
+                                ui.allocate_ui_with_layout(
+                                    [280., 80.].into(),
+                                    Layout::top_down(egui::Align::Min),
+                                    |ui| {
+                                        ui.horizontal(|ui| {
+                                            let total_width = 280.0;
+                                            let button_width = 50.0 + ui.style().spacing.item_spacing.x;
+                                            ui.allocate_ui_with_layout(
+                                                [total_width, BUTTON_ROW_HEIGHT].into(),
+                                                egui::Layout::left_to_right(egui::Align::Center),
+                                                |ui| {
+                                                    egui::ScrollArea::horizontal()
+                                                        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                                                        .id_salt(("label_scroll", path))
+                                                        .max_width(total_width - button_width)
+                                                        .show(ui, |ui| {
+                                                            ui.label(egui::RichText::new(label).strong())
+                                                                .on_hover_text(full_path);
+                                                        });
 
-                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                if ui.button(self.data.locale.get("open")).clicked() {
-                                                    to_open = Some((kind, path.to_path_buf()));
-                                                }
-                                            });
-                                        },
-                                    );
-                                });
-                                ui.label(egui::RichText::new(kind.kind().to_string()).weak());
-                                ui.label(
-                                    egui::RichText::new(
-                                        self.data.locale.get_with_args(
-                                            "last-opened",
-                                            &[(
-                                                Cow::Borrowed("modified"),
-                                                FluentValue::String(
-                                                    modified.round_subsecs(0).to_string().into()
+                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                        if ui.button(self.data.locale.get("open")).clicked() {
+                                                            to_open = Some((kind, path.to_path_buf()));
+                                                        }
+                                                    });
+                                                },
+                                            );
+                                        });
+                                        ui.label(egui::RichText::new(kind.kind().to_string()).weak());
+                                        ui.label(
+                                            egui::RichText::new(
+                                                self.data.locale.get_with_args(
+                                                    "last-opened",
+                                                    &[(
+                                                        Cow::Borrowed("modified"),
+                                                        FluentValue::String(
+                                                            modified.round_subsecs(0).to_string().into()
+                                                        )
+                                                    )].into()
                                                 )
-                                            )].into()
-                                        )
-                                    ).small()
+                                            ).small()
+                                        );
+                                    }
                                 );
-                            }
-                        );
 
-                    }
-                    if let Some((kind, path)) = to_open {
-                        #[allow(unreachable_patterns)]
-                        match kind {
-                            #[cfg(feature = "mesh-editor")]
-                            config::ProjectType::EnvironmentMesh => {
-                                self.reset_context();
-                                let gl = Arc::clone(&self.state.gl);
-                                let _ = self.load_session(&path, &gl);
-                                self.context = editor::EditorContext::Model(editor::ModelEditorContext::Environment);
                             }
-                            #[cfg(feature = "mesh-editor")]
-                            config::ProjectType::SaberMesh => todo!(),
-                            #[cfg(feature = "mesh-editor")]
-                            config::ProjectType::NoteMesh => todo!(),
-                            #[cfg(feature = "mapper")]
-                            config::ProjectType::Beatmap { .. } => {
-                                self.reset_context();
-                                let gl = Arc::clone(&self.state.gl);
-                                let rd = RefDuper;
-                                let s = unsafe { rd.detach_mut_ref(self) };
-                                let _ = s.load_beatmap(&mut self.audio_system, path, &gl, &mut self.render.renderer, self.data.audio_volume);
-                                self.context = editor::EditorContext::Map(editor::MapEditorContext::Beatmap);
-                            },
-                            #[cfg(feature = "mapper")]
-                            config::ProjectType::Lightshow => todo!(),
-                            _ => {}
-                        }
-                    }
-
+                            if let Some((kind, path)) = to_open {
+                                #[allow(unreachable_patterns)]
+                                match kind {
+                                    #[cfg(feature = "mesh-editor")]
+                                    config::ProjectType::EnvironmentMesh => {
+                                        self.reset_context();
+                                        let gl = Arc::clone(&self.state.gl);
+                                        let _ = self.load_session(&path, &gl);
+                                        self.context = editor::EditorContext::Model(editor::ModelEditorContext::Environment);
+                                    }
+                                    #[cfg(feature = "mesh-editor")]
+                                    config::ProjectType::SaberMesh => todo!(),
+                                    #[cfg(feature = "mesh-editor")]
+                                    config::ProjectType::NoteMesh => todo!(),
+                                    #[cfg(feature = "mapper")]
+                                    config::ProjectType::Beatmap { .. } => {
+                                        self.reset_context();
+                                        let gl = Arc::clone(&self.state.gl);
+                                        let rd = RefDuper;
+                                        let s = unsafe { rd.detach_mut_ref(self) };
+                                        let _ = s.load_beatmap(&mut self.audio_system, path, &gl, &mut self.render.renderer, self.data.audio_volume);
+                                        self.context = editor::EditorContext::Map(editor::MapEditorContext::Beatmap);
+                                    },
+                                    #[cfg(feature = "mapper")]
+                                    config::ProjectType::Lightshow => todo!(),
+                                    _ => {}
+                                }
+                            }
+                        });
                 })
             });
 
@@ -730,9 +767,9 @@ impl App {
         //
         //     });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.allocate_ui_with_layout(
-                ui.available_size(),
+                ui.available_size_before_wrap(),
                 egui::Layout::top_down(egui::Align::Center),
                 |ui| {
                     let height = ui.available_height() / 2.;
@@ -741,7 +778,7 @@ impl App {
                         (true, false) | (false, true) => 100.,
                         (false, false) => 0.,
                     };
-                    ui.add_space(height - val);
+                    ui.add_space((height - val).max(0.));
 
                     #[cfg(feature = "mesh-editor")]
                     ui.allocate_ui_with_layout(
@@ -756,9 +793,8 @@ impl App {
                                 .map(ToString::to_string)
                                 .collect();
                             self.draw_context_selector(
-                                ctx,
                                 ui,
-                                "env_edit_scale".into(),
+                                Id::unique("env_edit_scale"),
                                 ENVIRONMENT_EDITOR_ICON.clone(),
                                 &ee,
                                 |s| {
@@ -776,9 +812,8 @@ impl App {
                                 .map(ToString::to_string)
                                 .collect();
                             self.draw_context_selector(
-                                ctx,
                                 ui,
-                                "saber_edit_scale".into(),
+                                Id::unique("saber_edit_scale"),
                                 SABER_EDITOR_ICON.clone(),
                                 &se,
                                 |_s| (), //s.context = editor::EditorContext::Model(editor::ModelEditorContext::Saber),
@@ -792,9 +827,8 @@ impl App {
                                 .map(ToString::to_string)
                                 .collect();
                             self.draw_context_selector(
-                                ctx,
                                 ui,
-                                "note_edit_scale".into(),
+                                Id::unique("note_edit_scale"),
                                 NOTE_EDITOR_ICON.clone(),
                                 &ne,
                                 |_s| (), //s.context = editor::EditorContext::Model(editor::ModelEditorContext::Notes),
@@ -818,9 +852,8 @@ impl App {
                                 .map(ToString::to_string)
                                 .collect();
                             self.draw_context_selector(
-                                ctx,
                                 ui,
-                                "beatmap_edit_scale".into(),
+                                Id::unique("beatmap_edit_scale"),
                                 BEATMAP_EDITOR_ICON.clone(),
                                 &ee,
                                 |s| {
@@ -838,9 +871,8 @@ impl App {
                                 .map(ToString::to_string)
                                 .collect();
                             self.draw_context_selector(
-                                ctx,
                                 ui,
-                                "lightshow_edit_scale".into(),
+                                Id::unique("lightshow_edit_scale"),
                                 MISSING_EDITOR_ICON.clone(),
                                 &ee,
                                 |_s| (), //s.context = editor::EditorContext::Map(editor::MapEditorContext::Lightshow),
@@ -863,7 +895,6 @@ impl App {
 
     fn draw_context_selector(
         &mut self,
-        ctx: &egui::Context,
         ui: &mut Ui,
         scale_id: egui::Id,
         img_source: ImageSource,
@@ -925,7 +956,7 @@ impl App {
             }
         });
 
-        let dt = ctx.input(|i| i.stable_dt);
+        let dt = ui.ctx().input(|i| i.stable_dt);
         ui.memory_mut(|m| {
             if let Some(mut t) = m.data.get_temp::<f32>(scale_id) {
                 t = if is_hovered {
@@ -956,14 +987,14 @@ impl App {
     #[cfg(feature = "mesh-editor")]
     fn draw_environment_editor(
         &mut self,
-        ctx: &egui::Context,
+        ui: &mut Ui,
         frame: &mut eframe::Frame,
         shift: bool,
         ctrl: bool,
     ) {
         let gl = frame.gl().unwrap();
 
-        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+        egui::Panel::top("menu_bar").show(ui, |ui| {
             ui.add_space(2.);
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button(self.data.locale.get("file-menu-label").to_string(), |ui| {
@@ -1160,18 +1191,18 @@ impl App {
                     if ui.button(self.data.locale.get("settings-button")).clicked() {
                         self.open_settings();
                     }
-                    let mut minecraft_font: bool = ui.memory_mut(|m| m.data.get_persisted("use_minecraft_font".into()).unwrap_or(true));
+                    let mut minecraft_font: bool = ui.memory_mut(|m| m.data.get_persisted(Id::unique("use_minecraft_font")).unwrap_or(true));
                     let old = minecraft_font;
                     ui.checkbox(&mut minecraft_font, self.data.locale.get("minecraft-font-label"));
                     if old != minecraft_font {
                         if minecraft_font {
                             tracing::debug!(target: DB_LOGIC, "Enabling Minecraft font");
-                            setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], ctx);
+                            setup_fonts(&[MINECRAFT_F, SOURCE_CODE_F], ui.ctx());
                         } else {
                             tracing::debug!(target: DB_LOGIC, "Enabling Source Code font");
-                            setup_fonts(&[SOURCE_CODE_F, MINECRAFT_F], ctx);
+                            setup_fonts(&[SOURCE_CODE_F, MINECRAFT_F], ui.ctx());
                         }
-                        ui.memory_mut(|m| m.data.insert_persisted("use_minecraft_font".into(), minecraft_font));
+                        ui.memory_mut(|m| m.data.insert_persisted(Id::unique("use_minecraft_font"), minecraft_font));
                     }
                 });
                 if !self.state.status.is_empty() && self.state.status_timer > 0. {
@@ -1185,7 +1216,10 @@ impl App {
             });
         });
 
-        egui::TopBottomPanel::bottom("bottom_bar").show(ctx, |_ui| {
+        egui::Panel::bottom("bottom_bar")
+            .exact_size(25.)
+            .show(ui, |ui| {
+                ui.allocate_exact_size(ui.available_size(), egui::Sense::empty());
             // ui.horizontal(|ui| {
             //     let display = match self.mode {
             //         editor::EditorMode::View =>
@@ -1202,99 +1236,127 @@ impl App {
             // });
         });
 
-        egui::SidePanel::left("left_panel")
-            .exact_width(250.)
+        egui::Panel::left("left_panel")
+            .frame(Frame::side_top_panel(ui.style()).inner_margin(egui::Margin { left: 5, right: 0, top: 5, bottom: 5 }))
+            .exact_size(300.)
             .resizable(false)
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
+
+                const H_SMALL: f32 = 58.;
+                const H_LARGE: f32 = 91.;
+
                 ui.allocate_ui(ui.available_size(), |ui| {
                     let h = if self.mode == editor::EditorMode::Edit {
-                        75.
+                        H_LARGE
                     } else {
-                        45.
+                        H_SMALL
                     };
-                    ui.allocate_exact_size((230., 1.).into(), Sense::empty());
+                    // ui.allocate_exact_size((300., 1.).into(), Sense::empty());
                     ui.allocate_ui(
-                        (ui.available_width(), ui.available_height() - h).into(),
+                        (ui.available_width(), (ui.available_height() - h).max(0.)).into(),
                         |ui| {
                             egui::ScrollArea::vertical()
                                 .id_salt("left_p_scroll")
-                                .show(ui, |ui| match self.mode {
-                                    editor::EditorMode::View => {
-                                        self.data.keymaps.push_ctx("view");
-                                        scenes::view::draw_view_left(self, ui, gl);
-                                        self.data.keymaps.remove_ctx("view");
-                                    }
-                                    editor::EditorMode::Assembly => {
-                                        self.data.keymaps.push_ctx("assembly");
-                                        scenes::assembly::draw_assembly_left(self, ui, gl);
-                                        self.data.keymaps.remove_ctx("assembly");
-                                    }
-                                    editor::EditorMode::Edit => {
-                                        self.data.keymaps.push_ctx("part");
-                                        scenes::edit::draw_edit_left(self, ui, gl);
-                                        self.data.keymaps.remove_ctx("part");
-                                    }
+                                .show(ui, |ui| {
+                                    ui.allocate_ui_with_layout(
+                                        ui.available_size_before_wrap(),
+                                        egui::Layout::left_to_right(egui::Align::Min),
+                                        |ui| {
+                                            ui.add_space(5.);
+                                            ui.allocate_ui_with_layout(
+                                                ui.available_size(),
+                                                egui::Layout::top_down(egui::Align::Min),
+                                                |ui| {
+                                                    match self.mode {
+                                                        editor::EditorMode::View => {
+                                                            self.data.keymaps.push_ctx("view");
+                                                            scenes::view::draw_view_left(self, ui, gl);
+                                                            self.data.keymaps.remove_ctx("view");
+                                                        }
+                                                        editor::EditorMode::Assembly => {
+                                                            self.data.keymaps.push_ctx("assembly");
+                                                            scenes::assembly::draw_assembly_left(self, ui, gl);
+                                                            self.data.keymaps.remove_ctx("assembly");
+                                                        }
+                                                        editor::EditorMode::Edit => {
+                                                            self.data.keymaps.push_ctx("part");
+                                                            scenes::edit::draw_edit_left(self, ui, gl);
+                                                            self.data.keymaps.remove_ctx("part");
+                                                        }
+                                                    }
+                                                }
+                                            );
+                                        }
+                                    );
+
                                 });
                         },
                     );
 
-                    ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                        ui.add_space(5.);
-                        egui::ScrollArea::horizontal().show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.set_width(ui.available_width());
-                                let target = &mut self.cam().target;
-                                let spacing = ui.spacing().item_spacing.x;
-                                let width = (ui.available_width() - spacing * 2.0) / 3.0;
-                                let mut vars = HashMap::new();
-                                vars.insert("x".to_string(), target.x);
-                                vars.insert("y".to_string(), target.y);
-                                vars.insert("z".to_string(), target.z);
-                                ui.add_sized(
-                                    [width, 20.],
-                                    MathDragValue::new(&mut target.x, &mut vars).speed(0.01),
-                                );
-                                ui.add_sized(
-                                    [width, 20.],
-                                    MathDragValue::new(&mut target.y, &mut vars).speed(0.01),
-                                );
-                                ui.add_sized(
-                                    [width, 20.],
-                                    MathDragValue::new(&mut target.z, &mut vars).speed(0.01),
-                                );
-                            });
-                            ui.label(self.data.locale.get("camera-pivot"));
-                            if h > 45. {
-                                ui.add_space(5.);
+                    ui.allocate_ui_with_layout(
+                        ui.available_size(),
+                        egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                            ui.add_space(10.);
+                            egui::ScrollArea::horizontal().show(ui, |ui| {
                                 ui.allocate_ui_with_layout(
                                     [ui.available_width(), 20.].into(),
-                                    egui::Layout::bottom_up(egui::Align::Center),
+                                    egui::Layout::left_to_right(egui::Align::Min),
                                     |ui| {
-                                        if ui
-                                            .add_sized(
-                                                ui.available_size(),
-                                                egui::Button::new(
-                                                    self.data.locale.get("show-uv-editor"),
-                                                )
-                                                .selected(self.state.ui.show_uv_window),
-                                            )
-                                            .clicked()
-                                        {
-                                            self.state.ui.show_uv_window =
-                                                !self.state.ui.show_uv_window;
-                                        }
-                                    },
+                                        ui.set_width(ui.available_width());
+                                        let target = &mut self.cam().target;
+                                        let spacing = ui.spacing().item_spacing.x;
+                                        let width = (ui.available_width() - spacing * 3.0) / 3.0;
+                                        let mut vars = HashMap::new();
+                                        vars.insert("x".to_string(), target.x);
+                                        vars.insert("y".to_string(), target.y);
+                                        vars.insert("z".to_string(), target.z);
+                                        ui.add_sized(
+                                            [width, BUTTON_ROW_HEIGHT],
+                                            MathDragValue::new(&mut target.x, &mut vars).speed(0.01),
+                                        );
+                                        ui.add_sized(
+                                            [width, BUTTON_ROW_HEIGHT],
+                                            MathDragValue::new(&mut target.y, &mut vars).speed(0.01),
+                                        );
+                                        ui.add_sized(
+                                            [width, BUTTON_ROW_HEIGHT],
+                                            MathDragValue::new(&mut target.z, &mut vars).speed(0.01),
+                                        );
+                                    }
                                 );
-                            }
-                        });
+                                ui.label(self.data.locale.get("camera-pivot"));
+                                if h > H_SMALL + 0.01 {
+                                    ui.add_space(5.);
+                                    ui.allocate_ui_with_layout(
+                                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                                        egui::Layout::bottom_up(egui::Align::Center),
+                                        |ui| {
+                                            if ui
+                                                .add_sized(
+                                                    ui.available_size(),
+                                                    egui::Button::new(
+                                                        self.data.locale.get("show-uv-editor"),
+                                                    )
+                                                    .selected(self.state.ui.show_uv_window),
+                                                )
+                                                .clicked()
+                                            {
+                                                self.state.ui.show_uv_window =
+                                                    !self.state.ui.show_uv_window;
+                                            }
+                                        },
+                                    );
+                                }
+                                ui.separator();
+                            });
                     });
                 });
             });
 
-        egui::SidePanel::right("right_panel")
-            .exact_width(300.)
+        egui::Panel::right("right_panel")
+            .exact_size(300.)
             .resizable(false)
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| match self.mode {
                     editor::EditorMode::View => {
                         self.data.keymaps.push_ctx("view");
@@ -1316,12 +1378,12 @@ impl App {
 
         egui::CentralPanel::default()
             .frame(Frame::NONE)
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 let rect = ui.available_rect_before_wrap();
                 self.state.vp_rect = rect;
 
                 let resp = ui.allocate_rect(rect, egui::Sense::click_and_drag());
-                self.handle_3d_input(&resp, ctx, gl);
+                self.handle_3d_input(&resp, ui.ctx(), gl);
 
                 let s = unsafe { UnsafeMutRef::new(self) };
 
@@ -1397,23 +1459,23 @@ impl App {
 
         if self.mode == editor::EditorMode::Edit && self.state.ui.show_uv_window {
             egui::Window::new(self.data.locale.get("uv-editor"))
-                .id(egui::Id::new("uv_editor"))
+                .id(Id::unique("uv_editor"))
                 .min_size([200., 200.])
                 .pivot(Align2::CENTER_CENTER)
                 .default_pos([800., 800.])
-                .show(ctx, |ui| {
-                    scenes::uv::draw_uv_view(self, ui, ctx, gl);
+                .show(ui.ctx(), |ui| {
+                    scenes::uv::draw_uv_view(self, ui, gl);
                 });
         }
 
         if self.mode == editor::EditorMode::View && self.state.ui.show_mirror_window {
             egui::Window::new(self.data.locale.get("mirror-geometry-editor"))
-                .id(egui::Id::new("mirror_editor"))
+                .id(Id::unique("mirror_editor"))
                 .min_size([200., 200.])
                 .pivot(Align2::CENTER_CENTER)
                 .default_pos([200., 800.])
-                .show(ctx, |ui| {
-                    scenes::mirror::draw_mirror_view(self, ui, ctx, gl, shift, ctrl);
+                .show(ui.ctx(), |ui| {
+                    scenes::mirror::draw_mirror_view(self, ui, gl, shift, ctrl);
                 });
         }
     }
@@ -1594,6 +1656,7 @@ pub fn main() -> Result<(), eframe::Error> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
+            .with_app_id(APP_NAME)
             .with_title(APP_NAME)
             .with_inner_size([1440., 860.]),
         multisampling: 4,

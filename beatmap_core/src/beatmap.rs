@@ -8,6 +8,7 @@ use glam::{Mat4, Quat, Vec2, Vec3, Vec3Swizzles, Vec4, FloatExt};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Deref;
+use tracks_rs::animation::track::PathPropertiesMap;
 use bs_mapping_data::custom_data::{OptVec2, OptVec3};
 
 pub trait CutDirectionExt {
@@ -53,7 +54,7 @@ pub const CHAIN_LINK_HITBOX: HitBox = HitBox::new(
     Vec3::new(0.25, 0.25 * 2. / 16., 0.25),
 );
 
-pub trait GameObject<ObjectSource>: Debug {
+pub trait GameObject<ObjectSource> {
     fn beat(&self) -> f32;
     fn grid_pos(&self) -> Vec2;
     fn get_orientation(&self) -> Quat;
@@ -339,18 +340,18 @@ pub enum ObjectType {
 
 
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CustomData {
     pub custom_njs_offset: Option<f32>,
     pub custom_njs: Option<f32>,
     pub local_rotation: Quat, // q.rotY, q.rotX, q.rotZ
     pub world_rotation: Quat,
     pub coordinates: OptVec2,
+    pub animation: PathPropertiesMap,
     // pub track: Option<?>,
     // pub animation: Option<?>,
 }
 
-#[derive(Debug)]
 pub struct NoteCustomData {
     pub base: CustomData,
 
@@ -368,7 +369,6 @@ impl Deref for NoteCustomData {
     }
 }
 
-#[derive(Debug)]
 pub struct BombCustomData {
     pub base: CustomData,
 
@@ -381,7 +381,6 @@ impl Deref for BombCustomData {
     }
 }
 
-#[derive(Debug)]
 pub struct ObstacleCustomData {
     pub base: CustomData,
 }
@@ -392,7 +391,7 @@ impl Deref for ObstacleCustomData {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ChainCustomData {
     pub base: CustomData,
     
@@ -411,7 +410,6 @@ impl Deref for ChainCustomData {
     }
 }
 
-#[derive(Debug)]
 pub struct ArcCustomData {
     pub base: CustomData,
 }
@@ -422,7 +420,6 @@ impl Deref for ArcCustomData {
     }
 }
 
-#[derive(Debug)]
 pub struct ColorNote<ObjectSource> {
     pub spawn_orientation: Quat,
     pub beat: f32,
@@ -439,7 +436,6 @@ pub struct ColorNote<ObjectSource> {
     pub source: ObjectSource,
 }
 
-#[derive(Debug)]
 pub struct BombNote<ObjectSource> {
     pub beat: f32,
     pub color: ObjectColor<Self>,
@@ -462,7 +458,6 @@ impl<ObjectSource> ColorableObject for BombNote<ObjectSource> {
     }
 }
 
-#[derive(Debug)]
 pub struct Obstacle<ObjectSource> {
     pub beat: f32,
     pub color: ObjectColor<Self>,
@@ -494,7 +489,6 @@ pub struct ChainNoteLinkData {
     pub index: u32,
 }
 
-#[derive(Debug)]
 pub struct ChainNote<ObjectSource> {
     pub spawn_orientation: Quat,
     pub head_beat: f32,
@@ -515,7 +509,6 @@ pub struct ChainNote<ObjectSource> {
     pub source: ObjectSource,
 }
 
-#[derive(Debug)]
 pub struct ChainNoteLink<ObjectSource> {
     pub grid_pos: Vec2,
     pub beat: f32,
@@ -531,7 +524,6 @@ pub struct ChainNoteLink<ObjectSource> {
     pub _source: PhantomData<ObjectSource>,
 }
 
-#[derive(Debug)]
 pub struct Arc<ObjectSource> {
     pub head_beat: f32,
     pub tail_beat: f32,
@@ -550,7 +542,7 @@ pub struct Arc<ObjectSource> {
     pub source: ObjectSource,
 }
 
-impl<ObjectSource: Debug> GameObject<ObjectSource> for ColorNote<ObjectSource> {
+impl<ObjectSource> GameObject<ObjectSource> for ColorNote<ObjectSource> {
     fn beat(&self) -> f32 {
         self.beat
     }

@@ -12,7 +12,7 @@ beatcraft_worldspace = []
 [dependencies]
 beatcraft_editor_proc = { path = "../beatcraft_editor_proc" }
 bs-mapping-data = { path = "../bs_mapping_data" }
-glam = { version = "0.33.5" }
+glam = { version = "0.34.3" }
 
 tracing = { version = "0.1.44", optional = true }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"], optional = true }
@@ -20,5 +20,5 @@ tracing-appender = { version = "0.2.5", optional = true }
 thiserror = "2.0.20"
 tiny-vec = "0.10.1"
 
-#tracks-rs
+tracks_rs = { git = "https://github.com/bsq-ports/tracks-rs", features = ["json"] }
 

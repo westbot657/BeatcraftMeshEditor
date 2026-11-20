@@ -46,12 +46,12 @@ java_class! {
         native fn getOrigin(out: Vector3f) -> Vector3f {
             let handle = #this.handle as u64;
 
-            let data = DATA.read();
-            let Some(controller) = data.get::<BeatmapControllerExtension>(handle.into()) else {
-                #throw new NullPointerException("handle is invalid");
-            };
-            let origin = controller.origin;
-            drop(data);
+            let origin = DATA.with_borrow(|map| {
+                let Some(controller) = map.get::<BeatmapControllerExtension>(handle.into()) else {
+                    #throw new NullPointerException("handle is invalid");
+                };
+                Ok(controller.origin)
+            })?;
 
             #out.x #["F"] = origin.x;
             #out.y #["F"] = origin.y;
@@ -67,11 +67,13 @@ java_class! {
             let y = #origin.y #["F"];
             let z = #origin.z #["F"];
 
-            let mut data = DATA.write();
-            let Some(controller) = data.get_mut::<BeatmapControllerExtension> (handle.into()) else {
-                #throw new NullPointerException("handle is invalid");
-            };
-            controller.origin = Vec3::new(x, y, z);
+            DATA.with_borrow_mut(|data| {
+                let Some(controller) = data.get_mut::<BeatmapControllerExtension> (handle.into()) else {
+                    #throw new NullPointerException("handle is invalid");
+                };
+                controller.origin = Vec3::new(x, y, z);
+                Ok(())
+            })?;
         }
 
     }
@@ -116,7 +118,7 @@ java_class! {
 
         static native fn default() -> ColorScheme {
             let cs = beatmap_core::ColorScheme::default();
-            let key = DATA.write().insert(cs);
+            let key = DATA.with_borrow_mut(|data| data.insert(cs));
             let scheme = #alloc ColorScheme();
 
             #scheme.handle = key;
@@ -126,13 +128,12 @@ java_class! {
 
         native fn leftNote(out: Vector4f) -> Vector4f {
             let key = #this.handle;
-            let d = DATA.read();
-            let Some(cs) = d.get::<beatmap_core::ColorScheme>(key.into()) else {
-                drop(d);
-                #throw new NullPointerException("handle is invalid");
-            };
-            let l = cs.left_note;
-            drop(d);
+            let l = DATA.with_borrow(|d| {
+                let Some(cs) = d.get::<beatmap_core::ColorScheme>(key.into()) else {
+                    #throw new NullPointerException("handle is invalid");
+                };
+                Ok(cs.left_note)
+            })?;
 
             #out.x #["F"] = l.x;
             #out.y #["F"] = l.y;
@@ -144,13 +145,12 @@ java_class! {
 
         native fn rightNote(out: Vector4f) -> Vector4f {
             let key = #this.handle;
-            let d = DATA.read();
-            let Some(cs) = d.get::<beatmap_core::ColorScheme>(key.into()) else {
-                drop(d);
-                #throw new NullPointerException("handle is invalid");
-            };
-            let l = cs.right_note;
-            drop(d);
+            let l = DATA.with_borrow(|d| {
+                let Some(cs) = d.get::<beatmap_core::ColorScheme>(key.into()) else {
+                    #throw new NullPointerException("handle is invalid");
+                };
+                Ok(cs.right_note)
+            })?;
 
             #out.x #["F"] = l.x;
             #out.y #["F"] = l.y;

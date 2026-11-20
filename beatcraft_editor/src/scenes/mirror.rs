@@ -4,12 +4,11 @@ use glam::Vec2;
 
 use crate::editor::App;
 use crate::ui_elements::vec2_row;
-use crate::{RefDuper, editor};
+use crate::{editor, ContextScrollExt, RefDuper};
 
 pub fn draw_mirror_view(
     s: &mut App,
     ui: &mut Ui,
-    ctx: &egui::Context,
     gl: &glow::Context,
     shift: bool,
     ctrl: bool,
@@ -60,16 +59,16 @@ pub fn draw_mirror_view(
         }
 
         if visual_response.hovered() {
-            let scroll = ctx.input(|i| i.smooth_scroll_delta.y);
+            let scroll = ui.ctx().raw_scroll_axis(false);
             if scroll != 0.0 {
                 let me = &mut s.state.ui.mirror_editor;
                 me.zoom = (me.zoom * (1.0 + scroll * 0.001)).clamp(0.01, 500.0);
             }
         }
 
-        let pointer_pos = ctx.input(|i| i.pointer.interact_pos());
-        let primary_down = ctx.input(|i| i.pointer.primary_down());
-        let primary_released = ctx.input(|i| i.pointer.primary_released());
+        let pointer_pos = ui.ctx().input(|i| i.pointer.interact_pos());
+        let primary_down = ui.ctx().input(|i| i.pointer.primary_down());
+        let primary_released = ui.ctx().input(|i| i.pointer.primary_released());
 
         {
             let me = &mut s.state.ui.mirror_editor;

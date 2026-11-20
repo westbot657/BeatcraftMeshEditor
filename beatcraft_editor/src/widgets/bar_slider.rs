@@ -324,7 +324,7 @@ impl<T: Numeric> Widget for BarSlider<'_, T> {
                     .layout(Layout::centered_and_justified(Direction::TopDown)),
             );
             let mut out = egui::TextEdit::singleline(&mut buf)
-                .frame(false)
+                .frame(egui::frame::Frame::NONE)
                 .font(font)
                 .text_color(color)
                 .horizontal_align(Align::Center)

@@ -4,6 +4,7 @@ use bs_mapping_data::{ArcMidAnchorMode, Color, CutDirection};
 use glam::Vec4;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use beatmap_core::tracks_rs::animation::track::PathPropertiesMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct LoopTracker<'l> {
@@ -490,6 +491,7 @@ impl crate::data::map_editing::object_data::CustomData {
             local_rotation: self.local_rotation.resolve(values, Default::default())?.to_quat(glam::EulerRot::YXZ),
             world_rotation: self.world_rotation.resolve(values, Default::default())?.to_quat(glam::EulerRot::YXZ),
             coordinates: self.coordinates.resolve(values, Default::default())?,
+            animation: PathPropertiesMap::default(),
         })
     }
 }

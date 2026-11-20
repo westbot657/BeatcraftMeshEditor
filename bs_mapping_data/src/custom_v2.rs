@@ -47,7 +47,7 @@ pub struct CommonCustomDataV2 {
     #[cfg(feature = "tracks")]
     #[serde(rename = "_animation")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub animation: Option<crate::animation_v2::AnimationDataV2>,
+    pub animation: Option<serde_json::Value>,
 
     #[cfg(feature = "chroma")]
     #[serde(rename = "_color")]

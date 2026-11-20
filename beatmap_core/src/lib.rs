@@ -11,6 +11,10 @@ use beatcraft_editor_proc::hex;
 use bs_mapping_data::BpmRegion;
 use beatmap::{Arc, BombNote, ChainNote, ColorNote, Obstacle};
 use glam::{Vec3, Vec4, FloatExt};
+use tracks_rs::animation::coroutine_manager::CoroutineManager;
+use tracks_rs::prelude::*;
+
+pub use tracks_rs;
 
 pub struct BeatmapController<ObjectSource> {
     pub runtime_data: RuntimeData,
@@ -21,7 +25,7 @@ pub struct BeatmapController<ObjectSource> {
     pub arcs: Vec<Arc<ObjectSource>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RuntimeData {
     pub njs: f32,
     pub bpm: f32,
@@ -30,6 +34,8 @@ pub struct RuntimeData {
     pub bpm_regions: Vec<BpmRegion>,
     pub sample_count: usize,
     pub sample_rate: u32,
+    pub base_provider_context: BaseProviderContext,
+    pub timeline_coroutine_manager: CoroutineManager,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -56,6 +62,8 @@ impl RuntimeData {
             bpm_regions,
             sample_count,
             sample_rate,
+            base_provider_context: BaseProviderContext::default(),
+            timeline_coroutine_manager: CoroutineManager::default(),
         }
     }
 

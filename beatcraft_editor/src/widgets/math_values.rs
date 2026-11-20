@@ -1,5 +1,6 @@
 use crate::math_interpreter::MapIndexable;
 use num_traits::Num;
+use crate::BUTTON_ROW_HEIGHT;
 
 pub struct MathDragValue<'a, T: MapIndexable> {
     value: &'a mut f32,
@@ -96,7 +97,7 @@ impl<'a, T: MapIndexable> egui::Widget for MathDragValue<'a, T> {
                 .custom_formatter(move |_, _| display.clone())
                 .custom_parser(|s| s.parse::<f64>().ok());
 
-            let mut drag_response = ui.add_sized([available, 20.], drag);
+            let mut drag_response = ui.add_sized([available, BUTTON_ROW_HEIGHT], drag);
 
             if drag_response.clicked() {
                 editing = true;

@@ -2,7 +2,6 @@
 
 uniform sampler2D Sampler0;
 
-uniform vec2 texelSize;
 uniform float GameTime;
 
 in vec2 texCoord0;

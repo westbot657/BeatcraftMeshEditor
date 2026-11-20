@@ -15,16 +15,27 @@ mesh-editor = []
 mapper = []
 
 [dependencies]
-eframe = { version = "0.33.3", features = ["glow", "persistence"] }
-egui = { version = "0.33.3", features = ["persistence", "serde"] }
-egui_extras = { version = "0.33.3", features = ["all_loaders"] }
-glam = { version = "0.33.5", features = ["bytemuck", "serde"] }
+eframe = {
+    version = "0.37.0",
+    default-features = false,
+    features = [
+        "glow",
+        "accesskit",
+        "default_fonts",
+        "wayland",
+        "x11",
+        "persistence"
+    ]
+}
+egui = { version = "0.37.0", features = ["persistence", "serde"] }
+egui_extras = { version = "0.37.0", features = ["all_loaders"] }
+glam = { version = "0.34.3", features = ["bytemuck", "serde"] }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 parking_lot = "0.13"
 bytemuck = { version = "1", features = ["derive"] }
-rfd = "0.17"
+rfd = "0.18"
 indexmap = { version = "2.13.0", features = ["serde"] }
 regex = "1.12.3"
 anyhow = "1"

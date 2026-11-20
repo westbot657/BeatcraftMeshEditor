@@ -9,12 +9,9 @@ use crate::data::mesh::UvId;
 use crate::editor::{App, Selection};
 use crate::light_mesh::Triangle;
 use crate::widgets::math_values::MathDragValue;
-use crate::{
-    RefDuper, UV_HIT_RADIUS, UV_VERT_COLORS, editor, get_or_load_texture, light_mesh, screen_to_uv,
-    snap_uv, uv_to_screen,
-};
+use crate::{editor, get_or_load_texture, light_mesh, screen_to_uv, snap_uv, uv_to_screen, ContextScrollExt, RefDuper, UV_HIT_RADIUS, UV_VERT_COLORS, BUTTON_ROW_HEIGHT};
 
-pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Context) {
+pub fn draw_uv_view(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     let rd = RefDuper;
     let s2 = unsafe { rd.detach_mut_ref(s) };
     let s3 = unsafe { rd.detach_mut_ref(s) };
@@ -108,7 +105,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
 
         if tris_in_group > 1 {
             egui::ScrollArea::horizontal()
-                .id_salt(ui.id().with("tri_tabs"))
+                .id_salt(ui.scope_id().with("tri_tabs"))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         for ti in 0..tris_in_group {
@@ -153,7 +150,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
             .find(|(id, _, _)| *id == sel_group)
             .and_then(|(_ref_id, display_id, path)| {
                 let handle =
-                    get_or_load_texture(display_id, path, ctx, &mut s.state.ui.texture_cache)?;
+                    get_or_load_texture(display_id, path, ui.ctx(), &mut s.state.ui.texture_cache)?;
                 let size = handle.size();
                 Some((size[0] as u32, size[1] as u32, handle.id()))
             })
@@ -169,9 +166,9 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
             let pan = &mut s.state.ui.uv_pan;
 
             if resp.hovered() {
-                let scroll_delta = ctx.input(|i| i.smooth_scroll_delta.y);
+                let scroll_delta = ui.ctx().raw_scroll_axis(false);
                 if scroll_delta != 0.0
-                    && let Some(mouse_pos) = ctx.input(|i| i.pointer.hover_pos())
+                    && let Some(mouse_pos) = ui.ctx().input(|i| i.pointer.hover_pos())
                 {
                     let uv_before = screen_to_uv(mouse_pos, canvas_rect, *pan, *zoom);
                     let factor = (scroll_delta * 0.002).exp();
@@ -219,7 +216,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
 
         if s.state.ui.dragging_uv.is_none() {
             s.state.ui.hovered_uv = None;
-            if let Some(hp) = ctx.input(|i| i.pointer.hover_pos())
+            if let Some(hp) = ui.ctx().input(|i| i.pointer.hover_pos())
                 && canvas_rect.contains(hp)
             {
                 let mut best_dist = UV_HIT_RADIUS;
@@ -248,7 +245,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
 
         if let Some((dt, dv)) = s.state.ui.dragging_uv {
             if resp.drag_stopped() {
-                let modifiers = ctx.input(|i| i.modifiers);
+                let modifiers = ui.ctx().input(|i| i.modifiers);
                 if let Some(tris_vec) = groups.get_mut(&sel_group)
                     && let Some(tri) = tris_vec.get(dt)
                     && let Some(uv_ref) = part.resolve_uv_mut(&tri.vertices[dv].uv)
@@ -374,7 +371,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                                         vars.insert("y".to_string(), uv_ref.y);
 
                                         let rx = ui.add_sized(
-                                            [half_w, 18.0],
+                                            [half_w, BUTTON_ROW_HEIGHT],
                                             MathDragValue::new(&mut uv_ref.x, &mut vars)
                                                 .speed(0.001)
                                                 .max_decimals(4),
@@ -402,7 +399,7 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                                         vars.insert("y".to_string(), uv_ref.y);
 
                                         let ry = ui.add_sized(
-                                            [half_w, 18.0],
+                                            [half_w, BUTTON_ROW_HEIGHT],
                                             MathDragValue::new(&mut uv_ref.y, &mut vars)
                                                 .speed(0.001)
                                                 .max_decimals(4),
@@ -424,8 +421,8 @@ pub fn draw_uv_view(s: &mut App, ui: &mut Ui, ctx: &egui::Context, gl: &glow::Co
                                             s.rebuild_meshes(gl);
                                         }
                                     } else {
-                                        ui.add_sized([half_w, 18.0], egui::Label::new("0.0000"));
-                                        ui.add_sized([half_w, 18.0], egui::Label::new("0.0000"));
+                                        ui.add_sized([half_w, BUTTON_ROW_HEIGHT], egui::Label::new("0.0000"));
+                                        ui.add_sized([half_w, BUTTON_ROW_HEIGHT], egui::Label::new("0.0000"));
                                     }
                                 });
 

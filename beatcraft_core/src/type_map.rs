@@ -25,27 +25,27 @@ impl From<DataKey> for JValue<'_> {
 
 #[derive(Default)]
 pub struct TypeMap {
-    map: SlotMap<DataKey, Box<dyn Any + Send + Sync>>,
+    map: SlotMap<DataKey, Box<dyn Any>>,
 }
 
 impl TypeMap {
-    pub fn insert<T: Any + Send + Sync>(&mut self, value: T) -> DataKey {
+    pub fn insert<T: Any>(&mut self, value: T) -> DataKey {
         self.map.insert(Box::new(value))
     }
 
-    pub fn get<T: Any + Send + Sync>(&self, key: DataKey) -> Option<&T> {
+    pub fn get<T: Any>(&self, key: DataKey) -> Option<&T> {
         self.map
             .get(key)?
             .downcast_ref()
     }
 
-    pub fn get_mut<T: Any + Send + Sync>(&mut self, key: DataKey) -> Option<&mut T> {
+    pub fn get_mut<T: Any>(&mut self, key: DataKey) -> Option<&mut T> {
         self.map
             .get_mut(key)?
             .downcast_mut()
     }
 
-    pub fn remove<T: Any + Send + Sync>(&mut self, key: DataKey) -> Option<T> {
+    pub fn remove<T: Any>(&mut self, key: DataKey) -> Option<T> {
         Some(*self.map
             .remove(key)?
             .downcast().ok()?)

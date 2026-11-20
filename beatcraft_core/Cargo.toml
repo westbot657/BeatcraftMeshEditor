@@ -8,19 +8,18 @@ crate-type = ["cdylib"]
 name = "beatcraft_core"
 
 [dependencies]
-glam = "0.33.3"
+glam = "0.34.3"
 rustc-hash = "2.1.2"
 bstr = {version = "1", default-features = false, features = ["std"]}
 jni = { version = "0.22.4" }
 
 java-jni-extras = "0.2.3"
-java-jni-extras-proc = {
-    path = "../../../../RustroverProjects/java-jni-extras/java-jni-extras-proc"
-}
+#java-jni-extras-proc = {
+#    path = "../../../../RustroverProjects/java-jni-extras/java-jni-extras-proc"
+#}
 
 beatmap-core = { path = "../beatmap_core" }
 bs-mapping-data = { path = "../bs_mapping_data" }
 beatcraft-audiolib = { path = "../beatcraft_audiolib", default-features = false }
 slotmap = "1.1.1"
-parking_lot = "0.12.5"
 

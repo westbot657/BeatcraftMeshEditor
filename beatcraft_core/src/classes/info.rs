@@ -33,7 +33,7 @@ java_class! {
                         #throw new IOException(e.to_string()).unwrap_err();
                     })?
             );
-            let info_key = DATA.write().insert(info);
+            let info_key = DATA.with_borrow_mut(|data| data.insert(info));
 
             let info_obj = #alloc Info();
             #info_obj.handle = info_key;

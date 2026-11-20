@@ -10,7 +10,7 @@ use crate::editor::{self, App, RotationDisplayMode};
 use crate::light_mesh::{self, ComputeVertex, Part};
 use bs_mapping_data::easing::Easing;
 
-use crate::RefDuper;
+use crate::{RefDuper, BUTTON_ROW_HEIGHT};
 use crate::widgets::math_values::{MathDragValue, MathDragValueOpt, MultiMathValue};
 
 pub fn trigger_history<T: 'static + Clone + Send + Sync>(
@@ -61,12 +61,12 @@ pub fn vec3_row<T: 'static + Clone + Send + Sync>(
         let mut current = *v;
         for val in current.as_mut() {
             ui.allocate_ui_with_layout(
-                (w3, 20.).into(),
+                (w3, BUTTON_ROW_HEIGHT).into(),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     let id = ui.next_auto_id();
 
-                    let (rect, _) = ui.allocate_exact_size([w3, 20.].into(), egui::Sense::empty());
+                    let (rect, _) = ui.allocate_exact_size([w3, BUTTON_ROW_HEIGHT].into(), egui::Sense::empty());
 
                     let mut child_ui =
                         ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(*ui.layout()));
@@ -124,12 +124,12 @@ pub fn vec2_row<T: 'static + Clone + Send + Sync>(
         let mut current = *v;
         for val in current.as_mut() {
             ui.allocate_ui_with_layout(
-                (w2, 20.).into(),
+                (w2, BUTTON_ROW_HEIGHT).into(),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     let id = ui.next_auto_id();
 
-                    let (rect, _) = ui.allocate_exact_size([w2, 20.].into(), egui::Sense::empty());
+                    let (rect, _) = ui.allocate_exact_size([w2, BUTTON_ROW_HEIGHT].into(), egui::Sense::empty());
 
                     let mut child_ui =
                         ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(*ui.layout()));
@@ -197,11 +197,11 @@ pub fn multi_vec3_row<T: 'static + Clone + Send + Sync>(
         vals: &mut Option<Vec<f32>>,
     ) {
         ui.allocate_ui_with_layout(
-            (w3, 20.).into(),
+            (w3, BUTTON_ROW_HEIGHT).into(),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.add_sized(
-                    [w3, 20.],
+                    [w3, BUTTON_ROW_HEIGHT],
                     MultiMathValue::new(v, vals, vars).max_decimals(3),
                 );
             },
@@ -264,12 +264,12 @@ pub fn value_opt_row<T: 'static + Clone + Send + Sync>(
     ui.horizontal(|ui| {
         let mut current = *v;
         ui.allocate_ui_with_layout(
-            (w, 20.).into(),
+            (w, BUTTON_ROW_HEIGHT).into(),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 let id = ui.next_auto_id();
                 let resp = ui.add_sized(
-                    [w, 20.],
+                    [w, BUTTON_ROW_HEIGHT],
                     MathDragValueOpt::<u32, _>::new(&mut current, vars),
                 );
 
@@ -324,12 +324,12 @@ pub fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
         let mut current = [*v[0], *v[1], *v[2]];
         for val in current.iter_mut() {
             ui.allocate_ui_with_layout(
-                (w3, 20.).into(),
+                (w3, BUTTON_ROW_HEIGHT).into(),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     let id = ui.next_auto_id();
                     let resp = ui.add_sized(
-                        [w3, 20.],
+                        [w3, BUTTON_ROW_HEIGHT],
                         MathDragValueOpt::<f32, _>::new(val, vars)
                             .speed(0.01)
                             .max_decimals(3),
@@ -370,7 +370,7 @@ pub fn vec3_opt_row<T: 'static + Clone + Send + Sync>(
 pub fn delta_function_row<T: 'static + Clone + Send + Sync>(
     ui: &mut Ui,
     func_delta_vars: (&mut Easing, &mut Option<f32>, &mut HashMap<String, f32>),
-    salt: impl Hash,
+    salt: impl Hash + std::fmt::Debug,
     w: (f32, f32),
     snapshot_provider: impl Fn() -> T,
     mut history_pusher: impl FnMut(T),
@@ -384,12 +384,12 @@ pub fn delta_function_row<T: 'static + Clone + Send + Sync>(
     let mut changed = false;
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(
-            (w2, 20.).into(),
+            (w2, BUTTON_ROW_HEIGHT).into(),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 let id = ui.next_auto_id();
                 let resp = ui.add_sized(
-                    [w2, 20.],
+                    [w2, BUTTON_ROW_HEIGHT],
                     MathDragValueOpt::<f32, _>::new(delta, vars)
                         .speed(0.01)
                         .max_decimals(3),
@@ -417,11 +417,11 @@ pub fn delta_function_row<T: 'static + Clone + Send + Sync>(
             },
         );
         ui.allocate_ui_with_layout(
-            (w3, 20.).into(),
+            (w3, BUTTON_ROW_HEIGHT).into(),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 let old = *func;
-                egui::ComboBox::from_id_salt(egui::Id::new("delta_function").with(salt))
+                egui::ComboBox::from_id_salt(egui::IdSalt::new(("delta_function", salt)))
                     .selected_text(func.display_name())
                     .width(w3)
                     .wrap_mode(egui::TextWrapMode::Truncate)
@@ -474,12 +474,12 @@ pub fn quat_row<T: 'static + Clone + Send + Sync>(
             ui.horizontal(|ui| {
                 for val in &mut v[0..2] {
                     ui.allocate_ui_with_layout(
-                        egui::Vec2::new(w2, 20.0),
+                        egui::Vec2::new(w2, BUTTON_ROW_HEIGHT),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             let id = ui.next_auto_id();
                             let resp = ui.add_sized(
-                                [w2, 20.],
+                                [w2, BUTTON_ROW_HEIGHT],
                                 MathDragValue::new(val, &mut vars)
                                     .speed(0.001)
                                     .max_decimals(3),
@@ -510,12 +510,12 @@ pub fn quat_row<T: 'static + Clone + Send + Sync>(
             ui.horizontal(|ui| {
                 for val in &mut v[2..4] {
                     ui.allocate_ui_with_layout(
-                        egui::Vec2::new(w2, 20.0),
+                        egui::Vec2::new(w2, BUTTON_ROW_HEIGHT),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             let id = ui.next_auto_id();
                             let resp = ui.add_sized(
-                                [w2, 20.],
+                                [w2, BUTTON_ROW_HEIGHT],
                                 MathDragValue::new(val, &mut vars)
                                     .speed(0.001)
                                     .max_decimals(3),
@@ -602,12 +602,12 @@ pub fn quat_row<T: 'static + Clone + Send + Sync>(
             ui.horizontal(|ui| {
                 for val in &mut degrees {
                     ui.allocate_ui_with_layout(
-                        (w3, 20.).into(),
+                        (w3, BUTTON_ROW_HEIGHT).into(),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             let id = ui.next_auto_id();
                             let resp = ui.add_sized(
-                                [w3, 20.],
+                                [w3, BUTTON_ROW_HEIGHT],
                                 MathDragValue::new(val, &mut vars)
                                     .speed(0.5)
                                     .max_decimals(1)
@@ -705,11 +705,11 @@ pub fn quat_row<T: 'static + Clone + Send + Sync>(
                 changed: &mut bool,
             ) {
                 ui.allocate_ui_with_layout(
-                    egui::Vec2::new(w2, 20.0),
+                    egui::Vec2::new(w2, BUTTON_ROW_HEIGHT),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         let mut vals: Option<Vec<f32>> = None;
-                        ui.add_sized([w2, 20.], MultiMathValue::new(axis, &mut vals, var_ptrs));
+                        ui.add_sized([w2, BUTTON_ROW_HEIGHT], MultiMathValue::new(axis, &mut vals, var_ptrs));
                         if let Some(new_vals) = vals {
                             for (arr, &v) in arrays.iter_mut().zip(new_vals.iter()) {
                                 arr[axis_idx] = v;
@@ -789,12 +789,12 @@ pub fn quat_row<T: 'static + Clone + Send + Sync>(
                 changed: &mut bool,
             ) {
                 ui.allocate_ui_with_layout(
-                    (w3, 20.).into(),
+                    (w3, BUTTON_ROW_HEIGHT).into(),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         let mut vals: Option<Vec<f32>> = None;
                         ui.add_sized(
-                            [w3, 20.],
+                            [w3, BUTTON_ROW_HEIGHT],
                             MultiMathValue::new(axis, &mut vals, var_ptrs)
                                 .suffix("\u{b0}")
                                 .degrees(),
@@ -888,8 +888,8 @@ pub fn compute_vertex_row(
     let w4 = w3 * 2. + ui.spacing().item_spacing.x;
 
     ui.horizontal(|ui| {
-        let size = egui::vec2(w3, 20.);
-        let size2 = egui::vec2(w4, 20.);
+        let size = egui::vec2(w3, BUTTON_ROW_HEIGHT);
+        let size2 = egui::vec2(w4, BUTTON_ROW_HEIGHT);
         let layout = egui::Layout::left_to_right(egui::Align::Center);
         ui.allocate_ui_with_layout(size, layout, |ui| {
             ui.set_min_width(w3);
@@ -919,7 +919,7 @@ pub fn compute_vertex_row(
     );
 
     ui.horizontal(|ui| {
-        let size = egui::vec2(w3, 20.);
+        let size = egui::vec2(w3, BUTTON_ROW_HEIGHT);
         let layout = egui::Layout::left_to_right(egui::Align::Center);
         ui.allocate_ui_with_layout(size, layout, |ui| {
             ui.set_min_width(w3);

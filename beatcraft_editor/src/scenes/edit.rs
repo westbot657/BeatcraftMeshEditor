@@ -4,7 +4,7 @@ use crate::light_mesh::{self, BloomfogStyle, ComputeNormal, ComputeVertex};
 use crate::render::{GridType, InstanceData, LIGHT_COLORS, MeshDrawCall, PointDrawCall};
 use crate::ui_elements::*;
 use crate::widgets::TextInput;
-use crate::{App, D_ARROW, R_ARROW, RefDuper, SMALL_X, UnsafeMutRef, data, editor};
+use crate::{data, editor, App, RefDuper, UnsafeMutRef, BUTTON_ROW_HEIGHT, D_ARROW, R_ARROW, SMALL_X};
 use bs_mapping_data::easing::Easing;
 use eframe::glow;
 use egui::Ui;
@@ -18,20 +18,25 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
     if let Some(part) = self2.get_current_part_mut() {
         let rd2 = RefDuper;
         let part2 = unsafe { rd2.detach_mut_ref(part) };
-        let w = ui.available_width();
-        let w2 = (w - ui.spacing().item_spacing.x) / 2.;
-        let w3 = (w - ui.spacing().item_spacing.x * 2.) / 3.;
+        let spacing = ui.spacing().item_spacing.x;
+        let w = ui.available_width() - spacing;
+        let w2 = (w - spacing * 1.) / 2.;
+        let w3 = (w - spacing * 2.) / 3.;
         //let w4 = w3*2.+ui.spacing().item_spacing.x;
 
         // Indexed vertices
         let verts = &mut s.state.ui.edit_collpased.i_vertices;
-        ui.horizontal(|ui| {
-            let icon = if *verts { R_ARROW } else { D_ARROW };
-            if ui.small_button(icon).clicked() {
-                *verts = !*verts;
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                let icon = if *verts { R_ARROW } else { D_ARROW };
+                if ui.button(icon).clicked() {
+                    *verts = !*verts;
+                }
+                ui.label(self3.data.locale.get("indexed-vertices"));
             }
-            ui.label(self3.data.locale.get("indexed-vertices"));
-        });
+        );
 
         if !*verts {
             for vert in part.vertices.indexed.iter_mut() {
@@ -56,13 +61,17 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         // Named vertices
         let verts = &mut s.state.ui.edit_collpased.n_vertices;
-        ui.horizontal(|ui| {
-            let icon = if *verts { R_ARROW } else { D_ARROW };
-            if ui.small_button(icon).clicked() {
-                *verts = !*verts;
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                let icon = if *verts { R_ARROW } else { D_ARROW };
+                if ui.button(icon).clicked() {
+                    *verts = !*verts;
+                }
+                ui.label(self3.data.locale.get("named-vertices"));
             }
-            ui.label(self3.data.locale.get("named-vertices"));
-        });
+        );
 
         if !*verts {
             for (i, (key, vert)) in part.vertices.named.iter_mut().enumerate() {
@@ -77,7 +86,7 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 }
 
                 if ui
-                    .add_sized([w, 20.], egui::TextEdit::singleline(&mut name))
+                    .add_sized([w, BUTTON_ROW_HEIGHT], egui::TextEdit::singleline(&mut name))
                     .changed()
                 {
                     let _ = self3.rename(editor::Rename::Vertex {
@@ -120,13 +129,17 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         // Compute vertices
         let verts = &mut s.state.ui.edit_collpased.c_vertices;
-        ui.horizontal(|ui| {
-            let icon = if *verts { R_ARROW } else { D_ARROW };
-            if ui.small_button(icon).clicked() {
-                *verts = !*verts;
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                let icon = if *verts { R_ARROW } else { D_ARROW };
+                if ui.button(icon).clicked() {
+                    *verts = !*verts;
+                }
+                ui.label(self3.data.locale.get("compute-vertices"));
             }
-            ui.label(self3.data.locale.get("compute-vertices"));
-        });
+        );
 
         if !*verts {
             for (i, (key, comp)) in part.vertices.compute.iter_mut().enumerate() {
@@ -141,7 +154,7 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 }
 
                 if ui
-                    .add_sized([w, 20.], egui::TextEdit::singleline(&mut name))
+                    .add_sized([w, BUTTON_ROW_HEIGHT], egui::TextEdit::singleline(&mut name))
                     .changed()
                 {
                     let _ = self3.rename(editor::Rename::Vertex {
@@ -169,21 +182,28 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         // Indexed uvs
         let uvs = &mut s.state.ui.edit_collpased.i_uvs;
-        ui.horizontal(|ui| {
-            let icon = if *uvs { R_ARROW } else { D_ARROW };
-            if ui.small_button(icon).clicked() {
-                *uvs = !*uvs;
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                let icon = if *uvs { R_ARROW } else { D_ARROW };
+                if ui.button(icon).clicked() {
+                    *uvs = !*uvs;
+                }
+                ui.label(self3.data.locale.get("indexed-uvs"));
             }
-            ui.label(self3.data.locale.get("indexed-uvs"));
-        });
+        );
 
         if !*uvs {
             for (i, uv) in part.uvs.indexed.iter_mut().enumerate() {
-                if ui
-                    .horizontal(|ui| {
+                if ui.allocate_ui_with_layout(
+                    [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
                         ui.label(format!("{i}"));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button(SMALL_X).clicked() {
+                            ui.add_space(spacing);
+                            if ui.button(SMALL_X).clicked() {
                                 self3.add_history(editor::HistoryEntry::MeshPart(
                                     light_mesh::LightMeshPartSnapshot {
                                         id: self3.get_current_mesh_id().unwrap().to_string(),
@@ -235,13 +255,17 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         // Named uvs
         let uvs = &mut s.state.ui.edit_collpased.n_uvs;
-        ui.horizontal(|ui| {
-            let icon = if *uvs { R_ARROW } else { D_ARROW };
-            if ui.small_button(icon).clicked() {
-                *uvs = !*uvs;
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                let icon = if *uvs { R_ARROW } else { D_ARROW };
+                if ui.button(icon).clicked() {
+                    *uvs = !*uvs;
+                }
+                ui.label(self3.data.locale.get("named-uvs"));
             }
-            ui.label(self3.data.locale.get("named-uvs"));
-        });
+        );
 
         if !*uvs {
             for (i, (key, uv)) in part.uvs.named.iter_mut().enumerate() {
@@ -255,10 +279,12 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     name = self3.state.ui.working_name.take().unwrap_or(name);
                 }
 
-                if ui
-                    .horizontal(|ui| {
+                if ui.allocate_ui_with_layout(
+                    [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
                         if ui
-                            .add_sized([w - 24., 20.], egui::TextEdit::singleline(&mut name))
+                            .add_sized([w - 32., BUTTON_ROW_HEIGHT], egui::TextEdit::singleline(&mut name))
                             .changed()
                         {
                             let _ = self3.rename(editor::Rename::Uv {
@@ -274,7 +300,7 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             self3.state.ui.working_key = WorkingRenameKey::None;
                             return true;
                         }
-                        if ui.small_button(SMALL_X).clicked() {
+                        if ui.button(SMALL_X).clicked() {
                             self3.add_history(editor::HistoryEntry::MeshPart(
                                 light_mesh::LightMeshPartSnapshot {
                                     id: self3.get_current_mesh_id().unwrap().to_string(),
@@ -318,7 +344,7 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             ui.separator();
             let mut new_uv = None;
             ui.add_sized(
-                [w, 20.],
+                [w, BUTTON_ROW_HEIGHT],
                 TextInput::new(self3.data.locale.get("add-named-uv"), &mut new_uv),
             );
             if let Some(name) = new_uv {
@@ -335,21 +361,28 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         // Indexed normals
         let norms = &mut s.state.ui.edit_collpased.i_normals;
-        ui.horizontal(|ui| {
-            let icon = if *norms { R_ARROW } else { D_ARROW };
-            if ui.small_button(icon).clicked() {
-                *norms = !*norms;
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                let icon = if *norms { R_ARROW } else { D_ARROW };
+                if ui.button(icon).clicked() {
+                    *norms = !*norms;
+                }
+                ui.label(self3.data.locale.get("indexed-normals"));
             }
-            ui.label(self3.data.locale.get("indexed-normals"));
-        });
+        );
 
         if !*norms {
             for (i, norm) in part.normals.indexed.iter_mut().enumerate() {
-                if ui
-                    .horizontal(|ui| {
+                if ui.allocate_ui_with_layout(
+                    [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
                         ui.label(format!("{i}"));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button(SMALL_X).clicked() {
+                            ui.add_space(spacing);
+                            if ui.button(SMALL_X).clicked() {
                                 self3.add_history(editor::HistoryEntry::MeshPart(
                                     light_mesh::LightMeshPartSnapshot {
                                         id: self3.get_current_mesh_id().unwrap().to_string(),
@@ -404,13 +437,17 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         // Named normals
         let norms = &mut s.state.ui.edit_collpased.n_normals;
-        ui.horizontal(|ui| {
-            let icon = if *norms { R_ARROW } else { D_ARROW };
-            if ui.small_button(icon).clicked() {
-                *norms = !*norms;
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                let icon = if *norms { R_ARROW } else { D_ARROW };
+                if ui.button(icon).clicked() {
+                    *norms = !*norms;
+                }
+                ui.label(self3.data.locale.get("named-normals"));
             }
-            ui.label(self3.data.locale.get("named-normals"));
-        });
+        );
 
         if !*norms {
             for (i, (key, norm)) in part.normals.named.iter_mut().enumerate() {
@@ -424,10 +461,12 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     name = self3.state.ui.working_name.take().unwrap_or(name);
                 }
 
-                if ui
-                    .horizontal(|ui| {
+                if ui.allocate_ui_with_layout(
+                    [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
                         if ui
-                            .add_sized([w - 24., 20.], egui::TextEdit::singleline(&mut name))
+                            .add_sized([w - 32., BUTTON_ROW_HEIGHT], egui::TextEdit::singleline(&mut name))
                             .changed()
                         {
                             let _ = self3.rename(editor::Rename::Normal {
@@ -443,7 +482,7 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             self3.state.ui.working_key = WorkingRenameKey::None;
                             return true;
                         }
-                        if ui.small_button(SMALL_X).clicked() {
+                        if ui.button(SMALL_X).clicked() {
                             self3.add_history(editor::HistoryEntry::MeshPart(
                                 light_mesh::LightMeshPartSnapshot {
                                     id: self3.get_current_mesh_id().unwrap().to_string(),
@@ -485,7 +524,7 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
             let mut new_norm = None;
             ui.add_sized(
-                [w, 20.],
+                [w, BUTTON_ROW_HEIGHT],
                 TextInput::new(self3.data.locale.get("add-named-normal"), &mut new_norm),
             );
             if let Some(name) = new_norm {
@@ -502,13 +541,17 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
         // Compute normals
         let norms = &mut s.state.ui.edit_collpased.c_normals;
-        ui.horizontal(|ui| {
-            let icon = if *norms { R_ARROW } else { D_ARROW };
-            if ui.small_button(icon).clicked() {
-                *norms = !*norms;
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                let icon = if *norms { R_ARROW } else { D_ARROW };
+                if ui.button(icon).clicked() {
+                    *norms = !*norms;
+                }
+                ui.label(self3.data.locale.get("compute-normals"));
             }
-            ui.label(self3.data.locale.get("compute-normals"));
-        });
+        );
 
         if !*norms {
             for (i, (key, comp)) in part.normals.compute.iter_mut().enumerate() {
@@ -522,10 +565,12 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     name = self3.state.ui.working_name.take().unwrap_or(name);
                 }
 
-                if ui
-                    .horizontal(|ui| {
+                if ui.allocate_ui_with_layout(
+                    [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
                         if ui
-                            .add_sized([w - 24., 20.], egui::TextEdit::singleline(&mut name))
+                            .add_sized([w - 32., BUTTON_ROW_HEIGHT], egui::TextEdit::singleline(&mut name))
                             .changed()
                         {
                             let _ = self3.rename(editor::Rename::Normal {
@@ -541,7 +586,7 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             self3.state.ui.working_key = WorkingRenameKey::None;
                             return true;
                         }
-                        if ui.small_button(SMALL_X).clicked() {
+                        if ui.button(SMALL_X).clicked() {
                             self3.add_history(editor::HistoryEntry::MeshPart(
                                 light_mesh::LightMeshPartSnapshot {
                                     id: self3.get_current_mesh_id().unwrap().to_string(),
@@ -564,42 +609,47 @@ pub fn draw_edit_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     self3.state.ui.working_name = Some(name);
                 }
 
-                ui.horizontal(|ui| {
-                    for idx in 0..3 {
-                        let id = &mut comp.points[idx];
-                        let check = id.clone();
-                        let disp = match id {
-                            VertexId::Named(n) => n.to_string(),
-                            VertexId::Index(i) => format!("{i}"),
-                        };
+                ui.allocate_ui_with_layout(
+                    [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
+                        for idx in 0..3 {
+                            let id = &mut comp.points[idx];
+                            let check = id.clone();
+                            let disp = match id {
+                                VertexId::Named(n) => n.to_string(),
+                                VertexId::Index(i) => format!("{i}"),
+                            };
 
-                        egui::ComboBox::from_id_salt(format!("{key}-{idx}"))
-                            .selected_text(disp)
-                            .width(w3)
-                            .show_ui(ui, |ui| {
-                                for name in part2.get_valid_vertex_ids() {
-                                    let disp = match &name {
-                                        VertexId::Named(n) => n.to_string(),
-                                        VertexId::Index(i) => format!("{i}"),
-                                    };
-                                    ui.selectable_value(id, name, disp);
-                                }
-                            });
+                            egui::ComboBox::from_id_salt(format!("{key}-{idx}"))
+                                .selected_text(disp)
+                                .width(w3)
+                                .show_ui(ui, |ui| {
+                                    for name in part2.get_valid_vertex_ids() {
+                                        let disp = match &name {
+                                            VertexId::Named(n) => n.to_string(),
+                                            VertexId::Index(i) => format!("{i}"),
+                                        };
+                                        ui.selectable_value(id, name, disp);
+                                    }
+                                });
 
-                        if *id != check {
-                            self3.add_history(editor::HistoryEntry::MeshPart(
-                                light_mesh::LightMeshPartSnapshot {
-                                    id: self3.get_current_mesh_id().unwrap().to_string(),
-                                    name: self3.get_current_part_name().unwrap().to_string(),
-                                    part: Box::new(part2.clone()),
-                                },
-                            ));
-                            self3.rebuild_meshes(gl);
+                            if *id != check {
+                                self3.add_history(editor::HistoryEntry::MeshPart(
+                                    light_mesh::LightMeshPartSnapshot {
+                                        id: self3.get_current_mesh_id().unwrap().to_string(),
+                                        name: self3.get_current_part_name().unwrap().to_string(),
+                                        part: Box::new(part2.clone()),
+                                    },
+                                ));
+                                self3.rebuild_meshes(gl);
+                            }
                         }
                     }
-                });
+                );
             }
         }
+        ui.add_space(5.);
     }
 }
 
@@ -640,7 +690,7 @@ pub fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             .data
             .locale
             .get_with_args("rename-asset", &[("name".into(), current.into())].into());
-        ui.add_sized([w, 20.], TextInput::new(&ren, &mut rename));
+        ui.add_sized([w, BUTTON_ROW_HEIGHT], TextInput::new(&ren, &mut rename));
         if let Some(rename) = rename {
             let _ = s.rename(editor::Rename::Part {
                 view_id: s.get_current_mesh_id().unwrap().to_string(),
@@ -737,7 +787,7 @@ pub fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         {
             let mut comp_name = None;
             ui.add_sized(
-                [w, 20.],
+                [w, BUTTON_ROW_HEIGHT],
                 TextInput::new(self3.data.locale.get("add-compute-vertex"), &mut comp_name),
             );
             if let Some(name) = comp_name {
@@ -799,7 +849,7 @@ pub fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             let hint = self3.data.locale.get(hint);
 
             let mut comp_name = None;
-            ui.add_sized([w, 20.], TextInput::new(hint, &mut comp_name));
+            ui.add_sized([w, BUTTON_ROW_HEIGHT], TextInput::new(hint, &mut comp_name));
             if let Some(name) = comp_name {
                 self3.add_history(editor::HistoryEntry::MeshPart(
                     light_mesh::LightMeshPartSnapshot {
@@ -915,7 +965,7 @@ pub fn draw_edit_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         if !verts.is_empty()
             && ui
                 .add_sized(
-                    [w, 20.],
+                    [w, BUTTON_ROW_HEIGHT],
                     egui::Button::new(self3.data.locale.get("dedupe-vertices")),
                 )
                 .clicked()

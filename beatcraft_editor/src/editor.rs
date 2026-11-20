@@ -6,7 +6,7 @@ use std::thread::panicking;
 use std::{fs, mem};
 
 use eframe::glow::{self, Context, HasContext};
-use egui::{Key, Response};
+use egui::{Id, Key, Response};
 use glam::{IVec3, Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use keybinds::KeySeq;
@@ -33,7 +33,7 @@ use crate::light_mesh::{
     LightMeshSnapshot,
 };
 use crate::render::{GpuMesh, InstanceData, LIGHT_COLORS, Renderer};
-use crate::{DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER, RefDuper, editor, load_app_data, save_app_data};
+use crate::{editor, load_app_data, save_app_data, ContextScrollExt, RefDuper, DB_AUDIO, DB_LOGIC, DB_MAIN, DB_RENDER};
 #[cfg(feature = "mapper")]
 use beatcraft_audiolib::{AudioSystem, NativeOpenAL};
 use beatmap_core::RuntimeData;
@@ -863,7 +863,6 @@ impl Rename {
     }
 }
 
-#[derive(Debug)]
 pub enum HistoryEntry {
     MultiStep(Vec<HistoryEntry>),
 
@@ -1266,7 +1265,7 @@ impl App {
         tracing::info!(target: DB_MAIN, "Initializing...");
         let minecraft_font: bool = cc.egui_ctx.memory_mut(|m| {
             m.data
-                .get_persisted("use_minecraft_font".into())
+                .get_persisted(Id::unique("use_minecraft_font"))
                 .unwrap_or(true)
         });
         tracing::debug!(target: DB_LOGIC, "Use Minecraft font: {minecraft_font}");
@@ -1562,7 +1561,7 @@ impl App {
             return (false, false, false);
         }
 
-        if ctx.wants_keyboard_input() {
+        if ctx.egui_wants_keyboard_input() {
             return (false, false, false);
         }
 
@@ -1653,7 +1652,7 @@ impl App {
             #[cfg(feature = "mesh-editor")]
             EditorContext::Model(_) => match self.mode {
                 EditorMode::View => {
-                    if input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace) {
+                    if self.data.keymaps.pressed("delete") {
                         let mut to_remove =
                             std::mem::take(&mut self.state.ui.mirror_editor.selected);
                         if !to_remove.is_empty() {
@@ -1717,7 +1716,7 @@ impl App {
                         self.selection = Selection::None;
                         self.upload_selection_points(gl);
                     }
-                    if (input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace))
+                    if self.data.keymaps.pressed("delete")
                         && let Selection::Vertices(_) = self.selection
                     {
                         let Selection::Vertices(verts) = self.selection.take() else {
@@ -1838,7 +1837,7 @@ impl App {
         let mx = mouse_pos.x;
         let my = h - mouse_pos.y;
 
-        let input = if ctx.wants_keyboard_input() {
+        let input = if ctx.egui_wants_keyboard_input() {
             None
         } else {
             Some(ctx.input(|i| i.clone()))
@@ -1850,13 +1849,7 @@ impl App {
                 matches!(self.context, EditorContext::Map(MapEditorContext::Beatmap)) && !alt;
             #[cfg(not(feature = "mapper"))]
             let is_timeline_scroll = false;
-            let scroll = ctx.input(|i| {
-                if shift {
-                    i.raw_scroll_delta.x
-                } else {
-                    i.raw_scroll_delta.y
-                }
-            });
+            let scroll = ctx.raw_scroll_axis(shift);
             if scroll != 0. {
                 if is_timeline_scroll {
                     #[cfg(feature = "mapper")]

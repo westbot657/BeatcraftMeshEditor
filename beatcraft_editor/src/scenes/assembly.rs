@@ -5,7 +5,7 @@ use crate::renaming::light_mesh::rehash;
 use crate::render::{GridType, HandleDrawCall, InstanceData, MeshDrawCall, PointDrawCall};
 use crate::ui_elements::*;
 use crate::widgets::TextInput;
-use crate::{App, D_ARROW, R_ARROW, RefDuper, SMALL_R_ARROW, SMALL_X, UnsafeMutRef, editor};
+use crate::{editor, App, RefDuper, UnsafeMutRef, BUTTON_ROW_HEIGHT, D_ARROW, R_ARROW, SMALL_R_ARROW, SMALL_X};
 use eframe::glow;
 use egui::Ui;
 use glam::{Mat4, Quat, Vec3, Vec4};
@@ -33,13 +33,17 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         let w2 = (w - ui.spacing().item_spacing.x) / 2.0;
         let w3 = (w - ui.spacing().item_spacing.x * 2.0) / 3.0;
 
-        ui.horizontal(|ui| {
-            let icon = if toggles.placements { R_ARROW } else { D_ARROW };
-            if ui.small_button(icon).clicked() {
-                toggles.placements = !toggles.placements;
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                let icon = if toggles.placements { R_ARROW } else { D_ARROW };
+                if ui.button(icon).clicked() {
+                    toggles.placements = !toggles.placements;
+                }
+                ui.label(self2.data.locale.get("placements"));
             }
-            ui.label(self2.data.locale.get("placements"));
-        });
+        );
 
         if !toggles.placements {
             let mut to_remove = None;
@@ -49,40 +53,48 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     .entry(pi)
                     .or_insert(([true, true, true], Default::default()));
 
-                ui.horizontal(|ui| {
-                    let icon = if pt_collapsed.0[0] { R_ARROW } else { D_ARROW };
-                    if ui.small_button(icon).clicked() {
-                        pt_collapsed.0[0] = !pt_collapsed.0[0];
+                ui.allocate_ui_with_layout(
+                    [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
+                        let icon = if pt_collapsed.0[0] { R_ARROW } else { D_ARROW };
+                        if ui.button(icon).clicked() {
+                            pt_collapsed.0[0] = !pt_collapsed.0[0];
+                        }
+    
+                        egui::ComboBox::from_id_salt(egui::Id::unique("placement_part").with(pi))
+                            .selected_text(placement.part.as_str())
+                            .width(w - ui.spacing().item_spacing.x * 2. - 50.)
+                            .show_ui(ui, |ui| {
+                                for name in &part_names {
+                                    ui.selectable_value(
+                                        &mut placement.part,
+                                        name.clone(),
+                                        name.as_str(),
+                                    );
+                                }
+                            });
+    
+                        if ui.button(SMALL_X).clicked() {
+                            to_remove = Some(pi);
+                        }
                     }
-
-                    egui::ComboBox::from_id_salt(egui::Id::new("placement_part").with(pi))
-                        .selected_text(placement.part.as_str())
-                        .width(w - ui.spacing().item_spacing.x * 2. - 24.)
-                        .show_ui(ui, |ui| {
-                            for name in &part_names {
-                                ui.selectable_value(
-                                    &mut placement.part,
-                                    name.clone(),
-                                    name.as_str(),
-                                );
-                            }
-                        });
-
-                    if ui.small_button(SMALL_X).clicked() {
-                        to_remove = Some(pi);
-                    }
-                });
+                );
 
                 if !pt_collapsed.0[0] {
                     let rot_mode = &mut pt_collapsed.1;
 
-                    ui.horizontal(|ui| {
-                        ui.label(self2.data.locale.get("position"));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |_ui| {
-                            // if ui.small_button("Paste").clicked() { /* TODO */ }
-                            // if ui.small_button("Copy").clicked() { /* TODO */ }
-                        });
-                    });
+                    ui.allocate_ui_with_layout(
+                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                        egui::Layout::left_to_right(egui::Align::Min),
+                        |ui| {
+                            ui.label(self2.data.locale.get("position"));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |_ui| {
+                                // if ui.button("Paste").clicked() { /* TODO */ }
+                                // if ui.button("Copy").clicked() { /* TODO */ }
+                            });
+                        }
+                    );
                     vec3_row(
                         ui,
                         &mut placement.position,
@@ -99,13 +111,17 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         || self4.rebuild_meshes(gl),
                     );
 
-                    ui.horizontal(|ui| {
-                        ui.label(self2.data.locale.get("rotation"));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |_ui| {
-                            // if ui.small_button("Paste").clicked() { /* TODO */ }
-                            // if ui.small_button("Copy").clicked() { /* TODO */ }
-                        });
-                    });
+                    ui.allocate_ui_with_layout(
+                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                        egui::Layout::left_to_right(egui::Align::Min),
+                        |ui| {
+                            ui.label(self2.data.locale.get("rotation"));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |_ui| {
+                                // if ui.button("Paste").clicked() { /* TODO */ }
+                                // if ui.button("Copy").clicked() { /* TODO */ }
+                            });
+                        }
+                    );
                     quat_row(
                         ui,
                         &mut placement.rotation,
@@ -123,19 +139,23 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         || self4.rebuild_meshes(gl),
                     );
 
-                    ui.horizontal(|ui| {
-                        ui.label(self2.data.locale.get("scale"));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |_ui| {
-                            // if ui.small_button("Paste").clicked() { /* TODO */ }
-                            // if ui.small_button("Copy").clicked() { /* TODO */ }
-                            // TODO: re-add lock system when it works
-                            // correctly
-                            // let lock_icon = if pt_collapsed.0[2] { "[#]" } else { "[ ]" };
-                            // if ui.small_button(lock_icon).clicked() {
-                            //     pt_collapsed.0[2] = !pt_collapsed.0[2];
-                            // }
-                        });
-                    });
+                    ui.allocate_ui_with_layout(
+                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                        egui::Layout::left_to_right(egui::Align::Min),
+                        |ui| {
+                            ui.label(self2.data.locale.get("scale"));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |_ui| {
+                                // if ui.button("Paste").clicked() { /* TODO */ }
+                                // if ui.button("Copy").clicked() { /* TODO */ }
+                                // TODO: re-add lock system when it works
+                                // correctly
+                                // let lock_icon = if pt_collapsed.0[2] { "[#]" } else { "[ ]" };
+                                // if ui.button(lock_icon).clicked() {
+                                //     pt_collapsed.0[2] = !pt_collapsed.0[2];
+                                // }
+                            });
+                        }
+                    );
                     vec3_row(
                         ui,
                         &mut placement.scale,
@@ -157,11 +177,11 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         Some(bb) => {
                             ui.horizontal(|ui| {
                                 ui.add_sized(
-                                    [w - ui.spacing().item_spacing.x - 24., 20.],
+                                    [w - ui.spacing().item_spacing.x - 24., BUTTON_ROW_HEIGHT],
                                     egui::Label::new(self2.data.locale.get("graphics-billboard")),
                                 );
 
-                                delete_bb = ui.small_button(SMALL_X).clicked();
+                                delete_bb = ui.button(SMALL_X).clicked();
                             });
                             ui.label(self2.data.locale.get("billboard-origin"));
                             vec3_row(
@@ -222,7 +242,7 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             );
                             if ui
                                 .add_sized(
-                                    [w, 20.],
+                                    [w, BUTTON_ROW_HEIGHT],
                                     egui::Button::new(self2.data.locale.get("camera-lock"))
                                         .selected(bb.camera_lock),
                                 )
@@ -241,17 +261,19 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         None => {
                             if ui
                                 .add_sized(
-                                    [w, 20.],
+                                    [w, BUTTON_ROW_HEIGHT],
                                     egui::Button::new(self2.data.locale.get("set-billboard")),
                                 )
                                 .clicked()
                             {
                                 placement.billboard = Some(BillboardData::default());
+                                self3.rebuild_meshes(gl);
                             }
                         }
                     }
                     if delete_bb {
                         placement.billboard = None;
+                        self3.rebuild_meshes(gl);
                     }
 
                     let mut remove_settings = false;
@@ -259,11 +281,11 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         Some(sets) => {
                             ui.horizontal(|ui| {
                                 ui.add_sized(
-                                    [w - ui.spacing().item_spacing.x - 24., 20.],
+                                    [w - ui.spacing().item_spacing.x - 24., BUTTON_ROW_HEIGHT],
                                     egui::Label::new(self2.data.locale.get("shader-settings")),
                                 );
 
-                                remove_settings = ui.small_button(SMALL_X).clicked();
+                                remove_settings = ui.button(SMALL_X).clicked();
                             });
 
                             let mut current = sets.style;
@@ -296,49 +318,65 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         None => {
                             if ui
                                 .add_sized(
-                                    [w, 20.],
+                                    [w, BUTTON_ROW_HEIGHT],
                                     egui::Button::new(self2.data.locale.get("set-shader-settings")),
                                 )
                                 .clicked()
                             {
                                 placement.shader_settings = Some(ShaderSettingsData::default());
+                                self3.rebuild_meshes(gl);
                             }
                         }
                     }
                     
                     if remove_settings {
                         placement.shader_settings = None;
+                        self3.rebuild_meshes(gl);
                     }
 
-                    ui.horizontal(|ui| {
-                        let icon = if pt_collapsed.0[1] { R_ARROW } else { D_ARROW };
-                        if ui.small_button(icon).clicked() {
-                            pt_collapsed.0[1] = !pt_collapsed.0[1];
+                    ui.allocate_ui_with_layout(
+                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                        egui::Layout::left_to_right(egui::Align::Min),
+                        |ui| {
+                            let icon = if pt_collapsed.0[1] { R_ARROW } else { D_ARROW };
+                            if ui.button(icon).clicked() {
+                                pt_collapsed.0[1] = !pt_collapsed.0[1];
+                            }
+                            ui.label(self2.data.locale.get("remap-data"));
                         }
-                        ui.label(self2.data.locale.get("remap-data"));
-                    });
+                    );
 
                     if !pt_collapsed.0[1] {
                         let mut remap_to_remove = None;
                         for (ri, (from, to)) in placement.remap_data.iter_mut2().enumerate() {
-                            ui.horizontal(|ui| {
-                                let fw = (w - ui.spacing().item_spacing.x * 3. - 24.) / 2.;
-                                ui.add_sized([fw, 20.], egui::TextEdit::singleline(from));
-                                ui.label(SMALL_R_ARROW);
-                                ui.add_sized([fw, 20.], egui::TextEdit::singleline(to));
-                                if ui.small_button(SMALL_X).clicked() {
-                                    remap_to_remove = Some(ri);
+                            let f = from.clone();
+                            let t = to.clone();
+                            ui.allocate_ui_with_layout(
+                                [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                                egui::Layout::left_to_right(egui::Align::Min),
+                                |ui| {
+                                    let fw = (w - ui.spacing().item_spacing.x * 3. - 34.) / 2.;
+                                    ui.add_sized([fw, BUTTON_ROW_HEIGHT], egui::TextEdit::singleline(from));
+                                    ui.label(SMALL_R_ARROW);
+                                    ui.add_sized([fw, BUTTON_ROW_HEIGHT], egui::TextEdit::singleline(to));
+                                    if ui.button(SMALL_X).clicked() {
+                                        remap_to_remove = Some(ri);
+                                    }
                                 }
-                            });
+                            );
+                            if f != *from || t != *to {
+                                self3.rebuild_meshes(gl);
+                            }
                         }
                         let remap = std::mem::take(&mut placement.remap_data);
                         placement.remap_data = rehash(remap);
                         if let Some(ri) = remap_to_remove {
                             placement.remap_data.shift_remove_index(ri);
+                            self3.rebuild_meshes(gl);
                         }
                         if ui
                             .add_sized(
-                                [w, 20.],
+                                [w, BUTTON_ROW_HEIGHT],
                                 egui::Button::new(self2.data.locale.get("add-data")),
                             )
                             .clicked()
@@ -358,7 +396,7 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
             if ui
                 .add_sized(
-                    [w, 20.],
+                    [w, BUTTON_ROW_HEIGHT],
                     egui::Button::new(self2.data.locale.get("add-placement")),
                 )
                 .clicked()
@@ -381,13 +419,17 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
         }
 
-        ui.horizontal(|ui| {
-            let icon = if toggles.data { R_ARROW } else { D_ARROW };
-            if ui.small_button(icon).clicked() {
-                toggles.data = !toggles.data;
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                let icon = if toggles.data { R_ARROW } else { D_ARROW };
+                if ui.button(icon).clicked() {
+                    toggles.data = !toggles.data;
+                }
+                ui.label(self2.data.locale.get("data"));
             }
-            ui.label(self2.data.locale.get("data"));
-        });
+        );
 
         if !toggles.data {
             let mut data_to_remove = None;
@@ -396,10 +438,12 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 let entry = mesh.data.data.get_mut(key).unwrap();
                 let di_collapsed = toggles.datas.entry(di).or_insert(true);
 
-                if ui
-                    .horizontal(|ui| {
+                if ui.allocate_ui_with_layout(
+                    [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
                         let icon = if *di_collapsed { R_ARROW } else { D_ARROW };
-                        if ui.small_button(icon).clicked() {
+                        if ui.button(icon).clicked() {
                             *di_collapsed = !*di_collapsed;
                         }
                         let mut name = key.clone();
@@ -410,7 +454,7 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         }
                         if ui
                             .add_sized(
-                                [w - ui.spacing().item_spacing.x * 2. - 24., 20.],
+                                [w - ui.spacing().item_spacing.x * 2. - 50., BUTTON_ROW_HEIGHT],
                                 egui::TextEdit::singleline(&mut name),
                             )
                             .changed()
@@ -429,7 +473,7 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                             self2.state.ui.working_key = WorkingRenameKey::DataTag(key.clone());
                             self2.state.ui.working_name = Some(name);
                         }
-                        if ui.small_button(SMALL_X).clicked() {
+                        if ui.button(SMALL_X).clicked() {
                             data_to_remove = Some(key.clone());
                         }
                         false
@@ -442,7 +486,7 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 if !*di_collapsed {
                     let mat_label = entry.material.name();
                     let mut current = entry.material;
-                    egui::ComboBox::from_id_salt(egui::Id::new("material_id").with(di))
+                    egui::ComboBox::from_id_salt(egui::Id::unique("material_id").with(di))
                         .selected_text(mat_label)
                         .show_ui(ui, |ui| {
                             for v in MaterialType::iter_all_environment() {
@@ -463,7 +507,7 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         "data-channel",
                         &[("channel".into(), current.into())].into(),
                     );
-                    egui::ComboBox::from_id_salt(egui::Id::new("data_ch").with(di))
+                    egui::ComboBox::from_id_salt(egui::Id::unique("data_ch").with(di))
                         .selected_text(ch)
                         .show_ui(ui, |ui| {
                             for ch in 0u8..8 {
@@ -480,21 +524,25 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         self3.rebuild_meshes(gl);
                     }
 
-                    ui.horizontal(|ui| {
-                        ui.label(self2.data.locale.get("texture"));
-                        let mut current = entry.texture;
-                        let resp =
-                            ui.add(egui::DragValue::new(&mut current).range(0..=255u8).speed(1));
-                        if resp.changed() {
-                            self3.add_history(editor::HistoryEntry::MeshMeta(
-                                mesh2.data.snapshot_mesh_meta(
-                                    self3.get_current_mesh_id().unwrap().to_string(),
-                                ),
-                            ));
-                            entry.texture = current;
-                            self3.rebuild_meshes(gl);
+                    ui.allocate_ui_with_layout(
+                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                        egui::Layout::left_to_right(egui::Align::Min),
+                        |ui| {
+                            ui.label(self2.data.locale.get("texture"));
+                            let mut current = entry.texture;
+                            let resp =
+                                ui.add(egui::DragValue::new(&mut current).range(0..=255u8).speed(1));
+                            if resp.changed() {
+                                self3.add_history(editor::HistoryEntry::MeshMeta(
+                                    mesh2.data.snapshot_mesh_meta(
+                                        self3.get_current_mesh_id().unwrap().to_string(),
+                                    ),
+                                ));
+                                entry.texture = current;
+                                self3.rebuild_meshes(gl);
+                            }
                         }
-                    });
+                    );
                 }
 
                 ui.separator();
@@ -512,7 +560,7 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
             if ui
                 .add_sized(
-                    [w, 20.],
+                    [w, BUTTON_ROW_HEIGHT],
                     egui::Button::new(self2.data.locale.get("add-data-label")),
                 )
                 .clicked()
@@ -530,56 +578,64 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
         }
 
-        ui.horizontal(|ui| {
-            let icon = if toggles.textures { R_ARROW } else { D_ARROW };
-            if ui.small_button(icon).clicked() {
-                toggles.textures = !toggles.textures;
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                let icon = if toggles.textures { R_ARROW } else { D_ARROW };
+                if ui.button(icon).clicked() {
+                    toggles.textures = !toggles.textures;
+                }
+                ui.label(self2.data.locale.get("textures"));
             }
-            ui.label(self2.data.locale.get("textures"));
-        });
+        );
 
         if !toggles.textures {
             let mut tex_to_remove = None;
             let tex_keys: Vec<String> = mesh.data.textures.keys().cloned().collect();
             for key in tex_keys.iter() {
                 let val = mesh.data.textures.get_mut(key).unwrap();
-                ui.horizontal(|ui| {
-                    ui.label(key);
-                    ui.add_sized([w - 60., 20.], egui::TextEdit::singleline(val));
-                    if ui
-                        .small_button(if self2.render.renderer.texture_paths.contains_key(val) {
-                            "R"
-                        } else {
-                            "?"
-                        })
-                        .clicked()
-                    {
-                        let (sx, rx) = mpsc::channel();
-                        let id = val.clone();
-                        let title = self2.data.locale.get("title-choose-image").to_string();
-                        std::thread::spawn(move || {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .set_title(title)
-                                .add_filter("png", &["png"])
-                                .pick_file()
-                            {
-                                let _ = sx.send(path);
-                            }
-                        });
-                        self3.add_routine(Box::new(move |s, gl| match rx.try_recv() {
-                            Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
-                            Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
-                            Ok(src) => {
-                                s.render.renderer.texture_paths.insert(id.clone(), src);
-                                s.rebuild_meshes(gl);
-                                RoutineAction::Remove
-                            }
-                        }));
+                ui.allocate_ui_with_layout(
+                    [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
+                        ui.label(key);
+                        ui.add_sized([w - 83., BUTTON_ROW_HEIGHT], egui::TextEdit::singleline(val));
+                        if ui
+                            .button(if self2.render.renderer.texture_paths.contains_key(val) {
+                                "R"
+                            } else {
+                                "?"
+                            })
+                            .clicked()
+                        {
+                            let (sx, rx) = mpsc::channel();
+                            let id = val.clone();
+                            let title = self2.data.locale.get("title-choose-image").to_string();
+                            std::thread::spawn(move || {
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .set_title(title)
+                                    .add_filter("png", &["png"])
+                                    .pick_file()
+                                {
+                                    let _ = sx.send(path);
+                                }
+                            });
+                            self3.add_routine(Box::new(move |s, gl| match rx.try_recv() {
+                                Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
+                                Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+                                Ok(src) => {
+                                    s.render.renderer.texture_paths.insert(id.clone(), src);
+                                    s.rebuild_meshes(gl);
+                                    RoutineAction::Remove
+                                }
+                            }));
+                        }
+                        if ui.button(SMALL_X).clicked() {
+                            tex_to_remove = Some(key.clone());
+                        }
                     }
-                    if ui.small_button(SMALL_X).clicked() {
-                        tex_to_remove = Some(key.clone());
-                    }
-                });
+                );
             }
 
             if let Some(key) = tex_to_remove {
@@ -589,7 +645,7 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
 
             if ui
                 .add_sized(
-                    [w, 20.],
+                    [w, BUTTON_ROW_HEIGHT],
                     egui::Button::new(self2.data.locale.get("add-texture")),
                 )
                 .clicked()
@@ -602,17 +658,21 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
         }
 
-        ui.horizontal(|ui| {
-            let icon = if toggles.settings { R_ARROW } else { D_ARROW };
-            if ui.small_button(icon).clicked() {
-                toggles.settings = !toggles.settings;
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                let icon = if toggles.settings { R_ARROW } else { D_ARROW };
+                if ui.button(icon).clicked() {
+                    toggles.settings = !toggles.settings;
+                }
+                ui.label(self2.data.locale.get("label-render-settings"));
             }
-            ui.label(self2.data.locale.get("label-render-settings"));
-        });
+        );
 
         if !toggles.settings {
             ui.horizontal(|ui| {
-                let size = egui::vec2(w2, 20.);
+                let size = egui::vec2(w2, BUTTON_ROW_HEIGHT);
                 let layout = egui::Layout::left_to_right(egui::Align::Center);
                 ui.allocate_ui_with_layout(size, layout, |ui| {
                     ui.set_min_width(w2);
@@ -626,24 +686,28 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                     )
                 });
             });
-            ui.horizontal(|ui| {
-                let size = egui::vec2(w2, 20.);
-                let layout = egui::Layout::left_to_right(egui::Align::Center);
-                ui.allocate_ui_with_layout(size, layout, |ui| {
-                    ui.set_min_width(w2);
-                    ui.checkbox(
-                        &mut mesh.data.do_mirroring,
-                        self2.data.locale.get("setting-mirror"),
-                    )
-                });
-                ui.allocate_ui_with_layout(size, layout, |ui| {
-                    ui.set_min_width(w2);
-                    ui.checkbox(
-                        &mut mesh.data.do_solid,
-                        self2.data.locale.get("setting-solid"),
-                    )
-                });
-            });
+            ui.allocate_ui_with_layout(
+                [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                egui::Layout::left_to_right(egui::Align::Min),
+                |ui| {
+                    let size = egui::vec2(w2, BUTTON_ROW_HEIGHT);
+                    let layout = egui::Layout::left_to_right(egui::Align::Center);
+                    ui.allocate_ui_with_layout(size, layout, |ui| {
+                        ui.set_min_width(w2);
+                        ui.checkbox(
+                            &mut mesh.data.do_mirroring,
+                            self2.data.locale.get("setting-mirror"),
+                        )
+                    });
+                    ui.allocate_ui_with_layout(size, layout, |ui| {
+                        ui.set_min_width(w2);
+                        ui.checkbox(
+                            &mut mesh.data.do_solid,
+                            self2.data.locale.get("setting-solid"),
+                        )
+                    });
+                }
+            );
             egui::ComboBox::from_id_salt("bloomfog_style")
                 .selected_text(mesh.data.bloomfog_style.label(&mut self2.data.locale))
                 .width(w)
@@ -662,34 +726,41 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                 });
         }
 
-        ui.horizontal(|ui| {
-            let icon = if toggles.credits { R_ARROW } else { D_ARROW };
-            if ui.small_button(icon).clicked() {
-                toggles.credits = !toggles.credits;
+        ui.allocate_ui_with_layout(
+            [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+            egui::Layout::left_to_right(egui::Align::Min),
+            |ui| {
+                let icon = if toggles.credits { R_ARROW } else { D_ARROW };
+                if ui.button(icon).clicked() {
+                    toggles.credits = !toggles.credits;
+                }
+                ui.label(self2.data.locale.get("credits"));
             }
-            ui.label(self2.data.locale.get("credits"));
-        });
+        );
 
         if !toggles.credits {
             let mut to_remove = None;
             for (ci, credit) in mesh.data.credits.iter_mut().enumerate() {
-                ui.horizontal(|ui| {
-                    ui.add_sized(
-                        [w - ui.spacing().item_spacing.x - 24., 20.],
-                        egui::TextEdit::singleline(credit),
-                    );
-                    if ui.small_button(SMALL_X).clicked() {
-                        to_remove = Some(ci);
+                ui.allocate_ui_with_layout(
+                    [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
+                        ui.add_sized(
+                            [w - ui.spacing().item_spacing.x - 50., BUTTON_ROW_HEIGHT],
+                            egui::TextEdit::singleline(credit),
+                        );
+                        if ui.button(SMALL_X).clicked() {
+                            to_remove = Some(ci);
+                        }
                     }
-                });
+                );
             }
             if let Some(i) = to_remove {
                 mesh.data.credits.remove(i);
-                self3.rebuild_meshes(gl);
             }
             if ui
                 .add_sized(
-                    [w, 20.],
+                    [w, BUTTON_ROW_HEIGHT],
                     egui::Button::new(self2.data.locale.get("add-credit")),
                 )
                 .clicked()
@@ -698,6 +769,7 @@ pub fn draw_assembly_left(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             }
         }
     }
+    ui.add_space(5.);
 }
 
 pub fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
@@ -711,7 +783,7 @@ pub fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
             if ui
                 .horizontal(|ui| {
                     let mut new_name = None;
-                    ui.add_sized([w - 24., 20.], TextInput::new(name, &mut new_name));
+                    ui.add_sized([w - 24., BUTTON_ROW_HEIGHT], TextInput::new(name, &mut new_name));
                     if let Some(new_name) = new_name {
                         let _ = s2.rename(editor::Rename::Part {
                             view_id: s2.get_current_mesh_id().unwrap().to_string(),
@@ -722,7 +794,7 @@ pub fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
                         });
                         return true;
                     }
-                    if ui.small_button(SMALL_X).clicked() {
+                    if ui.button(SMALL_X).clicked() {
                         s2.add_history(editor::HistoryEntry::Mesh(light_mesh::LightMeshSnapshot {
                             id: s2.get_current_mesh_id().unwrap().to_string(),
                             mesh: Box::new(mesh2.data.clone()),
@@ -741,7 +813,7 @@ pub fn draw_assembly_right(s: &mut App, ui: &mut Ui, gl: &glow::Context) {
         }
         let mut new_part = None;
         ui.add_sized(
-            [w, 20.],
+            [w, BUTTON_ROW_HEIGHT],
             TextInput::new(s2.data.locale.get("add-part"), &mut new_part),
         );
         if let Some(name) = new_part {

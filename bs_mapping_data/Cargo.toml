@@ -23,7 +23,7 @@ v4 = []
 
 [dependencies]
 bitflags = { version = "2.13.1", features = ["serde"] }
-glam = { version = "0.33.5", features = ["serde"] }
+glam = { version = "0.34.3", features = ["serde"] }
 num-traits = "0.2.19"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

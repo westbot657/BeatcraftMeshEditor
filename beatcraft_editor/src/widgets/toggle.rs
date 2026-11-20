@@ -77,7 +77,7 @@ impl egui::Widget for ToggleSwitch<'_> {
 
         let on = *self.on;
         response.widget_info(|| {
-            egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), on, "")
+            egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), on, "")
         });
 
         if ui.is_rect_visible(rect) {
