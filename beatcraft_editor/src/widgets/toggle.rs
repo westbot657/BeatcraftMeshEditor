@@ -91,9 +91,9 @@ impl egui::Widget for ToggleSwitch<'_> {
             let painter = ui.painter();
 
             painter.rect_filled(rect, 0.0, color);
-            painter.rect_filled(rect.shrink(1.), 0.0, ui.visuals().extreme_bg_color);
-
             let inner = rect.shrink(1.);
+
+            painter.rect_filled(inner, 0.0, ui.visuals().extreme_bg_color);
             let off_rect = half_toward(inner, opposite(self.direction));
             let on_rect = half_toward(inner, self.direction);
 
