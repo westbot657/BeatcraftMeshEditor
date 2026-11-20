@@ -90,20 +90,10 @@ impl egui::Widget for ToggleSwitch<'_> {
 
             let painter = ui.painter();
 
-            painter.rect_filled(rect, 0.0, ui.visuals().extreme_bg_color);
+            painter.rect_filled(rect, 0.0, color);
+            painter.rect_filled(rect.shrink(1.), 0.0, ui.visuals().extreme_bg_color);
 
-            const B: f32 = 1.0;
-            let (l, r, tp, bt) = (rect.left(), rect.right(), rect.top(), rect.bottom());
-            for edge in [
-                egui::Rect::from_min_max(egui::pos2(l, tp), egui::pos2(r, tp + B)),
-                egui::Rect::from_min_max(egui::pos2(l, bt - B), egui::pos2(r, bt)),
-                egui::Rect::from_min_max(egui::pos2(l, tp + B), egui::pos2(l + B, bt - B)),
-                egui::Rect::from_min_max(egui::pos2(r - B, tp + B), egui::pos2(r, bt - B)),
-            ] {
-                painter.rect_filled(edge, 0.0, color);
-            }
-
-            let inner = rect.shrink(B);
+            let inner = rect.shrink(1.);
             let off_rect = half_toward(inner, opposite(self.direction));
             let on_rect = half_toward(inner, self.direction);
 
