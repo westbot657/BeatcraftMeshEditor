@@ -39,7 +39,7 @@ pub struct RuntimeData {
     pub sample_rate: u32,
     pub base_provider_context: BaseProviderContext,
     pub timeline_coroutine_manager: TimelineCoroutineManager,
-    pub tacks_holder: TracksHolder,
+    pub tracks_holder: TracksHolder,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -68,7 +68,7 @@ impl RuntimeData {
             sample_rate,
             base_provider_context: BaseProviderContext::default(),
             timeline_coroutine_manager: TimelineCoroutineManager::new(),
-            tacks_holder: TracksHolder::new(),
+            tracks_holder: TracksHolder::new(),
         }
     }
 

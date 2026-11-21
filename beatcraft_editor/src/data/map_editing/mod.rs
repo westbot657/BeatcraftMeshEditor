@@ -667,7 +667,7 @@ impl EditingData {
                 if let Ok(event) = EventData::deserialize(
                     event,
                     runtime_data.bpm,
-                    &mut runtime_data.tacks_holder,
+                    &mut runtime_data.tracks_holder,
                     &mut runtime_data.base_provider_context,
                     point_definitions
                 ) {

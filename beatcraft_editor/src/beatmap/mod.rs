@@ -2386,7 +2386,7 @@ fn draw_map_gl(
     controller.runtime_data.timeline_coroutine_manager.apply(
         SongTime::new(second as f64),
         &controller.runtime_data.base_provider_context,
-        &mut controller.runtime_data.tacks_holder,
+        &mut controller.runtime_data.tracks_holder,
     );
 
     for (i, t, object) in controller
