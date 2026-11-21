@@ -10,7 +10,7 @@ use crate::{
 };
 use crate::{bool_u8_serde, easing_as_i8};
 use crate::{default_u, is_value_f, is_value_u};
-use crate::custom_v3::{CustomArcDataV3, CustomBombDataV3, CustomChainDataV3, CustomNoteDataV3, CustomObstacleDataV3};
+use crate::custom_v3::{CustomArcDataV3, CustomBombDataV3, CustomChainDataV3, CustomNoteDataV3, CustomObstacleDataV3, BeatmapFileCustomDataV3};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -676,5 +676,5 @@ pub struct BeatmapFileV3 {
     pub use_normal_events_as_compatible_events: bool,
     #[serde(rename = "customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_data: Option<serde_json::Value>,
+    pub custom_data: Option<BeatmapFileCustomDataV3>,
 }

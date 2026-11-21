@@ -34,6 +34,7 @@ pub struct EditingData {
     pub elements: Vec<DataElement>,
     pub values: HashMap<String, Value>,
     pub templates: HashMap<String, Template>,
+    pub point_definitions: Option<HashMap<String, serde_json::Value>>,
 }
 
 /// Global, cross-beatmap data
@@ -60,9 +61,19 @@ impl EditingData {
 
     pub fn from_beatmap(diff: &BeatmapFile) -> Self {
         let mut elements = Vec::new();
+        let mut point_definitions = None;
 
         match diff {
             BeatmapFile::V2(v2) => {
+                if let Some(custom) = &v2.custom_data {
+                    if let Some(points) = custom.point_definitions.as_ref() {
+                        let mut defs = HashMap::with_capacity(points.len());
+                        for point_def in points.iter() {
+                            defs.insert(point_def.name.clone(), point_def.points.clone());
+                        }
+                        point_definitions = Some(defs);
+                    }
+                }
                 let mut rotations = Vec::new();
                 for event in v2.events.iter() {
                     if let v2::V2Event::SpawnRotation(rot) = event {
@@ -154,6 +165,9 @@ impl EditingData {
                 }
             }
             BeatmapFile::V3(v3) => {
+                if let Some(custom) = &v3.custom_data {
+                    point_definitions = custom.point_definitions.clone();
+                }
                 let mut rotations = Vec::new();
                 for event in v3.rotation_events.iter() {
                     rotations.push(*event);
@@ -386,6 +400,7 @@ impl EditingData {
             elements,
             values: Default::default(),
             templates: Default::default(),
+            point_definitions,
         }
     }
 
@@ -402,7 +417,7 @@ impl EditingData {
     pub fn canonicalize(
         &self,
         rng: &mut rand::rngs::ThreadRng,
-        runtime_data: RuntimeData,
+        mut runtime_data: RuntimeData,
         mut values: HashMap<String, Value>,
     ) -> Result<BeatmapController<ObjectSource>, CanonicalizationError> {
         let mut color_notes = Vec::new();
@@ -414,6 +429,15 @@ impl EditingData {
         for (k, v) in self.values.iter() {
             values.insert(k.clone(), v.clone());
         }
+        
+        let point_defs;
+        let point_definitions = match &self.point_definitions {
+            Some(p) => p,
+            None => {
+                point_defs = Default::default();
+                &point_defs
+            }
+        };
 
         for (i, element) in self.elements.iter().enumerate() {
             match element {
@@ -450,7 +474,7 @@ impl EditingData {
                         dissolve: 0.,
                         index,
                         source: ObjectSource::Element { index: i },
-                        custom_data: note_data.custom_data.resolve(&values)?,
+                        custom_data: note_data.custom_data.resolve(&values, &mut runtime_data, point_definitions)?,
                     })
                 }
                 DataElement::Bomb(bomb_data) => {
@@ -475,7 +499,7 @@ impl EditingData {
                         dissolve: 0.,
                         index,
                         source: ObjectSource::Element { index: i },
-                        custom_data: bomb_data.custom_data.resolve(&values)?,
+                        custom_data: bomb_data.custom_data.resolve(&values, &mut runtime_data, point_definitions)?,
                     })
                 }
                 DataElement::Obstacle(obstacle_data) => {
@@ -529,7 +553,7 @@ impl EditingData {
                         index,
                         noodle_logic,
                         source: ObjectSource::Element { index: i },
-                        custom_data: obstacle_data.custom_data.resolve(&values)?,
+                        custom_data: obstacle_data.custom_data.resolve(&values, &mut runtime_data, point_definitions)?,
                     })
                 }
                 DataElement::Chain(chain_data) => {
@@ -589,7 +613,7 @@ impl EditingData {
                         dissolve: 0.,
                         index,
                         source: ObjectSource::Element { index: i },
-                        custom_data: chain_data.custom_data.resolve(&values)?,
+                        custom_data: chain_data.custom_data.resolve(&values, &mut runtime_data, point_definitions)?,
                     })
                 }
                 DataElement::Arc(arc_data) => todo!(),

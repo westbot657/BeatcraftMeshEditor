@@ -89,6 +89,10 @@ pub trait GameObject<ObjectSource> {
         None
     }
 
+    fn animation(&self) -> Option<&PathPropertiesMap> {
+        None
+    }
+
     fn upcast_chain_head(&self) -> Option<&ChainNote<ObjectSource>> {
         None
     }
@@ -132,7 +136,7 @@ pub trait GameObject<ObjectSource> {
         &self,
         mut m: Mat4,
         beat: f32,
-        data: &RuntimeData
+        data: &RuntimeData,
     ) -> Option<Mat4> {
         fn spawn_parabola(
             target_height: f32,
@@ -182,6 +186,7 @@ pub trait GameObject<ObjectSource> {
         if !(s_ext..d_ext).contains(&beat) {
             return None;
         }
+        let animation = self.animation();
 
         let current_time = data.beat_to_seconds(beat);
 
@@ -216,7 +221,16 @@ pub trait GameObject<ObjectSource> {
             gp.y
         };
 
-        let jump_mat = Mat4::from_translation(Vec3::new(gp.x, y, z));
+        let mut jump_vec = Vec3::new(gp.x, y, z);
+
+        if let Some(a) = animation
+            && let Some(val) = a.definite_position.interpolate(beat, &data.base_provider_context)
+        {
+            jump_vec *= Vec3::new(1., 1., 0.);
+            jump_vec += val.as_vec3().unwrap();
+        }
+
+        let jump_mat = Mat4::from_translation(jump_vec);
 
         m *= Mat4::from_quat(self.lane_rotation());
         m *= Mat4::from_translation(Vec3::new(0., 0.8, 1.));
@@ -255,6 +269,17 @@ pub trait GameObject<ObjectSource> {
         } else {
             base_rot
         };
+
+        if let Some(a) = animation {
+            if let Some(val) = a.scale.interpolate(beat, &data.base_provider_context) {
+                m *= Mat4::from_scale(val.as_vec3().unwrap())
+            }
+            if let Some(val) = a.local_rotation.interpolate(beat, &data.base_provider_context) {
+                let q = val.as_quat().unwrap();
+                m *= Mat4::from_quat(Quat::from_xyzw(-q.x, q.y, q.z, -q.w));
+            }
+
+        }
 
         m *= Mat4::from_quat(final_rot);
 
@@ -344,10 +369,10 @@ pub enum ObjectType {
 pub struct CustomData {
     pub custom_njs_offset: Option<f32>,
     pub custom_njs: Option<f32>,
-    pub local_rotation: Quat, // q.rotY, q.rotX, q.rotZ
+    pub local_rotation: Quat,
     pub world_rotation: Quat,
     pub coordinates: OptVec2,
-    pub animation: PathPropertiesMap,
+    pub animation: Option<PathPropertiesMap>,
     // pub track: Option<?>,
     // pub animation: Option<?>,
 }
@@ -584,6 +609,9 @@ impl<ObjectSource> GameObject<ObjectSource> for ColorNote<ObjectSource> {
     fn custom_njs_offset(&self) -> Option<f32> {
         self.custom_data.custom_njs_offset
     }
+    fn animation(&self) -> Option<&PathPropertiesMap> {
+        self.custom_data.animation.as_ref()
+    }
 }
 
 impl<ObjectSource: Debug> GameObject<ObjectSource> for BombNote<ObjectSource> {
@@ -611,6 +639,9 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for BombNote<ObjectSource> {
     }
     fn custom_njs_offset(&self) -> Option<f32> {
         self.custom_data.custom_njs_offset
+    }
+    fn animation(&self) -> Option<&PathPropertiesMap> {
+        self.custom_data.animation.as_ref()
     }
 }
 
@@ -649,6 +680,9 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for Obstacle<ObjectSource> {
     }
     fn custom_njs_offset(&self) -> Option<f32> {
         self.custom_data.custom_njs_offset
+    }
+    fn animation(&self) -> Option<&PathPropertiesMap> {
+        self.custom_data.animation.as_ref()
     }
     fn editor_hitbox(&self, beat_spacing: Option<f32>) -> HitBox {
         let z = if let Some(bs) = beat_spacing
@@ -697,6 +731,9 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ChainNote<ObjectSource> {
     }
     fn custom_njs_offset(&self) -> Option<f32> {
         self.custom_data.custom_njs_offset
+    }
+    fn animation(&self) -> Option<&PathPropertiesMap> {
+        self.custom_data.animation.as_ref()
     }
     fn upcast_chain_head(&self) -> Option<&ChainNote<ObjectSource>> {
         Some(self)
@@ -775,6 +812,9 @@ impl<ObjectSource: Debug> GameObject<ObjectSource> for ChainNoteLink<ObjectSourc
     fn lane_rotation(&self) -> Quat {
         self.custom_data.world_rotation *
         Quat::from_rotation_y(-self.lane_rotation_deg.to_radians())
+    }
+    fn animation(&self) -> Option<&PathPropertiesMap> {
+        self.custom_data.animation.as_ref()
     }
     fn editor_hitbox(&self, _bs: Option<f32>) -> HitBox {
         CHAIN_LINK_HITBOX

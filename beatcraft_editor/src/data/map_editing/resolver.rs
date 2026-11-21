@@ -4,6 +4,7 @@ use bs_mapping_data::{ArcMidAnchorMode, Color, CutDirection};
 use glam::Vec4;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use beatmap_core::RuntimeData;
 use beatmap_core::tracks_rs::animation::track::PathPropertiesMap;
 
 #[derive(Clone, Debug, Default)]
@@ -484,14 +485,26 @@ impl crate::data::map_editing::object_data::CustomData {
     pub fn resolve(
         &self,
         values: &HashMap<String, Value>,
+        rt: &mut RuntimeData,
+        point_definitions: &HashMap<String, serde_json::Value>,
     ) -> Result<CustomData, ResolveError> {
+        let animation = match &self.animation {
+            Some(a) => Some(PathPropertiesMap::deserialize(
+                match a {
+                    serde_json::Value::String(s) => point_definitions.get(s).ok_or(ResolveError::MissingValue(format!("track: {s}")))?.clone(),
+                    _ => a.clone()
+                },
+                &mut rt.base_provider_context
+            ).unwrap()),
+            None => None,
+        };
         Ok(CustomData {
             custom_njs_offset: self.custom_njs_offset.resolve(values, Default::default())?,
             custom_njs: self.custom_njs.resolve(values, Default::default())?,
             local_rotation: self.local_rotation.resolve(values, Default::default())?.to_quat(glam::EulerRot::YXZ),
             world_rotation: self.world_rotation.resolve(values, Default::default())?.to_quat(glam::EulerRot::YXZ),
             coordinates: self.coordinates.resolve(values, Default::default())?,
-            animation: PathPropertiesMap::default(),
+            animation,
         })
     }
 }
@@ -500,9 +513,11 @@ impl crate::data::map_editing::object_data::NoteCustomData {
     pub fn resolve(
         &self,
         values: &HashMap<String, Value>,
+        rt: &mut RuntimeData,
+        point_definitions: &HashMap<String, serde_json::Value>,
     ) -> Result<NoteCustomData, ResolveError> {
         Ok(NoteCustomData {
-            base: self.base.resolve(values)?,
+            base: self.base.resolve(values, rt, point_definitions)?,
             disable_note_gravity: self.disable_note_gravity.resolve(values, Default::default())?,
             disable_note_look: self.disable_note_look.resolve(values, Default::default())?,
             spawn_effect: self.spawn_effect.resolve(values, Default::default())?,
@@ -515,9 +530,11 @@ impl crate::data::map_editing::object_data::BombCustomData {
     pub fn resolve(
         &self,
         values: &HashMap<String, Value>,
+        rt: &mut RuntimeData,
+        point_definitions: &HashMap<String, serde_json::Value>,
     ) -> Result<BombCustomData, ResolveError> {
         Ok(BombCustomData {
-            base: self.base.resolve(values)?,
+            base: self.base.resolve(values, rt, point_definitions)?,
             disable_note_gravity: self.disable_note_gravity.resolve(values, Default::default())?,
         })
     }
@@ -527,9 +544,11 @@ impl crate::data::map_editing::object_data::ObstacleCustomData {
     pub fn resolve(
         &self,
         values: &HashMap<String, Value>,
+        rt: &mut RuntimeData,
+        point_definitions: &HashMap<String, serde_json::Value>,
     ) -> Result<ObstacleCustomData, ResolveError> {
         Ok(ObstacleCustomData {
-            base: self.base.resolve(values)?,
+            base: self.base.resolve(values, rt, point_definitions)?,
         })
     }
 }
@@ -538,9 +557,11 @@ impl crate::data::map_editing::object_data::ChainCustomData {
     pub fn resolve(
         &self,
         values: &HashMap<String, Value>,
+        rt: &mut RuntimeData,
+        point_definitions: &HashMap<String, serde_json::Value>,
     ) -> Result<ChainCustomData, ResolveError> {
         Ok(ChainCustomData {
-            base: self.base.resolve(values)?,
+            base: self.base.resolve(values, rt, point_definitions)?,
             disable_note_gravity: self.disable_note_gravity.resolve(values, Default::default())?,
             disable_note_look: self.disable_note_look.resolve(values, Default::default())?,
             spawn_effect: self.spawn_effect.resolve(values, Default::default())?,
@@ -554,9 +575,11 @@ impl crate::data::map_editing::object_data::ArcCustomData {
     pub fn resolve(
         &self,
         values: &HashMap<String, Value>,
+        rt: &mut RuntimeData,
+        point_definitions: &HashMap<String, serde_json::Value>,
     ) -> Result<ArcCustomData, ResolveError> {
         Ok(ArcCustomData {
-            base: self.base.resolve(values)?,
+            base: self.base.resolve(values, rt, point_definitions)?,
         })
     }
 }

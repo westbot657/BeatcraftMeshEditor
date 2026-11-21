@@ -1,6 +1,6 @@
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
-use crate::custom_v2::{CustomArcDataV2, CustomBombDataV2, CustomNoteDataV2, CustomObstacleDataV2};
+use crate::custom_v2::{CustomArcDataV2, CustomBombDataV2, CustomNoteDataV2, CustomObstacleDataV2, BeatmapFileCustomDataV2};
 use super::convert_u8;
 use super::{
     ArcMidAnchorMode, Color, CutDirection, Sentinel, SpawnRotationAngle, SpawnRotationExecutionTime,
@@ -280,7 +280,7 @@ pub struct BeatmapFileV2 {
     #[cfg(feature = "custom_data")]
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_data: Option<serde_json::Value>,
+    pub custom_data: Option<BeatmapFileCustomDataV2>,
 
     #[serde(rename = "_bookmarks")]
     #[serde(default, skip_serializing_if = "Option::is_none")]

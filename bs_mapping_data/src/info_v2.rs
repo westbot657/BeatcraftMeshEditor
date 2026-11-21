@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{BpmRegion, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion, RGBAColor};
+use super::{AnyEnvironment, BpmRegion, Environment, Environment360, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion, RGBAColor};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -32,13 +32,13 @@ pub struct InfoV2 {
     #[serde(rename = "_coverImageFilename")]
     pub cover_image_filename: String,
     #[serde(rename = "_environmentName")]
-    pub environment: String,
+    pub environment: Environment,
     #[serde(rename = "_allDirectionsEnvironmentName")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub environment_360: Option<String>,
+    pub environment_360: Option<Environment360>,
     #[serde(rename = "_environmentNames")]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub environment_names: Vec<String>,
+    pub environment_names: Vec<AnyEnvironment>,
     #[serde(rename = "_colorSchemes")]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub color_schemes: Vec<ColorSchemeV2>,

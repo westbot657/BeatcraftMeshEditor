@@ -15,16 +15,16 @@ pub trait GameObjectExt: GameObject<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
-        cs: &ColorScheme,
+        rt: &RuntimeData,
     ) -> GameObjectInstanceData;
     fn get_editor_instance(
         &self,
         clipping_plane: Vec4,
         model: Mat4,
-        cs: &ColorScheme,
+        rt: &RuntimeData,
         _beat_distance: f32,
     ) -> GameObjectInstanceData {
-        self.get_instance(clipping_plane, model, cs)
+        self.get_instance(clipping_plane, model, rt)
     }
 }
 
@@ -33,12 +33,12 @@ impl GameObjectExt for ColorNote<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
-        cs: &ColorScheme,
+        rt: &RuntimeData,
     ) -> GameObjectInstanceData {
         GameObjectInstanceData::color_note(
             clipping_plane,
             model,
-            self.color.color(cs),
+            self.color.color(&rt.color_scheme),
             self.dissolve,
             self.index,
             Vec4::ZERO,
@@ -51,12 +51,12 @@ impl GameObjectExt for BombNote<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
-        cs: &ColorScheme,
+        rt: &RuntimeData,
     ) -> GameObjectInstanceData {
         GameObjectInstanceData::bomb_note(
             clipping_plane,
             model,
-            self.color.color(cs),
+            self.color.color(&rt.color_scheme),
             self.dissolve,
             self.index,
             Vec4::ZERO,
@@ -69,12 +69,12 @@ impl GameObjectExt for Obstacle<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
-        cs: &ColorScheme,
+        rt: &RuntimeData,
     ) -> GameObjectInstanceData {
         GameObjectInstanceData::obstacle(
             clipping_plane,
             model * Mat4::from_translation(Vec3::new(0., 0., -0.25)),
-            self.color.color(cs),
+            self.color.color(&rt.color_scheme),
             self.dissolve,
             self.index,
             self.size,
@@ -84,13 +84,13 @@ impl GameObjectExt for Obstacle<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
-        cs: &ColorScheme,
+        rt: &RuntimeData,
         beat_distance: f32,
     ) -> GameObjectInstanceData {
         GameObjectInstanceData::obstacle(
             clipping_plane,
             model,
-            self.color.color(cs),
+            self.color.color(&rt.color_scheme),
             self.dissolve,
             self.index,
             Vec3::new(self.size.x, self.size.y, if self.noodle_logic { self.size.z } else { self.duration * beat_distance }),
@@ -103,12 +103,12 @@ impl GameObjectExt for ChainNote<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
-        cs: &ColorScheme,
+        rt: &RuntimeData,
     ) -> GameObjectInstanceData {
         GameObjectInstanceData::color_note(
             clipping_plane,
             model,
-            self.color.color(cs),
+            self.color.color(&rt.color_scheme),
             self.dissolve,
             self.index,
             Vec4::ZERO,
@@ -121,12 +121,12 @@ impl GameObjectExt for ChainNoteLink<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
-        cs: &ColorScheme,
+        rt: &RuntimeData,
     ) -> GameObjectInstanceData {
         GameObjectInstanceData::color_note(
             clipping_plane,
             model,
-            self.color.color(cs),
+            self.color.color(&rt.color_scheme),
             self.dissolve,
             self.index,
             Vec4::ZERO,
@@ -139,9 +139,9 @@ impl GameObjectExt for Arc<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
-        cs: &ColorScheme,
+        rt: &RuntimeData,
     ) -> GameObjectInstanceData {
-        GameObjectInstanceData::arc(clipping_plane, model, self.color.color(cs))
+        GameObjectInstanceData::arc(clipping_plane, model, self.color.color(&rt.color_scheme))
     }
 }
 

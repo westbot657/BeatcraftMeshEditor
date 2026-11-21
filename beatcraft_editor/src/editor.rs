@@ -39,6 +39,7 @@ use beatcraft_audiolib::{AudioSystem, NativeOpenAL};
 use beatmap_core::RuntimeData;
 use beatmap_core::beatmap::{BombNote, ChainNote, ColorNote, ObjectType, Obstacle};
 use bs_mapping_data::{AudioDataFile, InfoFile};
+use crate::beatmap::data::info::Info;
 
 #[derive(Copy, Clone)]
 pub struct Camera {
@@ -886,7 +887,7 @@ pub enum HistoryEntry {
     FogHeights(Option<[f32; 2]>),
 
     #[cfg(feature = "mapper")]
-    BeatmapInfo(Box<Option<InfoFile>>),
+    BeatmapInfo(Box<Option<Info>>),
     #[cfg(feature = "mapper")]
     BeatmapAudioData(Box<Option<AudioDataFile>>),
     #[cfg(feature = "mapper")]

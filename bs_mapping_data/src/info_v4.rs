@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{BpmRegion, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion};
+use crate::{AnyEnvironment, BpmRegion, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -11,7 +11,7 @@ pub struct InfoV4 {
     pub audio: AudioInfoV4,
     pub song_preview_filename: String,
     pub cover_image_filename: String,
-    pub environment_names: Vec<String>,
+    pub environment_names: Vec<AnyEnvironment>,
     pub color_schemes: Vec<ColorSchemeV4>,
     pub difficulty_beatmaps: Vec<DifficultyBeatmapV4>,
 }

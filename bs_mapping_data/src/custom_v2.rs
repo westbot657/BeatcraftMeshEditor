@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::vec_or_string;
 use std::ops::Not;
 use std::ops::{Deref, DerefMut};
@@ -5,6 +6,34 @@ use std::ops::{Deref, DerefMut};
 use serde::{Deserialize, Serialize};
 
 use crate::custom_data::*;
+
+
+#[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PointDefV2 {
+    #[serde(rename = "_name")]
+    pub name: String,
+    #[serde(rename = "_points")]
+    pub points: serde_json::Value,
+}
+
+#[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BeatmapFileCustomDataV2 {
+    #[cfg(feature = "tracks")]
+    #[serde(rename = "_pointDefinitions")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub point_definitions: Option<Vec<PointDefV2>>,
+
+    #[serde(rename = "_customEvents")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_events: Option<serde_json::Value>,
+
+    #[serde(flatten)]
+    pub extra: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
 
 #[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

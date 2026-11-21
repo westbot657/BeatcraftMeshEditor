@@ -51,6 +51,8 @@ pub struct CustomData {
     pub uninteractable: BoolValue,
     // chroma
     pub color: OptionalColorValue,
+
+    pub animation: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -223,6 +225,7 @@ impl From<&CommonCustomDataV2> for CustomData {
             custom_njs_offset: value.note_jump_start_beat_offset.into(),
             uninteractable: value.uninteractable.into(),
             color: value.color.into(),
+            animation: value.animation.clone(),
         }
     }
 }
@@ -276,6 +279,7 @@ impl From<&CommonCustomDataV3> for CustomData {
             custom_njs_offset: value.note_jump_start_beat_offset.into(),
             uninteractable: value.uninteractable.into(),
             color: value.color.into(),
+            animation: value.animation.clone(),
         }
     }
 }

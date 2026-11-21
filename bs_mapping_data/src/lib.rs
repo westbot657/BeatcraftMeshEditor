@@ -2,6 +2,7 @@ use glam::Vec4;
 use num_traits::Num;
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::de::{value::StrDeserializer, IntoDeserializer};
 use std::fmt::{Debug, Display};
 use std::hint::unreachable_unchecked;
 use std::{fs, io};
@@ -137,6 +138,289 @@ pub enum MapDifficulty {
 
     #[serde(untagged)]
     Unknown(String),
+}
+
+macro_rules! environment_enum {
+    (
+        $(#[$meta:meta])*
+        $vis:vis enum $name:ident {
+            $(
+                $(#[$vmeta:meta])*
+                $variant:ident => $data:literal
+            ),* $(,)?
+        }
+    ) => {
+        $(#[$meta])*
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        $vis enum $name {
+            $(
+                $(#[$vmeta])*
+                #[serde(rename = $data)]
+                $variant,
+            )*
+        }
+
+        impl $name {
+            pub fn display_name(&self) -> &'static str {
+                match self {
+                    $( Self::$variant => stringify!($variant), )*
+                }
+            }
+
+            pub fn data_name(&self) -> &'static str {
+                match self {
+                    $( Self::$variant => $data, )*
+                }
+            }
+        }
+    };
+}
+
+environment_enum! {
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    pub enum EnvironmentV2 {
+        Default => "DefaultEnvironment",
+        Triangle => "TriangleEnvironment",
+        Nice => "NiceEnvironment",
+        BigMirror => "BigMirrorEnvironment",
+        KDA => "KDAEnvironment",
+        Monstercat => "MonstercatEnvironment",
+        CrabRave => "CrabRaveEnvironment",
+        Dragons => "DragonsEnvironment",
+        Origins => "OriginsEnvironment",
+        Panic => "PanicEnvironment",
+        Rocket => "RocketEnvironment",
+        GreenDay => "GreenDayEnvironment",
+        GreenDayGrenade => "GreenDayGrenadeEnvironment",
+        Timbaland => "TimbalandEnvironment",
+        FitBeat => "FitBeatEnvironment",
+        LinkinPark => "LinkinParkEnvironment",
+        BTS => "BTSEnvironment",
+        Kaleidoscope => "KaleidoscopeEnvironment",
+        Interscope => "InterscopeEnvironment",
+        Skrillex => "SkrillexEnvironment",
+        Billie => "BillieEnvironment",
+        Halloween => "HalloweenEnvironment",
+        Gaga => "GagaEnvironment",
+        Halloween2 => "Halloween2Environment",
+    }
+}
+
+environment_enum! {
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    pub enum EnvironmentV3 {
+        Weave => "WeaveEnvironment",
+        Pyro => "PyroEnvironment",
+        EDM => "EDMEnvironment",
+        TheSecond => "TheSecondEnvironment",
+        Lizzo => "LizzoEnvironment",
+        TheWeeknd => "TheWeekndEnvironment",
+        RockMixtape => "RockMixtapeEnvironment",
+        Dragons2 => "Dragons2Environment",
+        Panic2 => "Panic2Environment",
+        Queen => "QueenEnvironment",
+        LinkinPark2 => "LinkinPark2Environment",
+        TheRollingStones => "TheRollingStonesEnvironment",
+        Lattice => "LatticeEnvironment",
+        DaftPunk => "DaftPunkEnvironment",
+        HipHop => "HipHopEnvironment",
+        Collider => "ColliderEnvironment",
+        Britney => "BritneyEnvironment",
+        Monstercat2 => "Monstercat2Environment",
+        Metallica => "MetallicaEnvironment",
+        Grid => "GridEnvironment",
+        Coldplay => "ColdplayEnvironment",
+    }
+}
+
+environment_enum! {
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    pub enum Environment360V2 {
+        GlassDesert => "GlassDesertEnvironment",
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Environment {
+    #[serde(untagged)]
+    V2(EnvironmentV2),
+
+    #[serde(untagged)]
+    V3(EnvironmentV3),
+
+    #[serde(untagged)]
+    Unknown(String),
+}
+
+impl Default for Environment {
+    fn default() -> Self {
+        Self::V2(EnvironmentV2::Default)
+    }
+}
+
+impl Environment {
+    pub fn display_name(&self) -> &str {
+        match self {
+            Self::V2(v2) => v2.display_name(),
+            Self::V3(v3) => v3.display_name(),
+            Self::Unknown(s) => s.as_str(),
+        }
+    }
+    pub fn data_name(&self) -> &str {
+        match self {
+            Self::V2(v2) => v2.data_name(),
+            Self::V3(v3) => v3.data_name(),
+            Self::Unknown(s) => s.as_str(),
+        }
+    }
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, Self::Unknown(_))
+    }
+    pub fn is_v2(&self) -> bool {
+        matches!(self, Self::V2(_))
+    }
+    pub fn is_v3(&self) -> bool {
+        matches!(self, Self::V3(_))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Environment360 {
+    #[serde(untagged)]
+    V2(Environment360V2),
+
+    #[serde(untagged)]
+    Unknown(String),
+}
+
+impl Environment360 {
+    pub fn display_name(&self) -> &str {
+        match self {
+            Self::V2(v2) => v2.display_name(),
+            Self::Unknown(s) => s.as_str(),
+        }
+    }
+    pub fn data_name(&self) -> &str {
+        match self {
+            Self::V2(v2) => v2.data_name(),
+            Self::Unknown(s) => s.as_str(),
+        }
+    }
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, Self::Unknown(_))
+    }
+    pub fn is_v2(&self) -> bool {
+        matches!(self, Self::V2(_))
+    }
+    pub fn is_v3(&self) -> bool {
+        false
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
+pub enum AnyEnvironment {
+    #[serde(untagged)]
+    Standard(Environment),
+    #[serde(untagged)]
+    Env360(Environment360),
+}
+
+impl Default for AnyEnvironment {
+    fn default() -> Self {
+        Self::Standard(Default::default())
+    }
+}
+
+impl AnyEnvironment {
+    pub fn is_standard(&self) -> bool {
+        matches!(self, Self::Standard(_))
+    }
+    pub fn is_360(&self) -> bool {
+        matches!(self, Self::Env360(_))
+    }
+    pub fn is_v2(&self) -> bool {
+        match self {
+            Self::Standard(e) => e.is_v2(),
+            Self::Env360(e) => e.is_v2(),
+        }
+    }
+    pub fn is_v3(&self) -> bool {
+        match self {
+            Self::Standard(e) => e.is_v3(),
+            Self::Env360(e) => e.is_v3(),
+        }
+    }
+    pub fn is_unknown(&self) -> bool {
+        match self {
+            Self::Standard(e) => e.is_unknown(),
+            Self::Env360(e) => e.is_unknown(),
+        }
+    }
+    pub fn display_name(&self) -> &str {
+        match self {
+            Self::Standard(e) => e.display_name(),
+            Self::Env360(e) => e.display_name(),
+        }
+    }
+    pub fn data_name(&self) -> &str {
+        match self {
+            Self::Standard(e) => e.data_name(),
+            Self::Env360(e) => e.data_name(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for AnyEnvironment {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match Environment::deserialize(deserializer)? {
+            Environment::Unknown(name) => {
+                let de: StrDeserializer<serde::de::value::Error> =
+                    name.as_str().into_deserializer();
+
+                match Environment360::deserialize(de) {
+                    Ok(Environment360::Unknown(_)) | Err(_) => {
+                        Ok(AnyEnvironment::Standard(Environment::Unknown(name)))
+                    }
+                    Ok(env360) => Ok(AnyEnvironment::Env360(env360)),
+                }
+            }
+            known => Ok(AnyEnvironment::Standard(known)),
+        }
+    }
+}
+
+impl From<EnvironmentV2> for Environment {
+    fn from(value: EnvironmentV2) -> Self {
+        Self::V2(value)
+    }
+}
+impl From<EnvironmentV3> for Environment {
+    fn from(value: EnvironmentV3) -> Self {
+        Self::V3(value)
+    }
+}
+impl From<EnvironmentV2> for AnyEnvironment {
+    fn from(value: EnvironmentV2) -> Self {
+        Self::Standard(value.into())
+    }
+}
+impl From<EnvironmentV3> for AnyEnvironment {
+    fn from(value: EnvironmentV3) -> Self {
+        Self::Standard(value.into())
+    }
+}
+impl From<Environment> for AnyEnvironment {
+    fn from(value: Environment) -> Self {
+        Self::Standard(value)
+    }
+}
+impl From<Environment360> for AnyEnvironment {
+    fn from(value: Environment360) -> Self {
+        Self::Env360(value)
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -338,14 +622,24 @@ impl PartialEq<MapCharacteristic> for &str {
 }
 
 impl MapDifficulty {
+    pub fn rank(&self) -> Option<u8> {
+        match self {
+            Self::Easy => Some(1),
+            Self::Normal => Some(3),
+            Self::Hard => Some(5),
+            Self::Expert => Some(7),
+            Self::ExpertPlus => Some(9),
+            Self::Unknown(_) => None,
+        }
+    }
     pub fn display_name(&self) -> &str {
         match self {
-            MapDifficulty::Easy => "Easy",
-            MapDifficulty::Normal => "Normal",
-            MapDifficulty::Hard => "Hard",
-            MapDifficulty::Expert => "Expert",
-            MapDifficulty::ExpertPlus => "ExpertPlus",
-            MapDifficulty::Unknown(s) => s.as_str(),
+            Self::Easy => "Easy",
+            Self::Normal => "Normal",
+            Self::Hard => "Hard",
+            Self::Expert => "Expert",
+            Self::ExpertPlus => "ExpertPlus",
+            Self::Unknown(s) => s.as_str(),
         }
     }
 }

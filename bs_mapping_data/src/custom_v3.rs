@@ -1,7 +1,25 @@
+use std::collections::HashMap;
 use crate::vec_or_string;
 use std::ops::{Deref, DerefMut, Not};
 use serde::{Deserialize, Serialize};
 use crate::custom_data::{ColorVec4, OptVec2, OptVec3, RotationVec3};
+
+
+#[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
+pub struct BeatmapFileCustomDataV3 {
+    #[cfg(feature = "tracks")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub point_definitions: Option<HashMap<String, serde_json::Value>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_events: Option<serde_json::Value>,
+
+    #[serde(flatten)]
+    pub extra: Option<serde_json::Map<String, serde_json::Value>>,
+}
 
 #[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
