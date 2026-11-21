@@ -28,7 +28,7 @@ pub struct BeatmapFileCustomDataV2 {
 
     #[serde(rename = "_customEvents")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub custom_events: Option<serde_json::Value>,
+    pub custom_events: Option<Vec<serde_json::Value>>,
 
     #[serde(flatten)]
     pub extra: Option<serde_json::Map<String, serde_json::Value>>,

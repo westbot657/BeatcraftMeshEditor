@@ -1,15 +1,22 @@
 use std::collections::HashMap;
-
+use std::sync::Arc;
 use glam::{Quat, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
-
+use beatcraft_audiolib::{Audio, NativeOpenAL};
 use crate::DB_DATA;
 use beatmap_core::beatmap::{BombNote, ChainNote, ChainNoteLinkData, ColorNote, CutDirectionExt, NoteColor, ObjectColor, Obstacle, RawNoteColor};
 use beatmap_core::{BeatmapController, RuntimeData, TimeUnit};
+use beatmap_core::tracks_rs::animation::events::EventData;
+use beatmap_core::tracks_rs::animation::timeline_coroutine_manager::TimelineCoroutineManager;
+use beatmap_core::tracks_rs::animation::track::{PathPropertyHandle, ValuePropertyHandle};
+use beatmap_core::tracks_rs::animation::tracks_holder::TracksHolder;
+use beatmap_core::tracks_rs::point_definition::base_point_definition::BasePointDefinition;
+use beatmap_core::tracks_rs::prelude::PointDefinitionLike;
 use bs_mapping_data::v2::{self, ObstacleV2Type, V2Note};
-use bs_mapping_data::{BeatmapFile, CutDirection, Sentinel};
+use bs_mapping_data::{BeatmapFile, BpmRegion, CutDirection, Sentinel};
 use object_data::{ArcData, BombData, ChainData, NoteData, ObjectSource, ObstacleData, ObstacleTextData, Template, TemplatePlacement};
 use resolver::{ResolveError, Value};
+use crate::beatmap::{BeatmapProject, BeatmapProjectDiff};
 
 pub mod values;
 pub mod resolver;
@@ -27,21 +34,19 @@ pub enum DataElement {
 }
 
 /// Data specific to a single beatmap
-#[derive(Default, Serialize, Deserialize)]
+// #[derive(Default, Serialize, Deserialize)]
 pub struct EditingData {
-    _id: Sentinel<10>,
-    pub version: Sentinel<1>,
     pub elements: Vec<DataElement>,
     pub values: HashMap<String, Value>,
     pub templates: HashMap<String, Template>,
-    pub point_definitions: Option<HashMap<String, serde_json::Value>>,
+    pub point_definitions: Option<ahash::HashMap<String, serde_json::Value>>,
+    pub custom_events: Option<Vec<serde_json::Value>>,
+    pub runtime_data: RuntimeData,
 }
 
 /// Global, cross-beatmap data
 #[derive(Default, Serialize, Deserialize)]
 pub struct GlobalEditingData {
-    _id: Sentinel<100>,
-    pub version: Sentinel<1>,
     pub values: HashMap<String, Value>,
     pub templates: HashMap<String, Template>,
 }
@@ -55,23 +60,43 @@ pub enum CanonicalizationError {
 }
 
 impl EditingData {
-    pub fn new() -> Self {
-        Self::default()
-    }
 
-    pub fn from_beatmap(diff: &BeatmapFile) -> Self {
+    pub fn from_beatmap(
+        file: &BeatmapFile,
+        diff: &BeatmapProjectDiff,
+        bpm: f32,
+        bpm_regions: Vec<BpmRegion>,
+        sample_count: usize,
+        audio: &Arc<Audio<NativeOpenAL>>
+    ) -> Self {
+        let mut runtime_data = RuntimeData::new(
+            diff.njs,
+            bpm,
+            diff.njs_offset,
+            bpm_regions,
+            sample_count,
+            audio.sample_rate,
+        );
+
         let mut elements = Vec::new();
         let mut point_definitions = None;
+        let mut custom_events = None;
 
-        match diff {
+        match file {
             BeatmapFile::V2(v2) => {
                 if let Some(custom) = &v2.custom_data {
                     if let Some(points) = custom.point_definitions.as_ref() {
-                        let mut defs = HashMap::with_capacity(points.len());
+                        let mut defs = ahash::HashMap::default();
                         for point_def in points.iter() {
-                            defs.insert(point_def.name.clone(), point_def.points.clone());
+                            defs.insert(
+                                point_def.name.clone(),
+                                point_def.points.clone(),
+                            );
                         }
                         point_definitions = Some(defs);
+                    }
+                    if let Some(events) = custom.custom_events.as_ref() {
+                        custom_events = Some(events.clone());
                     }
                 }
                 let mut rotations = Vec::new();
@@ -166,7 +191,18 @@ impl EditingData {
             }
             BeatmapFile::V3(v3) => {
                 if let Some(custom) = &v3.custom_data {
-                    point_definitions = custom.point_definitions.clone();
+                    if let Some(defs) = custom.point_definitions.as_ref() {
+                        let mut out = ahash::HashMap::default();
+                        for (k, v) in defs {
+                            out.insert(
+                                k.clone(),
+                                BasePointDefinition::parse(
+                                    v.clone(),
+                                    &mut runtime_data.base_provider_context,
+                                )
+                            );
+                        }
+                    }
                 }
                 let mut rotations = Vec::new();
                 for event in v3.rotation_events.iter() {
@@ -394,13 +430,14 @@ impl EditingData {
         // don't sort elements cuz it's lowkey pointless
         // since it can be sorted when exported or canonicalized
 
+
         Self {
-            _id: Sentinel,
-            version: Sentinel,
             elements,
             values: Default::default(),
             templates: Default::default(),
             point_definitions,
+            custom_events,
+            runtime_data,
         }
     }
 
@@ -417,9 +454,9 @@ impl EditingData {
     pub fn canonicalize(
         &self,
         rng: &mut rand::rngs::ThreadRng,
-        mut runtime_data: RuntimeData,
         mut values: HashMap<String, Value>,
     ) -> Result<BeatmapController<ObjectSource>, CanonicalizationError> {
+        let mut runtime_data = self.runtime_data.clone();
         let mut color_notes = Vec::new();
         let mut bomb_notes = Vec::new();
         let mut obstacles = Vec::new();
@@ -429,6 +466,7 @@ impl EditingData {
         for (k, v) in self.values.iter() {
             values.insert(k.clone(), v.clone());
         }
+
         
         let point_defs;
         let point_definitions = match &self.point_definitions {
@@ -621,8 +659,24 @@ impl EditingData {
                 DataElement::ObstacleText(obstacle_text_data) => todo!(),
             }
         }
-        
+
         Self::check_window_snaps(&mut color_notes);
+
+        if let Some(events) = self.custom_events.as_ref() {
+            for event in events.iter() {
+                if let Ok(event) = EventData::deserialize(
+                    event,
+                    runtime_data.bpm,
+                    &mut runtime_data.tacks_holder,
+                    &mut runtime_data.base_provider_context,
+                    point_definitions
+                ) {
+                    for event in event {
+                        runtime_data.timeline_coroutine_manager.add_event(runtime_data.bpm, event);
+                    }
+                }
+            }
+        }
 
         Ok(BeatmapController {
             runtime_data,

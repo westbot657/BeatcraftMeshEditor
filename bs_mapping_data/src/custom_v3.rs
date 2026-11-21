@@ -12,10 +12,10 @@ use crate::custom_data::{ColorVec4, OptVec2, OptVec3, RotationVec3};
 pub struct BeatmapFileCustomDataV3 {
     #[cfg(feature = "tracks")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub point_definitions: Option<HashMap<String, serde_json::Value>>,
+    pub point_definitions: Option<ahash::HashMap<String, serde_json::Value>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub custom_events: Option<serde_json::Value>,
+    pub custom_events: Option<Vec<serde_json::Value>>,
 
     #[serde(flatten)]
     pub extra: Option<serde_json::Map<String, serde_json::Value>>,

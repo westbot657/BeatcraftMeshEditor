@@ -20,5 +20,5 @@ tracing-appender = { version = "0.2.5", optional = true }
 thiserror = "2.0.20"
 tiny-vec = "0.10.1"
 
-tracks_rs = { git = "https://github.com/bsq-ports/tracks-rs", features = ["json"] }
+tracks_rs = { git = "https://github.com/bsq-ports/tracks-rs", features = ["json"], rev = "68bef8b" }
 

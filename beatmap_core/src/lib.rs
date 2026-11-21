@@ -15,6 +15,9 @@ use tracks_rs::animation::coroutine_manager::CoroutineManager;
 use tracks_rs::prelude::*;
 
 pub use tracks_rs;
+use tracks_rs::animation::events::EventData;
+use tracks_rs::animation::timeline_coroutine_manager::TimelineCoroutineManager;
+use tracks_rs::animation::tracks_holder::TracksHolder;
 
 pub struct BeatmapController<ObjectSource> {
     pub runtime_data: RuntimeData,
@@ -35,7 +38,8 @@ pub struct RuntimeData {
     pub sample_count: usize,
     pub sample_rate: u32,
     pub base_provider_context: BaseProviderContext,
-    pub timeline_coroutine_manager: CoroutineManager,
+    pub timeline_coroutine_manager: TimelineCoroutineManager,
+    pub tacks_holder: TracksHolder,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -63,7 +67,8 @@ impl RuntimeData {
             sample_count,
             sample_rate,
             base_provider_context: BaseProviderContext::default(),
-            timeline_coroutine_manager: CoroutineManager::default(),
+            timeline_coroutine_manager: TimelineCoroutineManager::new(),
+            tacks_holder: TracksHolder::new(),
         }
     }
 

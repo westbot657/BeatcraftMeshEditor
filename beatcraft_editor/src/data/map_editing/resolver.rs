@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use beatmap_core::RuntimeData;
 use beatmap_core::tracks_rs::animation::track::PathPropertiesMap;
+use beatmap_core::tracks_rs::point_definition::base_point_definition::BasePointDefinition;
 
 #[derive(Clone, Debug, Default)]
 pub struct LoopTracker<'l> {
@@ -486,15 +487,13 @@ impl crate::data::map_editing::object_data::CustomData {
         &self,
         values: &HashMap<String, Value>,
         rt: &mut RuntimeData,
-        point_definitions: &HashMap<String, serde_json::Value>,
+        point_definitions: &ahash::HashMap<String, serde_json::Value>,
     ) -> Result<CustomData, ResolveError> {
         let animation = match &self.animation {
             Some(a) => Some(PathPropertiesMap::deserialize(
-                match a {
-                    serde_json::Value::String(s) => point_definitions.get(s).ok_or(ResolveError::MissingValue(format!("track: {s}")))?.clone(),
-                    _ => a.clone()
-                },
-                &mut rt.base_provider_context
+                a.clone(),
+                &mut rt.base_provider_context,
+                point_definitions,
             ).unwrap()),
             None => None,
         };
@@ -514,7 +513,7 @@ impl crate::data::map_editing::object_data::NoteCustomData {
         &self,
         values: &HashMap<String, Value>,
         rt: &mut RuntimeData,
-        point_definitions: &HashMap<String, serde_json::Value>,
+        point_definitions: &ahash::HashMap<String, serde_json::Value>,
     ) -> Result<NoteCustomData, ResolveError> {
         Ok(NoteCustomData {
             base: self.base.resolve(values, rt, point_definitions)?,
@@ -531,7 +530,7 @@ impl crate::data::map_editing::object_data::BombCustomData {
         &self,
         values: &HashMap<String, Value>,
         rt: &mut RuntimeData,
-        point_definitions: &HashMap<String, serde_json::Value>,
+        point_definitions: &ahash::HashMap<String, serde_json::Value>,
     ) -> Result<BombCustomData, ResolveError> {
         Ok(BombCustomData {
             base: self.base.resolve(values, rt, point_definitions)?,
@@ -545,7 +544,7 @@ impl crate::data::map_editing::object_data::ObstacleCustomData {
         &self,
         values: &HashMap<String, Value>,
         rt: &mut RuntimeData,
-        point_definitions: &HashMap<String, serde_json::Value>,
+        point_definitions: &ahash::HashMap<String, serde_json::Value>,
     ) -> Result<ObstacleCustomData, ResolveError> {
         Ok(ObstacleCustomData {
             base: self.base.resolve(values, rt, point_definitions)?,
@@ -558,7 +557,7 @@ impl crate::data::map_editing::object_data::ChainCustomData {
         &self,
         values: &HashMap<String, Value>,
         rt: &mut RuntimeData,
-        point_definitions: &HashMap<String, serde_json::Value>,
+        point_definitions: &ahash::HashMap<String, serde_json::Value>,
     ) -> Result<ChainCustomData, ResolveError> {
         Ok(ChainCustomData {
             base: self.base.resolve(values, rt, point_definitions)?,
@@ -576,7 +575,7 @@ impl crate::data::map_editing::object_data::ArcCustomData {
         &self,
         values: &HashMap<String, Value>,
         rt: &mut RuntimeData,
-        point_definitions: &HashMap<String, serde_json::Value>,
+        point_definitions: &ahash::HashMap<String, serde_json::Value>,
     ) -> Result<ArcCustomData, ResolveError> {
         Ok(ArcCustomData {
             base: self.base.resolve(values, rt, point_definitions)?,

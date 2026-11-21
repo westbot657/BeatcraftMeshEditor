@@ -35,6 +35,7 @@ use crate::widgets::math_values::MathDragValue;
 use beatmap_core::beatmap::{ArrowType, GameObject, ObjectType};
 use beatmap_core::math::HitBox;
 use beatmap_core::{BeatmapController, RuntimeData};
+use beatmap_core::tracks_rs::time_types::SongTime;
 use crate::beatmap::data::info::{Info, InfoConversionError};
 
 pub mod data;
@@ -2148,7 +2149,7 @@ fn draw_map_diff(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
                                 let path = map.folder.join(path);
                                 let data = std::fs::read(path).unwrap();
                                 match serde_json::from_slice::<BeatmapFile>(&data) {
-                                    Ok(diff2) => {
+                                    Ok(file) => {
                                         let Some(audio) = map.audio.as_ref() else {
                                             tracing::error!(target: DB_DATA, "Audio not setup yet.");
                                             break 'try_open Err(MapOpeningError::AudioNotLoaded);
@@ -2170,19 +2171,18 @@ fn draw_map_diff(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
                                             }
                                         };
                                         app.selection = Selection::None;
-                                        let editing_data = EditingData::from_beatmap(&diff2);
-                                        let mut rng = ThreadRng::default();
-                                        let runtime_data = RuntimeData::new(
-                                            diff.njs,
+                                        let editing_data = EditingData::from_beatmap(
+                                            &file,
+                                            diff,
                                             map.info.as_ref().unwrap().audio.as_ref().unwrap().bpm,
-                                            diff.njs_offset,
                                             bpm_regions,
                                             sample_count,
-                                            audio.sample_rate,
+                                            audio
                                         );
+
+                                        let mut rng = ThreadRng::default();
                                         let controller = editing_data.canonicalize(
                                             &mut rng,
-                                            runtime_data,
                                             Default::default(),
                                         ).unwrap();
                                         map.controller = Some((controller, editing_data));
@@ -2324,6 +2324,7 @@ fn draw_map_gl(
 
     let beatmap = &s.render.renderer.beatmap;
     let beat = beatmap.beat();
+    let second = controller.runtime_data.beat_to_seconds(beat);
 
     let mut note_sel_filter = HashSet::new();
     let mut bomb_sel_filter = HashSet::new();
@@ -2382,6 +2383,12 @@ fn draw_map_gl(
         ViewStyle::Beatcraft { .. } => None,
     };
 
+    controller.runtime_data.timeline_coroutine_manager.apply(
+        SongTime::new(second as f64),
+        &controller.runtime_data.base_provider_context,
+        &mut controller.runtime_data.tacks_holder,
+    );
+
     for (i, t, object) in controller
         .color_notes
         .iter()
@@ -2421,7 +2428,7 @@ fn draw_map_gl(
         if let Some(mat) = match s.state.view_style {
             ViewStyle::Edit => object.animate_simple(wp, beat, beatmap.beats_before, beatmap.visible_beat_count, beatmap.beat_spacing),
             ViewStyle::Beatcraft { .. } => {
-                object.animate_complex(wp, beat, &controller.runtime_data)
+                object.animate_complex(wp, beat, second, &controller.runtime_data)
             }
         } {
             let inst = match s.state.view_style {
@@ -2498,7 +2505,7 @@ fn draw_map_gl(
                                 link.animate_simple(wp, beat, beatmap.beats_before, beatmap.visible_beat_count, beatmap.beat_spacing)
                             }
                             ViewStyle::Beatcraft { .. } => {
-                                link.animate_complex(wp, beat, &controller.runtime_data)
+                                link.animate_complex(wp, beat, second, &controller.runtime_data)
                             }
                         } {
                             if mouse.is_some()

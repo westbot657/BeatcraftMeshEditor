@@ -136,6 +136,7 @@ pub trait GameObject<ObjectSource> {
         &self,
         mut m: Mat4,
         beat: f32,
+        second: f32,
         data: &RuntimeData,
     ) -> Option<Mat4> {
         fn spawn_parabola(
@@ -187,8 +188,7 @@ pub trait GameObject<ObjectSource> {
             return None;
         }
         let animation = self.animation();
-
-        let current_time = data.beat_to_seconds(beat);
+        let normal_time = f32::inverse_lerp(data.seconds_to_beat(s_time), data.seconds_to_beat(d_time), beat).clamp(0., 1.);
 
         let mut gp = self.grid_pos();
         gp = Vec2::new(1.5 - gp.x, gp.y + 0.5) * 0.6;
@@ -196,17 +196,17 @@ pub trait GameObject<ObjectSource> {
         let z_at_spawn = half_jump_distance;
         let z_at_despawn = (object_time - d_time) * njs;
 
-        let in_pre_roll = current_time < s_time;
-        let in_post_roll = current_time > d_time;
+        let in_pre_roll = second < s_time;
+        let in_post_roll = second > d_time;
 
         let z = if in_pre_roll {
-            let p = f32::inverse_lerp(pre_roll_start_time, s_time, current_time).clamp(0., 1.);
+            let p = f32::inverse_lerp(pre_roll_start_time, s_time, second).clamp(0., 1.);
             f32::lerp(JUMP_FAR_Z, z_at_spawn, p)
         } else if in_post_roll {
-            let p = f32::inverse_lerp(d_time, post_roll_end_time, current_time).clamp(0., 1.);
+            let p = f32::inverse_lerp(d_time, post_roll_end_time, second).clamp(0., 1.);
             f32::lerp(z_at_despawn, -JUMP_FAR_Z - self.physical_length(), p)
         } else {
-            (object_time - current_time) * njs
+            (object_time - second) * njs
         };
 
         let start_y = -0.3;
@@ -224,7 +224,7 @@ pub trait GameObject<ObjectSource> {
         let mut jump_vec = Vec3::new(gp.x, y, z);
 
         if let Some(a) = animation
-            && let Some(val) = a.definite_position.interpolate(beat, &data.base_provider_context)
+            && let Some(val) = a.definite_position.interpolate(normal_time, &data.base_provider_context)
         {
             jump_vec *= Vec3::new(1., 1., 0.);
             jump_vec += val.as_vec3().unwrap();
@@ -236,7 +236,7 @@ pub trait GameObject<ObjectSource> {
         m *= Mat4::from_translation(Vec3::new(0., 0.8, 1.));
         m *= jump_mat;
 
-        let jump_progress = (object_time - current_time) / -reaction_time + 1.0;
+        let jump_progress = (object_time - second) / -reaction_time + 1.0;
 
         let base_rot = if jump_progress <= 0. {
             self.spawn_orientation()
@@ -271,10 +271,10 @@ pub trait GameObject<ObjectSource> {
         };
 
         if let Some(a) = animation {
-            if let Some(val) = a.scale.interpolate(beat, &data.base_provider_context) {
+            if let Some(val) = a.scale.interpolate(normal_time, &data.base_provider_context) {
                 m *= Mat4::from_scale(val.as_vec3().unwrap())
             }
-            if let Some(val) = a.local_rotation.interpolate(beat, &data.base_provider_context) {
+            if let Some(val) = a.local_rotation.interpolate(normal_time, &data.base_provider_context) {
                 let q = val.as_quat().unwrap();
                 m *= Mat4::from_quat(Quat::from_xyzw(-q.x, q.y, q.z, -q.w));
             }

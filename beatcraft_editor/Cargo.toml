@@ -55,4 +55,5 @@ bs-mapping-data = { path = "../bs_mapping_data" }
 beatcraft_editor_proc = { path = "../beatcraft_editor_proc" }
 beatmap-core = { path = "../beatmap_core", features = ["beatcraft_worldspace"] }
 beatcraft-audiolib = { path = "../beatcraft_audiolib", features = ["spectrogram", "tracing"] }
+ahash = "0.8.12"
 
