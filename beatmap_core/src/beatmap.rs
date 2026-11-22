@@ -9,6 +9,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use tracks_rs::animation::track::PathPropertiesMap;
+use tracks_rs::base_value::BaseValue;
 use bs_mapping_data::custom_data::{OptVec2, OptVec3};
 
 pub trait CutDirectionExt {
@@ -32,10 +33,10 @@ impl CutDirectionExt for CutDirection {
         }
     }
     fn world_angle_radians(&self) -> f32 {
-        -self.angle_degrees().to_radians()
+        self.angle_degrees().to_radians()
     }
     fn to_quat(&self) -> Quat {
-        Quat::from_rotation_z(self.angle_degrees().to_radians())
+        Quat::from_rotation_z(-self.angle_degrees().to_radians())
     }
 }
 
@@ -109,7 +110,8 @@ pub trait GameObject<ObjectSource> {
         beats_before: u16,
         visible_beat_count: u8,
         beat_spacing: f32,
-    ) -> Option<Mat4> {
+        data: &RuntimeData,
+    ) -> Option<(Mat4, f32)> {
         let b = self.beat();
         let pre = beats_before as f32;
         let post = visible_beat_count as f32 - pre;
@@ -117,15 +119,32 @@ pub trait GameObject<ObjectSource> {
         let d = b + self.duration() + pre;
 
         if (s..d).contains(&beat) {
+
+            let dur = self.duration();
+            let (_, jd) = data.jumps(self.custom_njs_offset());
+            let njs = self.custom_njs().unwrap_or(data.njs);
+            let half_jump_distance = jd / 2.0;
+            let reaction_time = half_jump_distance / njs;
+            let object_time = data.beat_to_seconds(b);
+            let dur_seconds = data.beat_to_seconds(b + dur) - object_time;
+            let s_time = object_time - reaction_time;
+            let d_time = object_time + dur_seconds + reaction_time;
+            let normal_time = f32::inverse_lerp(data.seconds_to_beat(s_time), data.seconds_to_beat(d_time), beat).clamp(0., 1.);
+
             let gp = self.grid_pos();
 
-            let gp = Vec2::new(1.5 - gp.x, gp.y + 0.5) * 0.6;
+            let gp = Vec2::new(-1.5 + gp.x, gp.y + 0.5) * 0.6;
 
             m *= Mat4::from_quat(self.lane_rotation());
 
             m *= Mat4::from_translation(gp.extend((b - beat) * beat_spacing));
             m *= Mat4::from_quat(self.get_orientation());
-            Some(m)
+
+            #[cfg(feature = "beatcraft_worldspace")]
+            {
+                m = Mat4::from_scale(Vec3::new(-1., 1., 1.)) * m * Mat4::from_scale(Vec3::new(-1., 1., 1.));
+            }
+            Some((m, normal_time))
         } else {
             None
         }
@@ -138,7 +157,7 @@ pub trait GameObject<ObjectSource> {
         beat: f32,
         second: f32,
         data: &RuntimeData,
-    ) -> Option<Mat4> {
+    ) -> Option<(Mat4, f32)> {
         fn spawn_parabola(
             target_height: f32,
             base_height: f32,
@@ -191,7 +210,7 @@ pub trait GameObject<ObjectSource> {
         let normal_time = f32::inverse_lerp(data.seconds_to_beat(s_time), data.seconds_to_beat(d_time), beat).clamp(0., 1.);
 
         let mut gp = self.grid_pos();
-        gp = Vec2::new(1.5 - gp.x, gp.y + 0.5) * 0.6;
+        gp = Vec2::new(-1.5 + gp.x, gp.y + 0.5) * 0.6;
 
         let z_at_spawn = half_jump_distance;
         let z_at_despawn = (object_time - d_time) * njs;
@@ -223,11 +242,28 @@ pub trait GameObject<ObjectSource> {
 
         let mut jump_vec = Vec3::new(gp.x, y, z);
 
-        if let Some(a) = animation
-            && let Some(val) = a.definite_position.interpolate(normal_time, &data.base_provider_context)
-        {
-            jump_vec *= Vec3::new(1., 1., 0.);
-            jump_vec += val.as_vec3().unwrap();
+        if let Some(a) = animation {
+            if let Some(BaseValue::Quaternion(q)) = a.rotation.interpolate(normal_time, &data.base_provider_context) {
+                m *= Mat4::from_quat(q);
+            }
+            if let Some(BaseValue::Quaternion(q)) = a.offset_rotation.interpolate(normal_time, &data.base_provider_context) {
+                m *= Mat4::from_quat(q);
+            }
+            if let Some(val) = a.definite_position.interpolate(normal_time, &data.base_provider_context) {
+                jump_vec *= Vec3::new(1., 1., 0.);
+                jump_vec += val.as_vec3().unwrap();
+            } else {
+                if let Some(val) = a.position.interpolate(normal_time, &data.base_provider_context) {
+                    jump_vec += val.as_vec3().unwrap();
+                }
+                if let Some(val) = a.offset_position.interpolate(normal_time, &data.base_provider_context) {
+                    jump_vec += val.as_vec3().unwrap();
+                }
+
+                if let Some(val) = a.local_position.interpolate(normal_time, &data.base_provider_context) {
+                    jump_vec += val.as_vec3().unwrap() * 0.6;
+                }
+            }
         }
 
         let jump_mat = Mat4::from_translation(jump_vec);
@@ -276,14 +312,18 @@ pub trait GameObject<ObjectSource> {
             }
             if let Some(val) = a.local_rotation.interpolate(normal_time, &data.base_provider_context) {
                 let q = val.as_quat().unwrap();
-                m *= Mat4::from_quat(Quat::from_xyzw(-q.x, q.y, q.z, -q.w));
+                m *= Mat4::from_quat(q);
             }
-
         }
 
         m *= Mat4::from_quat(final_rot);
 
-        Some(m)
+        #[cfg(feature = "beatcraft_worldspace")]
+        {
+            m = Mat4::from_scale(Vec3::new(-1., 1., 1.)) * m * Mat4::from_scale(Vec3::new(-1., 1., 1.));
+        }
+
+        Some((m, normal_time))
     }
 }
 

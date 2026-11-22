@@ -2425,8 +2425,8 @@ fn draw_map_gl(
     {
         let wp = Mat4::IDENTITY;
 
-        if let Some(mat) = match s.state.view_style {
-            ViewStyle::Edit => object.animate_simple(wp, beat, beatmap.beats_before, beatmap.visible_beat_count, beatmap.beat_spacing),
+        if let Some((mat, lifetime)) = match s.state.view_style {
+            ViewStyle::Edit => object.animate_simple(wp, beat, beatmap.beats_before, beatmap.visible_beat_count, beatmap.beat_spacing, &controller.runtime_data),
             ViewStyle::Beatcraft { .. } => {
                 object.animate_complex(wp, beat, second, &controller.runtime_data)
             }
@@ -2435,11 +2435,12 @@ fn draw_map_gl(
                 ViewStyle::Edit => object.get_editor_instance(
                     Vec4::ZERO,
                     mat,
+                    lifetime,
                     &controller.runtime_data,
                     s.render.renderer.beatmap.beat_spacing,
                 ),
                 ViewStyle::Beatcraft { .. } => {
-                    object.get_instance(Vec4::ZERO, mat, &controller.runtime_data)
+                    object.get_instance(Vec4::ZERO, mat, lifetime, &controller.runtime_data)
                 }
             };
             if mouse.is_some()
@@ -2500,9 +2501,9 @@ fn draw_map_gl(
                         hit0 = Some(hit);
                     }
                     for link in links {
-                        if let Some(mat) = match s.state.view_style {
+                        if let Some((mat, lifetime)) = match s.state.view_style {
                             ViewStyle::Edit => {
-                                link.animate_simple(wp, beat, beatmap.beats_before, beatmap.visible_beat_count, beatmap.beat_spacing)
+                                link.animate_simple(wp, beat, beatmap.beats_before, beatmap.visible_beat_count, beatmap.beat_spacing, &controller.runtime_data)
                             }
                             ViewStyle::Beatcraft { .. } => {
                                 link.animate_complex(wp, beat, second, &controller.runtime_data)
@@ -2525,12 +2526,14 @@ fn draw_map_gl(
                                 ViewStyle::Edit => object.get_editor_instance(
                                     Vec4::ZERO,
                                     mat,
+                                    lifetime,
                                     &controller.runtime_data,
                                     s.render.renderer.beatmap.beat_spacing,
                                 ),
                                 ViewStyle::Beatcraft { .. } => object.get_instance(
                                     Vec4::ZERO,
                                     mat,
+                                    lifetime,
                                     &controller.runtime_data,
                                 ),
                             };

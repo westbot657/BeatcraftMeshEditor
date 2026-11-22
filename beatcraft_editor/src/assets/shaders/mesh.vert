@@ -35,7 +35,7 @@ layout(location = 15) in vec4  c7;
 // c3: /,/,/,/
 // c4: /,/,/,/
 // c5: wall-size(vec3),/
-// c6: dissolve,index,/,/
+// c6: dissolve,index,arrow_dissolve,/
 // c7: cut-plane(vec4)
 
 struct BillboardDesc {
@@ -197,7 +197,7 @@ void main() {
         } else {
             v_color = vec4(1.0);
         }
-        v_dissolve = c6.x;
+        v_dissolve = c6.z;
         v_index = floatBitsToInt(c6.y);
         v_slice = c7;
     } else if (v_material == MAT_OBSTACLE) {

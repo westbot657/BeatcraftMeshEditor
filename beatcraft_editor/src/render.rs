@@ -45,7 +45,9 @@ pub struct GameObjectInstanceData {
     _r1: f32,
     pub dissolve: f32,
     pub index: u32, // gets sent to gpu as bit-reinterpreted f32
-    _r2: [f32; 2],
+    /// for the arrow dissolve when this is returned as a Note data
+    pub dissolve2: f32,
+    _r2: f32,
     pub cut_plane: Vec4,
 }
 
@@ -119,6 +121,7 @@ impl GameObjectInstanceData {
             _r1: Default::default(),
             dissolve,
             index,
+            dissolve2: 0.,
             _r2: Default::default(),
             cut_plane,
         }
@@ -129,18 +132,23 @@ impl GameObjectInstanceData {
         model: Mat4,
         color: Vec4,
         dissolve: f32,
+        arrow_dissolve: f32,
         index: u32,
         cut_plane: Vec4,
     ) -> Self {
-        Self::new(
+        Self {
             clipping_plane,
             model,
             color,
-            Vec3::ZERO,
+            _r0: Default::default(),
+            wall_size: Vec3::ZERO,
+            _r1: Default::default(),
             dissolve,
             index,
+            dissolve2: arrow_dissolve,
+            _r2: Default::default(),
             cut_plane,
-        )
+        }
     }
 
     pub fn bomb_note(
@@ -151,7 +159,7 @@ impl GameObjectInstanceData {
         index: u32,
         cut_plane: Vec4,
     ) -> Self {
-        Self::color_note(clipping_plane, model, color, dissolve, index, cut_plane)
+        Self::color_note(clipping_plane, model, color, dissolve, 0., index, cut_plane)
     }
 
     pub fn obstacle(
@@ -178,12 +186,13 @@ impl GameObjectInstanceData {
             clipping_plane,
             model,
             color,
-            _r0: [Vec4::ZERO; 4],
+            _r0: Default::default(),
             wall_size: Vec3::ZERO,
-            _r1: 0.,
+            _r1: Default::default(),
             dissolve: 0.,
             index: 0,
-            _r2: [0., 0.],
+            dissolve2: 0.,
+            _r2: Default::default(),
             cut_plane: Vec4::ZERO,
         }
     }

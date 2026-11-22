@@ -9,22 +9,25 @@ use crate::render::GameObjectInstanceData;
 
 use beatmap_core::beatmap::{Arc, BombNote, ChainNote, ChainNoteLink, ColorNote, GameObject, Obstacle};
 use beatmap_core::*;
+use beatmap_core::tracks_rs::base_value::BaseValue;
 
 pub trait GameObjectExt: GameObject<ObjectSource> {
     fn get_instance(
         &self,
         clipping_plane: Vec4,
         model: Mat4,
+        lifetime: f32,
         rt: &RuntimeData,
     ) -> GameObjectInstanceData;
     fn get_editor_instance(
         &self,
         clipping_plane: Vec4,
         model: Mat4,
+        lifetime: f32,
         rt: &RuntimeData,
         _beat_distance: f32,
     ) -> GameObjectInstanceData {
-        self.get_instance(clipping_plane, model, rt)
+        self.get_instance(clipping_plane, model, lifetime, rt)
     }
 }
 
@@ -33,13 +36,30 @@ impl GameObjectExt for ColorNote<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
+        lifetime: f32,
         rt: &RuntimeData,
     ) -> GameObjectInstanceData {
+        let mut color = self.color.color(&rt.color_scheme);
+        let mut dissolve = self.dissolve;
+        let mut arrow_dissolve = self.dissolve;
+
+        if let Some(a) = &self.custom_data.animation {
+            if let Some(BaseValue::Vector4(col)) = a.color.interpolate(lifetime, &rt.base_provider_context) {
+                color = col;
+            }
+            if let Some(BaseValue::Float(dis)) = a.dissolve.interpolate(lifetime, &rt.base_provider_context) {
+                dissolve = dis;
+            }
+            if let Some(BaseValue::Float(dis)) = a.dissolve_arrow.interpolate(lifetime, &rt.base_provider_context) {
+                arrow_dissolve = dis;
+            }
+        }
         GameObjectInstanceData::color_note(
             clipping_plane,
             model,
-            self.color.color(&rt.color_scheme),
-            self.dissolve,
+            color,
+            dissolve,
+            arrow_dissolve,
             self.index,
             Vec4::ZERO,
         )
@@ -51,13 +71,25 @@ impl GameObjectExt for BombNote<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
+        lifetime: f32,
         rt: &RuntimeData,
     ) -> GameObjectInstanceData {
+        let mut color = self.color.color(&rt.color_scheme);
+        let mut dissolve = self.dissolve;
+
+        if let Some(a) = &self.custom_data.animation {
+            if let Some(BaseValue::Vector4(col)) = a.color.interpolate(lifetime, &rt.base_provider_context) {
+                color = col;
+            }
+            if let Some(BaseValue::Float(dis)) = a.dissolve.interpolate(lifetime, &rt.base_provider_context) {
+                dissolve = dis;
+            }
+        }
         GameObjectInstanceData::bomb_note(
             clipping_plane,
             model,
-            self.color.color(&rt.color_scheme),
-            self.dissolve,
+            color,
+            dissolve,
             self.index,
             Vec4::ZERO,
         )
@@ -69,29 +101,60 @@ impl GameObjectExt for Obstacle<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
+        lifetime: f32,
         rt: &RuntimeData,
     ) -> GameObjectInstanceData {
+
+        let mut color = self.color.color(&rt.color_scheme);
+        let mut dissolve = self.dissolve;
+        let mut size = self.size;
+
+        if let Some(a) = &self.custom_data.animation {
+            if let Some(BaseValue::Vector4(col)) = a.color.interpolate(lifetime, &rt.base_provider_context) {
+                color = col;
+            }
+            if let Some(BaseValue::Float(dis)) = a.dissolve.interpolate(lifetime, &rt.base_provider_context) {
+                dissolve = dis;
+            }
+            if let Some(BaseValue::Vector3(v3)) = a.scale.interpolate(lifetime, &rt.base_provider_context) {
+                size *= v3;
+            }
+        }
+
         GameObjectInstanceData::obstacle(
             clipping_plane,
             model * Mat4::from_translation(Vec3::new(0., 0., -0.25)),
-            self.color.color(&rt.color_scheme),
-            self.dissolve,
+            color,
+            dissolve,
             self.index,
-            self.size,
+            size,
         )
     }
     fn get_editor_instance(
         &self,
         clipping_plane: Vec4,
         model: Mat4,
+        lifetime: f32,
         rt: &RuntimeData,
         beat_distance: f32,
     ) -> GameObjectInstanceData {
+        let mut color = self.color.color(&rt.color_scheme);
+        let mut dissolve = self.dissolve;
+
+        if let Some(a) = &self.custom_data.animation {
+            if let Some(BaseValue::Vector4(col)) = a.color.interpolate(lifetime, &rt.base_provider_context) {
+                color = col;
+            }
+            if let Some(BaseValue::Float(dis)) = a.dissolve.interpolate(lifetime, &rt.base_provider_context) {
+                dissolve = dis;
+            }
+        }
+
         GameObjectInstanceData::obstacle(
             clipping_plane,
             model,
-            self.color.color(&rt.color_scheme),
-            self.dissolve,
+            color,
+            dissolve,
             self.index,
             Vec3::new(self.size.x, self.size.y, if self.noodle_logic { self.size.z } else { self.duration * beat_distance }),
         )
@@ -103,13 +166,30 @@ impl GameObjectExt for ChainNote<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
+        lifetime: f32,
         rt: &RuntimeData,
     ) -> GameObjectInstanceData {
+        let mut color = self.color.color(&rt.color_scheme);
+        let mut dissolve = self.dissolve;
+        let mut arrow_dissolve = self.dissolve;
+
+        if let Some(a) = &self.custom_data.animation {
+            if let Some(BaseValue::Vector4(col)) = a.color.interpolate(lifetime, &rt.base_provider_context) {
+                color = col;
+            }
+            if let Some(BaseValue::Float(dis)) = a.dissolve.interpolate(lifetime, &rt.base_provider_context) {
+                dissolve = dis;
+            }
+            if let Some(BaseValue::Float(dis)) = a.dissolve_arrow.interpolate(lifetime, &rt.base_provider_context) {
+                arrow_dissolve = dis;
+            }
+        }
         GameObjectInstanceData::color_note(
             clipping_plane,
             model,
-            self.color.color(&rt.color_scheme),
-            self.dissolve,
+            color,
+            dissolve,
+            arrow_dissolve,
             self.index,
             Vec4::ZERO,
         )
@@ -121,13 +201,30 @@ impl GameObjectExt for ChainNoteLink<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
+        lifetime: f32,
         rt: &RuntimeData,
     ) -> GameObjectInstanceData {
+        let mut color = self.color.color(&rt.color_scheme);
+        let mut dissolve = self.dissolve;
+        let mut arrow_dissolve = self.dissolve;
+
+        if let Some(a) = &self.custom_data.animation {
+            if let Some(BaseValue::Vector4(col)) = a.color.interpolate(lifetime, &rt.base_provider_context) {
+                color = col;
+            }
+            if let Some(BaseValue::Float(dis)) = a.dissolve.interpolate(lifetime, &rt.base_provider_context) {
+                dissolve = dis;
+            }
+            if let Some(BaseValue::Float(dis)) = a.dissolve_arrow.interpolate(lifetime, &rt.base_provider_context) {
+                arrow_dissolve = dis;
+            }
+        }
         GameObjectInstanceData::color_note(
             clipping_plane,
             model,
-            self.color.color(&rt.color_scheme),
-            self.dissolve,
+            color,
+            dissolve,
+            arrow_dissolve,
             self.index,
             Vec4::ZERO,
         )
@@ -139,6 +236,7 @@ impl GameObjectExt for Arc<ObjectSource> {
         &self,
         clipping_plane: Vec4,
         model: Mat4,
+        _lifetime: f32,
         rt: &RuntimeData,
     ) -> GameObjectInstanceData {
         GameObjectInstanceData::arc(clipping_plane, model, self.color.color(&rt.color_scheme))
