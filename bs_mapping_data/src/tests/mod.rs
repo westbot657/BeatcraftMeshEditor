@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use crate::{BeatmapFile, InfoFile};
+use crate::animation::PointDefinition;
 use crate::info_v2::InfoV2;
 use crate::info_v4::InfoV4;
 use crate::v2::BeatmapFileV2;
@@ -66,6 +67,15 @@ pub fn try_parse_beatmap(map_file: &Path) -> Result<BeatmapFile, DataError> {
             Err(e.into())
         }
     }
+}
+
+#[test]
+pub fn test_point_defs() -> Result<(), DataError> {
+    let data = r#"[[-4,0,0,0],[-4,0,0,0.1],[4,0,0,0.2,"easeInOutQuad"],[-5,0,0,0.3,"easeInOutQuad"],[-2.5,0,0,0.35,"easeInQuad"],[0,0,0,0.42,"easeOutBack"],[0,0,0,0.5]]"#;
+    let points: Result<PointDefinition, _> = serde_json::from_str(data);
+    println!("points: {points:#?}");
+    points?;
+    Ok(())
 }
 
 #[test]

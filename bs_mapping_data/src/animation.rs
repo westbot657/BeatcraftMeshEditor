@@ -84,7 +84,7 @@ pub struct PlainPointDef {
 pub enum PointDefinition {
     Reference(String),
     SinglePoint(PlainPointDef),
-    Points(PointDef),
+    Points(Vec<PointDef>),
 }
 
 impl Serialize for PointDef {

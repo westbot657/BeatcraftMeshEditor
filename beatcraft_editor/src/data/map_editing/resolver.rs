@@ -491,7 +491,7 @@ impl crate::data::map_editing::object_data::CustomData {
     ) -> Result<CustomData, ResolveError> {
         let animation = match &self.animation {
             Some(a) => Some(PathPropertiesMap::deserialize(
-                a.clone(),
+                serde_json::from_str(&serde_json::to_string(a).unwrap()).unwrap(),
                 &mut rt.base_provider_context,
                 point_definitions,
             ).unwrap()),

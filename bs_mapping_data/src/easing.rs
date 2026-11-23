@@ -91,7 +91,7 @@ easing! {x
     "Expo       (IO)":  18 : easeInOutExpo => if x == 0. || x == 1. { x } else if x < 0.5 { 2f32.powf(20. * x - 10.) / 2. } else { (2. - 2f32.powf(-20. * x + 10.)) / 2. }
     "Circ       (I) ":  19 : easeInCirc => 1. - (1. - x.powi(2)).sqrt()
     "Circ        (O)":  20 : easeOutCirc => (1. - (x - 1.).powi(2)).sqrt()
-    "Circ       (IO)":  21 : easeinOutCirc => if x < 0.5 { (1. - (1. - (2. * x).powi(2)).sqrt()) / 2. } else { ((1. - (-2. * x + 2.).powi(2)).sqrt() + 1.) / 2. }
+    "Circ       (IO)":  21 : easeInOutCirc => if x < 0.5 { (1. - (1. - (2. * x).powi(2)).sqrt()) / 2. } else { ((1. - (-2. * x + 2.).powi(2)).sqrt() + 1.) / 2. }
     "Back       (I) ":  22 : easeInBack => C3 * x*x*x - C1 * x*x
     "Back        (O)":  23 : easeOutBack => 1. + C3 * (x - 1.).powi(3) + C1 * (x - 1.).powi(2)
     "Back       (IO)":  24 : easeInOutBack => if x < 0.5 { (2. * x).powi(2) * ((C2 + 1.) * 2. * x - C2) / 2. } else { ((2. * x - 2.).powi(2) * ((C2 + 1.) * (x * 2. - 2.) + C2) + 2.) / 2. }
