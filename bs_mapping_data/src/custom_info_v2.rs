@@ -106,7 +106,7 @@ pub struct DifficultyBeatmapCustomDataV2 {
     #[serde(rename = "_envColorRightBoost")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub env_color_right_boost: Option<RGBCustomColorDataV2>,
-    #[serde(rename = "_obstacleColor")]
+    #[serde(rename = "_obstaclesColor")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub obstacle_color: Option<RGBCustomColorDataV2>,
     #[serde(rename = "_warnings")]

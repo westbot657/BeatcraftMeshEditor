@@ -1,5 +1,8 @@
-use serde::{Deserialize, Serialize};
-
+use serde::{
+    Deserialize, Serialize,
+    de::{self, Deserializer, Visitor},
+};
+use std::fmt;
 use super::convert_int;
 
 #[cfg_attr(feature = "debug", derive(Debug))]
@@ -230,9 +233,40 @@ pub enum MirrorGraphicsSettings {
 }
 convert_int! { MirrorGraphicsSettings : 0..=3 }
 
+
+/// Deserializes a bool-ish flag from `true`/`false` or any integer.
+/// Only `true` and `1` yield `true`; everything else yields `false`.
+fn deserialize_flag<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    struct FlagVisitor;
+
+    impl<'de> Visitor<'de> for FlagVisitor {
+        type Value = bool;
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("a bool, 0, or 1")
+        }
+
+        fn visit_bool<E: de::Error>(self, v: bool) -> Result<bool, E> {
+            Ok(v)
+        }
+
+        // i8/i16/i32 forward here by default
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<bool, E> {
+            Ok(v == 1)
+        }
+
+        // u8/u16/u32 forward here by default
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<bool, E> {
+            Ok(v == 1)
+        }
+    }
+
+    deserializer.deserialize_any(FlagVisitor)
+}
+
 #[cfg_attr(feature = "debug", derive(Debug))]
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "bool", into = "bool")]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(into = "bool")]
 pub enum MainEffectGraphicsSettings {
     Off,
     On,
@@ -250,15 +284,38 @@ impl From<MainEffectGraphicsSettings> for bool {
     }
 }
 
+impl<'de> Deserialize<'de> for MainEffectGraphicsSettings {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserialize_flag(deserializer).map(Self::from)
+    }
+}
+
 #[cfg_attr(feature = "debug", derive(Debug))]
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "i32", into = "u8")]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(into = "u8")]
 #[repr(u8)]
 pub enum SmokeGraphicsSettings {
     Off = 0,
     On = 1,
 }
-convert_int!(SmokeGraphicsSettings: 0 | 1);
+
+impl From<bool> for SmokeGraphicsSettings {
+    fn from(value: bool) -> Self {
+        if value { Self::On } else { Self::Off }
+    }
+}
+
+impl From<SmokeGraphicsSettings> for u8 {
+    fn from(value: SmokeGraphicsSettings) -> Self {
+        value as u8
+    }
+}
+
+impl<'de> Deserialize<'de> for SmokeGraphicsSettings {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserialize_flag(deserializer).map(Self::from)
+    }
+}
 
 #[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

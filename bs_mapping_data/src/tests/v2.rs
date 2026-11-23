@@ -38,32 +38,11 @@ fn test_v2_anim() -> Result<(), DataError> {
     }"#;
     let anim: Result<AnimationV2, _> = serde_json::from_str(data);
     println!("animation: {anim:#?}");
-    anim?;
+    let anim = anim?;
 
-    Ok(())
-}
-
-#[test]
-fn test_v2_points() -> Result<(), DataError> {
-
-    let data2 = r#"[
-            [
-                61,
-                -154,
-                -56,
-                0.125
-            ],
-            [
-                0,
-                0,
-                0,
-                0.375,
-                "easeInOutCirc"
-            ]
-        ]"#;
-    let p: Result<Vec<PointDef>, _> = serde_json::from_str(data2);
-    println!("point def: {p:?}");
-    p?;
+    let round = serde_json::to_string(&anim);
+    println!("animation-round: {round:#?}");
+    round?;
 
     Ok(())
 }

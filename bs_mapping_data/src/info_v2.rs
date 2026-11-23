@@ -75,8 +75,8 @@ pub struct ColorSchemeInnerV2 {
     pub environment_color_0: RGBAColor,
     #[serde(rename = "environmentColor1")]
     pub environment_color_1: RGBAColor,
-    #[serde(rename = "obstacleColor")]
-    pub obstacle_color: RGBAColor,
+    #[serde(rename = "obstaclesColor")]
+    pub obstacles_color: RGBAColor,
     #[serde(rename = "environmentColor0Boost")]
     pub environment_color_0_boost: RGBAColor,
     #[serde(rename = "environmentColor1Boost")]

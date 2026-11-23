@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use crate::{BeatmapFile, InfoFile};
-use crate::animation::PointDefinition;
+use crate::animation::{PointDef, PointDefinition};
 use crate::info_v2::InfoV2;
 use crate::info_v4::InfoV4;
 use crate::v2::BeatmapFileV2;
@@ -37,9 +37,12 @@ pub fn try_parse_info(map_folder: &Path) -> Result<Option<InfoFile>, DataError> 
                 Err(e) => println!("{e:?}")
             }
             let v4: Result<InfoV4, _> = serde_json::from_str(&data);
-            match v4 {
-                Ok(v4) => return Ok(Some(InfoFile::V4(v4))),
-                Err(e) => println!("{e:?}")
+            return match v4 {
+                Ok(v4) => Ok(Some(InfoFile::V4(v4))),
+                Err(e) => {
+                    println!("{e:?}");
+                    Err(e.into())
+                }
             }
         }
     }
@@ -71,10 +74,45 @@ pub fn try_parse_beatmap(map_file: &Path) -> Result<BeatmapFile, DataError> {
 
 #[test]
 pub fn test_point_defs() -> Result<(), DataError> {
-    let data = r#"[[-4,0,0,0],[-4,0,0,0.1],[4,0,0,0.2,"easeInOutQuad"],[-5,0,0,0.3,"easeInOutQuad"],[-2.5,0,0,0.35,"easeInQuad"],[0,0,0,0.42,"easeOutBack"],[0,0,0,0.5]]"#;
-    let points: Result<PointDefinition, _> = serde_json::from_str(data);
-    println!("points: {points:#?}");
-    points?;
+    let data = &[
+        r#"[[-4,0,0,0],[-4,0,0,0.1],[4,0,0,0.2,"easeInOutQuad"],[-5,0,0,0.3,"easeInOutQuad"],[-2.5,0,0,0.35,"easeInQuad"],[0,0,0,0.42,"easeOutBack"],[0,0,0,0.5]]"#,
+        r#"[0, 0, 0]"#,
+        r#""some reference""#,
+    ];
+    for data in data {
+        let points: Result<PointDefinition, _> = serde_json::from_str(data);
+        println!("points: {points:#?}");
+        let points = points?;
+
+        let round_trip = serde_json::to_string(&points);
+        println!("round-trip: {round_trip:?}");
+        round_trip?;
+    }
+    Ok(())
+}
+
+#[test]
+fn test_points() -> Result<(), DataError> {
+
+    let data2 = r#"[
+            [
+                61,
+                -154,
+                -56,
+                0.125
+            ],
+            [
+                0,
+                0,
+                0,
+                0.375,
+                "easeInOutCirc"
+            ]
+        ]"#;
+    let p: Result<Vec<PointDef>, _> = serde_json::from_str(data2);
+    println!("point def: {p:?}");
+    p?;
+
     Ok(())
 }
 

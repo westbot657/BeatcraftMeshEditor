@@ -196,12 +196,10 @@ impl EditingData {
                         for (k, v) in defs {
                             out.insert(
                                 k.clone(),
-                                BasePointDefinition::parse(
-                                    v.clone(),
-                                    &mut runtime_data.base_provider_context,
-                                )
+                                v.clone(),
                             );
                         }
+                        point_definitions = Some(out);
                     }
                 }
                 let mut rotations = Vec::new();

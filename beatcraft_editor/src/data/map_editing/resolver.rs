@@ -490,11 +490,14 @@ impl crate::data::map_editing::object_data::CustomData {
         point_definitions: &ahash::HashMap<String, serde_json::Value>,
     ) -> Result<CustomData, ResolveError> {
         let animation = match &self.animation {
-            Some(a) => Some(PathPropertiesMap::deserialize(
-                serde_json::from_str(&serde_json::to_string(a).unwrap()).unwrap(),
-                &mut rt.base_provider_context,
-                point_definitions,
-            ).unwrap()),
+            Some(a) => {
+                let re_structured = serde_json::from_str(&a.serialize_variant().unwrap()).unwrap();
+                Some(PathPropertiesMap::deserialize(
+                    re_structured,
+                    &mut rt.base_provider_context,
+                    point_definitions,
+                ).unwrap())
+            },
             None => None,
         };
         Ok(CustomData {

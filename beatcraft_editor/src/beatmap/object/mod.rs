@@ -48,10 +48,10 @@ impl GameObjectExt for ColorNote<ObjectSource> {
                 color = col;
             }
             if let Some(BaseValue::Float(dis)) = a.dissolve.interpolate(lifetime, &rt.base_provider_context) {
-                dissolve = dis;
+                dissolve = 1. - dis;
             }
             if let Some(BaseValue::Float(dis)) = a.dissolve_arrow.interpolate(lifetime, &rt.base_provider_context) {
-                arrow_dissolve = dis;
+                arrow_dissolve = 1. - dis;
             }
         }
         GameObjectInstanceData::color_note(
@@ -82,7 +82,7 @@ impl GameObjectExt for BombNote<ObjectSource> {
                 color = col;
             }
             if let Some(BaseValue::Float(dis)) = a.dissolve.interpolate(lifetime, &rt.base_provider_context) {
-                dissolve = dis;
+                dissolve = 1. - dis;
             }
         }
         GameObjectInstanceData::bomb_note(
@@ -114,7 +114,7 @@ impl GameObjectExt for Obstacle<ObjectSource> {
                 color = col;
             }
             if let Some(BaseValue::Float(dis)) = a.dissolve.interpolate(lifetime, &rt.base_provider_context) {
-                dissolve = dis;
+                dissolve = 1. - dis;
             }
             if let Some(BaseValue::Vector3(v3)) = a.scale.interpolate(lifetime, &rt.base_provider_context) {
                 size *= v3;
@@ -146,7 +146,7 @@ impl GameObjectExt for Obstacle<ObjectSource> {
                 color = col;
             }
             if let Some(BaseValue::Float(dis)) = a.dissolve.interpolate(lifetime, &rt.base_provider_context) {
-                dissolve = dis;
+                dissolve = 1. - dis;
             }
         }
 
@@ -178,10 +178,10 @@ impl GameObjectExt for ChainNote<ObjectSource> {
                 color = col;
             }
             if let Some(BaseValue::Float(dis)) = a.dissolve.interpolate(lifetime, &rt.base_provider_context) {
-                dissolve = dis;
+                dissolve = 1. - dis;
             }
             if let Some(BaseValue::Float(dis)) = a.dissolve_arrow.interpolate(lifetime, &rt.base_provider_context) {
-                arrow_dissolve = dis;
+                arrow_dissolve = 1. - dis;
             }
         }
         GameObjectInstanceData::color_note(
@@ -213,10 +213,10 @@ impl GameObjectExt for ChainNoteLink<ObjectSource> {
                 color = col;
             }
             if let Some(BaseValue::Float(dis)) = a.dissolve.interpolate(lifetime, &rt.base_provider_context) {
-                dissolve = dis;
+                dissolve = 1. - dis;
             }
             if let Some(BaseValue::Float(dis)) = a.dissolve_arrow.interpolate(lifetime, &rt.base_provider_context) {
-                arrow_dissolve = dis;
+                arrow_dissolve = 1. - dis;
             }
         }
         GameObjectInstanceData::color_note(

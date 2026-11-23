@@ -5,6 +5,8 @@ use serde::de::{Error, Visitor, SeqAccess};
 use serde::ser::SerializeSeq;
 use crate::easing::Easing;
 
+/// WARNING:
+/// serializing this is NOT the same as serializing the value of one of the variants.
 #[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Clone, Serialize, Deserialize)]
 pub enum Animation {
@@ -12,6 +14,17 @@ pub enum Animation {
     V2(crate::animation_v2::AnimationV2),
     #[cfg(feature = "v3")]
     V3(crate::animation_v3::AnimationV3),
+}
+impl Animation {
+    pub fn serialize_variant(&self) -> Result<String, serde_json::Error> {
+        match self {
+            #[cfg(feature = "v2")]
+            Self::V2(v2) => serde_json::to_string(v2),
+            #[cfg(feature = "v3")]
+            Self::V3(v3) => serde_json::to_string(v3),
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[cfg(feature = "v2")]
@@ -74,6 +87,7 @@ pub struct PointDef {
 
 #[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct PlainPointDef {
     pub values: Vec<PointValue>,
 }

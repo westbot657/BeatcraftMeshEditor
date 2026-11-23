@@ -1,7 +1,6 @@
 use std::collections::HashMap;
-use bitflags::parser::ParseHex;
 use bs_mapping_data::info_v4::{AudioInfoV4, ColorSchemeV4, DifficultyBeatmapV4, InfoV4, MapAuthorsV4, SongInfoV4};
-use bs_mapping_data::{AnyEnvironment, Environment, InfoFile, InfoVersion, MapCharacteristic, MapDifficulty, RGBAColor};
+use bs_mapping_data::{AnyEnvironment, InfoFile, InfoVersion, MapCharacteristic, MapDifficulty, RGBAColor};
 use glam::Vec4;
 use num_traits::ToPrimitive;
 use bs_mapping_data::custom_info_v2::{DifficultyBeatmapCustomDataV2, DifficultySetCustomDataV2, InfoCustomDataV2};
@@ -516,7 +515,7 @@ impl From<ColorScheme> for ColorSchemeV2 {
                 saber_b_color: value.right.saber.as_rgba(),
                 environment_color_0: value.obstacles.as_rgba(),
                 environment_color_1: value.left.env.as_rgba(),
-                obstacle_color: value.right.env.as_rgba(),
+                obstacles_color: value.right.env.as_rgba(),
                 environment_color_0_boost: value.left.boost.as_rgba(),
                 environment_color_1_boost: value.right.boost.as_rgba(),
             },
@@ -528,7 +527,7 @@ impl From<ColorSchemeV2> for ColorScheme {
         Self {
             use_override: value.use_override,
             name: value.color_scheme.color_scheme_id,
-            obstacles: value.color_scheme.obstacle_color.to_vec4().unwrap(),
+            obstacles: value.color_scheme.obstacles_color.to_vec4().unwrap(),
             left: ColorSet {
                 saber: value.color_scheme.saber_a_color.to_vec4().unwrap(),
                 env: value.color_scheme.environment_color_0.to_vec4().unwrap(),

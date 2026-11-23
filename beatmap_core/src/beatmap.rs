@@ -34,7 +34,7 @@ impl CutDirectionExt for CutDirection {
         }
     }
     fn world_angle_radians(&self) -> f32 {
-        self.angle_degrees().to_radians()
+        -self.angle_degrees().to_radians()
     }
     fn to_quat(&self) -> Quat {
         Quat::from_rotation_z(-self.angle_degrees().to_radians())
@@ -123,7 +123,8 @@ pub trait GameObject<ObjectSource> {
 
             let dur = self.duration();
             let (_, jd) = data.jumps(self.custom_njs_offset());
-            let njs = self.custom_njs().unwrap_or(data.njs);
+            let mut njs = self.custom_njs().unwrap_or(data.njs);
+            if njs == 0. { njs = 16. }
             let half_jump_distance = jd / 2.0;
             let reaction_time = half_jump_distance / njs;
             let object_time = data.beat_to_seconds(b);
@@ -188,7 +189,8 @@ pub trait GameObject<ObjectSource> {
         let dur = self.duration();
 
         let (_, jd) = data.jumps(self.custom_njs_offset());
-        let njs = self.custom_njs().unwrap_or(data.njs);
+        let mut njs = self.custom_njs().unwrap_or(data.njs);
+        if njs == 0. { njs = 16. }
         let half_jump_distance = jd / 2.0;
         let reaction_time = half_jump_distance / njs;
 
@@ -208,7 +210,12 @@ pub trait GameObject<ObjectSource> {
             return None;
         }
         let animation = self.animation();
-        let normal_time = f32::inverse_lerp(data.seconds_to_beat(s_time), data.seconds_to_beat(d_time), beat).clamp(0., 1.);
+        let s_time_beat = data.seconds_to_beat(s_time);
+        let d_time_beat = data.seconds_to_beat(d_time);
+        let normal_time = f32::inverse_lerp(s_time_beat, d_time_beat, beat).clamp(0., 1.);
+        if !normal_time.is_finite() {
+            eprintln!("erroneous time value: {normal_time} ({s_time_beat}..{d_time_beat} : {beat}) ({s_time}..{d_time})")
+        }
 
         let mut gp = self.grid_pos();
         gp = Vec2::new(-1.5 + gp.x, gp.y + 0.5) * 0.6;
@@ -793,8 +800,8 @@ impl<ObjectSource> ChainNote<ObjectSource> {
         let head_pos = self.head_grid_pos.extend(0.);
         let tail_offset = self.tail_grid_pos.extend(0.) - head_pos;
         let mag = tail_offset.length();
-        let f = self.cut_direction.world_angle_radians() - 90f32.to_radians();
-        let ctrl = Vec3::new(f.cos() * 0.5 * mag, f.sin() * 0.5 * mag, 0.);
+        let f = 270f32.to_radians() - self.cut_direction.world_angle_radians();
+        let ctrl = Vec3::new(-f.cos() * 0.5 * mag, f.sin() * 0.5 * mag, 0.);
 
         let spline = BezierCurve::new(Vec3::ZERO, ctrl, tail_offset);
 
@@ -806,7 +813,7 @@ impl<ObjectSource> ChainNote<ObjectSource> {
             let i = i + 1;
 
             let grid_pos = (spline.position(gap * i as f32) + head_pos).xy();
-            let angle = spline.derivative(gap * i as f32).xy().to_angle() - 90f32.to_radians();
+            let angle = 270f32.to_radians() - spline.derivative(gap * i as f32).xy().to_angle();
 
             let orientation = Quat::from_rotation_z(-angle);
 
