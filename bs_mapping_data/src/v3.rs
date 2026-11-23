@@ -1,19 +1,21 @@
-use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
-use crate::convert_u8;
+use crate::convert_int;
+use crate::custom_v3::{BeatmapFileCustomDataV3, CustomArcDataV3, CustomBombDataV3, CustomChainDataV3, CustomNoteDataV3, CustomObstacleDataV3};
 use crate::easing::Easing;
-use crate::v2_v3::*;
+use crate::is_value_f;
+use crate::v2_v3_v4::*;
+use crate::v3_v4::*;
 use crate::{
     ArcMidAnchorMode, Color, CutDirection, MapVersion, Sentinel, SpawnRotationAngle,
     SpawnRotationExecutionTime,
 };
 use crate::{bool_u8_serde, easing_as_i8};
-use crate::{default_u, is_value_f, is_value_u};
-use crate::custom_v3::{CustomArcDataV3, CustomBombDataV3, CustomChainDataV3, CustomNoteDataV3, CustomObstacleDataV3, BeatmapFileCustomDataV3};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct ColorNoteV3 {
     #[serde(rename = "b")]
     pub beat: f32,
@@ -29,12 +31,14 @@ pub struct ColorNoteV3 {
     pub angle_offset: i32,
     #[cfg(feature = "custom_data")]
     #[serde(rename = "customData")]
-    #[serde(default, skip_serializing_if = "CustomNoteDataV3::is_empty")]
+    #[serde(skip_serializing_if = "CustomNoteDataV3::is_empty")]
     pub custom_data: CustomNoteDataV3,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct BombNoteV3 {
     #[serde(rename = "b")]
     pub beat: f32,
@@ -44,12 +48,14 @@ pub struct BombNoteV3 {
     pub line_layer: f32,
     #[cfg(feature = "custom_data")]
     #[serde(rename = "customData")]
-    #[serde(default, skip_serializing_if = "CustomBombDataV3::is_empty")]
+    #[serde(skip_serializing_if = "CustomBombDataV3::is_empty")]
     pub custom_data: CustomBombDataV3,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct ObstacleV3 {
     #[serde(rename = "b")]
     pub beat: f32,
@@ -65,12 +71,14 @@ pub struct ObstacleV3 {
     pub height: f32,
     #[cfg(feature = "custom_data")]
     #[serde(rename = "customData")]
-    #[serde(default, skip_serializing_if = "CustomObstacleDataV3::is_empty")]
+    #[serde(skip_serializing_if = "CustomObstacleDataV3::is_empty")]
     pub custom_data: CustomObstacleDataV3,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct ArcV3 {
     #[serde(rename = "c")]
     pub color: Color,
@@ -98,12 +106,14 @@ pub struct ArcV3 {
     pub mid_anchor_mode: ArcMidAnchorMode,
     #[cfg(feature = "custom_data")]
     #[serde(rename = "customData")]
-    #[serde(default, skip_serializing_if = "CustomArcDataV3::is_empty")]
+    #[serde(skip_serializing_if = "CustomArcDataV3::is_empty")]
     pub custom_data: CustomArcDataV3,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct ChainV3 {
     #[serde(rename = "c")]
     pub color: Color,
@@ -127,11 +137,12 @@ pub struct ChainV3 {
     pub squish_factor: f32,
     #[cfg(feature = "custom_data")]
     #[serde(rename = "customData")]
-    #[serde(default, skip_serializing_if = "CustomChainDataV3::is_empty")]
+    #[serde(skip_serializing_if = "CustomChainDataV3::is_empty")]
     pub custom_data: CustomChainDataV3,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LegacySpawnRotationEventV3 {
     #[serde(rename = "b")]
@@ -142,7 +153,8 @@ pub struct LegacySpawnRotationEventV3 {
     pub rotation_angle: SpawnRotationAngle,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpawnRotationEventV3 {
     #[serde(rename = "b")]
@@ -153,7 +165,8 @@ pub struct SpawnRotationEventV3 {
     pub magnitude: f32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LegacyBPMEventV3 {
     #[serde(rename = "b")]
@@ -163,7 +176,8 @@ pub struct LegacyBPMEventV3 {
     pub value: f32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BPMEventV3 {
     #[serde(rename = "b")]
@@ -172,7 +186,8 @@ pub struct BPMEventV3 {
     pub bpm: f32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BpmEventV3 {
     #[serde(rename = "b")]
@@ -181,7 +196,8 @@ pub struct BpmEventV3 {
     pub bpm: f32,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RotationEventV3 {
     #[serde(rename = "b")]
@@ -192,7 +208,8 @@ pub struct RotationEventV3 {
     pub rotation: f32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum BasicBeatmapEventV3 {
     SpawnRotation(LegacySpawnRotationEventV3),
@@ -205,7 +222,8 @@ pub enum BasicBeatmapEventV3 {
     BPM(LegacyBPMEventV3),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LightEventV3 {
     #[serde(rename = "b")]
@@ -214,13 +232,15 @@ pub struct LightEventV3 {
     pub typ: LightEventTypeV2,
     #[serde(rename = "i")]
     pub value: LightEventValueV2,
+    /// float value is unused
     f: f32,
     #[serde(rename = "customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LegacyColorBoostV3 {
     #[serde(rename = "b")]
@@ -229,13 +249,15 @@ pub struct LegacyColorBoostV3 {
     typ: Sentinel<5>,
     #[serde(rename = "i")]
     pub boost: ColorBoostValueV2,
+    /// float value is unused
     f: f32,
     #[serde(rename = "customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RingLightEventV3 {
     #[serde(rename = "b")]
@@ -244,13 +266,15 @@ pub struct RingLightEventV3 {
     pub typ: RingLightEventTypeV2,
     #[serde(rename = "i")]
     pub value: u32,
+    /// float value is unused
     f: f32,
     #[serde(rename = "customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpinningLaserEventV3 {
     #[serde(rename = "b")]
@@ -259,13 +283,15 @@ pub struct SpinningLaserEventV3 {
     pub typ: SpinningLaserSideV2,
     #[serde(rename = "i")]
     pub value: u32,
+    /// float value is unused
     f: f32,
     #[serde(rename = "customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HydraulicsEventV3 {
     #[serde(rename = "b")]
@@ -274,13 +300,15 @@ pub struct HydraulicsEventV3 {
     pub typ: HydraulicsTypeV2,
     #[serde(rename = "i")]
     pub value: u32,
+    /// float value is unused
     f: f32,
     #[serde(rename = "customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GagaEventV3 {
     #[serde(rename = "b")]
@@ -289,108 +317,26 @@ pub struct GagaEventV3 {
     pub typ: GagaSideV2,
     #[serde(rename = "i")]
     pub value: u32,
+    /// float value is unused
     f: f32,
     #[serde(rename = "customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColorBoostV3 {
     #[serde(rename = "b")]
     pub beat: f32,
     #[serde(rename = "o")]
-    pub boost: bool, // rare non-numeric bool appearence
+    pub boost: bool, // rare non-numeric bool appearance
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
-#[repr(u8)]
-pub enum IndexFilterType {
-    Division = 1,
-    StepAndOffset = 2,
-}
-convert_u8! { IndexFilterType : 1 | 2 }
 
-bitflags! {
-    #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-    #[serde(from = "u8", into = "u8")]
-    pub struct RandomizationBehavior: u8 {
-        const NoRandom       = 0;
-        const KeepOrder      = 1;
-        const RandomElements = 2;
-    }
-
-    #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-    #[serde(from = "u8", into = "u8")]
-    pub struct LimitBehavior: u8 {
-        const None         = 0;
-        const Duration     = 1;
-        const Distribution = 2;
-    }
-
-}
-
-macro_rules! flags_as_u8 {
-    ( $val:ty ) => {
-        impl From<u8> for $val {
-            fn from(value: u8) -> Self {
-                Self::from_bits_truncate(value)
-            }
-        }
-        impl From<$val> for u8 {
-            fn from(value: $val) -> Self {
-                value.bits()
-            }
-        }
-    };
-}
-flags_as_u8! { RandomizationBehavior }
-flags_as_u8! { LimitBehavior }
-
-impl Default for RandomizationBehavior {
-    fn default() -> Self {
-        Self::empty()
-    }
-}
-impl Default for LimitBehavior {
-    fn default() -> Self {
-        Self::empty()
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct IndexFilterV3 {
-    #[serde(rename = "c")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chunks: Option<u32>,
-    #[serde(rename = "f")]
-    pub typ: IndexFilterType,
-    #[serde(rename = "p")]
-    pub param_0: u32,
-    #[serde(rename = "t")]
-    pub param_1: u32,
-    #[serde(rename = "r")]
-    #[serde(with = "bool_u8_serde")]
-    pub reverse: bool,
-    #[serde(rename = "n")]
-    #[serde(default, skip_serializing_if = "RandomizationBehavior::is_empty")]
-    pub randomization_behavior: RandomizationBehavior,
-    #[serde(rename = "s")]
-    #[serde(default = "default_u::<_, 0>", skip_serializing_if = "is_value_u::<0>")]
-    pub randomization_seed: u64,
-    #[serde(rename = "l")]
-    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
-    pub limit_percentage: f32,
-    #[serde(rename = "d")]
-    #[serde(default, skip_serializing_if = "LimitBehavior::is_empty")]
-    pub limit_behavior: LimitBehavior,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct EventBoxGroupV3<E>
 where
     E: Clone + std::fmt::Debug,
@@ -403,46 +349,22 @@ where
     pub events: Vec<E>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(try_from = "i32", into = "u8")]
 #[repr(u8)]
-pub enum DistributionType {
-    Wave = 1,
-    Step = 2,
+pub enum LightColorTransitionTypeV3 {
+    #[default]
+    Instant = 0,
+    Transition = 1,
+    Extend = 2,
 }
-convert_u8! { DistributionType : 1 | 2 }
+convert_int! { LightColorTransitionTypeV3 : 0..=2 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
-#[repr(u8)]
-pub enum EventAxis {
-    X = 0,
-    Y = 1,
-    Z = 2,
-}
-convert_u8! { EventAxis : 0..=2 }
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
-#[repr(u8)]
-pub enum TransitionType {
-    Transition = 0,
-    Extend = 1,
-}
-convert_u8! { TransitionType : 0 | 1 }
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
-#[repr(u8)]
-pub enum RotationDirection {
-    Automatic = 0,
-    Clockwise = 1,
-    CounterClockwise = 2,
-}
-convert_u8! { RotationDirection : 0..=2 }
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct LightColorEventBoxV3 {
     #[serde(rename = "f")]
     pub index_filter: IndexFilterV3,
@@ -459,18 +381,21 @@ pub struct LightColorEventBoxV3 {
     pub brightness_distribution_affects_first: bool,
     #[serde(rename = "i")]
     #[serde(with = "easing_as_i8")]
-    #[serde(default, skip_serializing_if = "Easing::is_default")]
+    #[serde(skip_serializing_if = "Easing::is_default")]
     pub brightness_distribution_easing: Easing,
     #[serde(rename = "e")]
     pub events: Vec<LightColorEventV3>,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct LightColorEventV3 {
     #[serde(rename = "b")]
     pub beat_offset: f32,
     #[serde(rename = "i")]
-    pub transition_type: TransitionType,
+    pub transition_type: LightColorTransitionTypeV3,
     #[serde(rename = "c")]
     pub color: LightEventColor,
     #[serde(rename = "s")]
@@ -478,24 +403,17 @@ pub struct LightColorEventV3 {
     #[serde(rename = "f")]
     pub strobe_frequency: f32,
     #[serde(rename = "sb")]
-    #[serde(default, skip_serializing_if = "is_value_f::<{ 1f32.to_bits() }>")]
+    #[serde(skip_serializing_if = "is_value_f::<{ 1f32.to_bits() }>")]
     pub strobe_brightness: f32,
     #[serde(rename = "sf")]
-    #[serde(default, skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
+    #[serde(skip_serializing_if = "is_value_f::<{ 0f32.to_bits() }>")]
     pub strobe_fade: f32,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
-#[repr(u8)]
-pub enum LightEventColor {
-    Primary = 0,
-    Secondary = 1,
-    White = 2,
-}
-convert_u8! { LightEventColor : 0..=2 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct LightRotationEventBoxV3 {
     #[serde(rename = "f")]
     pub index_filter: IndexFilterV3,
@@ -512,7 +430,7 @@ pub struct LightRotationEventBoxV3 {
     pub rotation_distribution_affects_first: bool,
     #[serde(rename = "i")]
     #[serde(with = "easing_as_i8")]
-    #[serde(default, skip_serializing_if = "Easing::is_default")]
+    #[serde(skip_serializing_if = "Easing::is_default")]
     pub rotation_distribution_easing: Easing,
     #[serde(rename = "a")]
     pub axis: EventAxis,
@@ -522,8 +440,11 @@ pub struct LightRotationEventBoxV3 {
     #[serde(rename = "l")]
     pub events: Vec<LightRotationEventV3>,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct LightRotationEventV3 {
     #[serde(rename = "b")]
     pub beat_offset: f32,
@@ -541,8 +462,10 @@ pub struct LightRotationEventV3 {
     pub loop_count: u32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct LightTranslationEventBoxV3 {
     #[serde(rename = "f")]
     pub index_filter: IndexFilterV3,
@@ -559,18 +482,21 @@ pub struct LightTranslationEventBoxV3 {
     pub gap_distribution_affects_first: bool,
     #[serde(rename = "i")]
     #[serde(with = "easing_as_i8")]
-    #[serde(default, skip_serializing_if = "Easing::is_default")]
+    #[serde(skip_serializing_if = "Easing::is_default")]
     pub gap_distribution_easing: Easing,
     #[serde(rename = "a")]
     pub axis: EventAxis,
-    #[serde(rename = "invert_axis")]
+    #[serde(rename = "r")]
     #[serde(with = "bool_u8_serde")]
     pub invert_axis: bool,
     #[serde(rename = "l")]
     pub events: Vec<LightTranslationEventV3>,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct LightTranslationEventV3 {
     #[serde(rename = "b")]
     pub beat_offset: f32,
@@ -583,8 +509,10 @@ pub struct LightTranslationEventV3 {
     pub magnitude: f32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct VfxEventBoxV3 {
     #[serde(rename = "f")]
     pub index_filter: IndexFilterV3,
@@ -605,11 +533,15 @@ pub struct VfxEventBoxV3 {
     #[serde(rename = "l")]
     pub float_fx_event_metadata_indices: Vec<u32>,
 }
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct FxEventsCollectionV3 {
     #[serde(rename = "_fl")]
     pub float_fx_event_collection: Vec<VfxEventV3>,
+    /// unused by beat saber itself
     #[serde(default, skip_serializing_if = "Option::is_none")]
     _il: Option<serde_json::Value>,
 }
@@ -619,8 +551,10 @@ impl FxEventsCollectionV3 {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(default)]
 pub struct VfxEventV3 {
     #[serde(rename = "b")]
     pub beat_offset: f32,
@@ -633,48 +567,38 @@ pub struct VfxEventV3 {
     pub value: f32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct BeatmapFileV3 {
     pub version: MapVersion,
-    #[serde(rename = "bpmEvents")]
     pub bpm_events: Vec<BpmEventV3>,
-    #[serde(rename = "rotationEvents")]
     pub rotation_events: Vec<RotationEventV3>,
-    #[serde(rename = "colorNotes")]
     pub color_notes: Vec<ColorNoteV3>,
-    #[serde(rename = "bombNotes")]
     pub bomb_notes: Vec<BombNoteV3>,
     pub obstacles: Vec<ObstacleV3>,
     #[serde(rename = "sliders")]
     pub arcs: Vec<ArcV3>,
     #[serde(rename = "burstSliders")]
     pub chains: Vec<ChainV3>,
-    #[serde(rename = "basicBeatmapEvents")]
     pub basic_beatmap_events: Vec<BasicBeatmapEventV3>,
     #[serde(rename = "colorBoostBeatmapEvents")]
     pub color_boost_events: Vec<ColorBoostV3>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    waypoints: Option<serde_json::Value>,
-    #[serde(rename = "basicEventTypesWithKeywords")]
+    pub waypoints: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    idc: Option<serde_json::Value>,
-    #[serde(rename = "lightColorEventBoxGroups")]
+    pub basic_event_types_with_keywords: Option<serde_json::Value>,
     pub light_color_event_box_groups: Vec<EventBoxGroupV3<LightColorEventBoxV3>>,
-    #[serde(rename = "lightRotationEventBoxGroups")]
     pub light_rotation_event_box_groups: Vec<EventBoxGroupV3<LightRotationEventBoxV3>>,
-    #[serde(rename = "lightTranslationEventBoxGroups")]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub light_translation_event_box_groups: Vec<EventBoxGroupV3<LightTranslationEventBoxV3>>,
-    #[serde(rename = "vfxEventBoxGroups")]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub vfx_event_box_groups: Vec<EventBoxGroupV3<VfxEventBoxV3>>,
     #[serde(rename = "_fxEventsCollection")]
     #[serde(default, skip_serializing_if = "FxEventsCollectionV3::is_empty")]
     pub vfx_events_collections: FxEventsCollectionV3,
-    #[serde(rename = "useNormalEventsAsCompatibleEvents")]
     pub use_normal_events_as_compatible_events: bool,
-    #[serde(rename = "customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<BeatmapFileCustomDataV3>,
 }

@@ -8,14 +8,34 @@ macro_rules! easing {
         $( $display:literal : $sentinel:literal : $name:tt => $func:expr )*
     ) => {
         #[allow(non_camel_case_types)]
-        #[derive(Serialize, Deserialize, Debug, Default, Hash, PartialEq, Eq, Copy, Clone)]
+        #[cfg_attr(feature = "debug", derive(Debug))]
+        #[derive(Serialize, Deserialize, Default, Hash, PartialEq, Eq, Copy, Clone)]
         #[repr(i8)]
         pub enum Easing {
             #[default] $(
             $name = $sentinel,
         )*}
 
+        #[derive(Debug, thiserror::Error)]
+        #[error("Unknown easing variant: {0}")]
+        pub struct ParseEasingError(pub String);
+
+        impl ::std::str::FromStr for Easing {
+            type Err = ParseEasingError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $( stringify!($name) => Ok(Self::$name), )*
+                    _ => Err(ParseEasingError(s.to_owned())),
+                }
+            }
+        }
+
         impl Easing {
+            pub fn parse(s: &str) -> Option<Self> {
+                s.parse().ok()
+            }
+            
             pub fn apply(&self, $x: f32) -> f32 {
                 match self {$(
                     Self::$name => $func,
@@ -59,7 +79,7 @@ easing! {x
     "Sine       (IO)":   6 : easeInOutSine => -((x * PI).cos() - 1.) / 2.
     "Cubic      (I) ":   7 : easeInCubic => x*x*x
     "Cubic       (O)":   8 : easeOutCubic => 1. - (1. - x).powi(3)
-    "Cubid      (IO)":   9 : easeInOutCubic => if x < 0.5 { 4. * x*x*x } else { 1. - (-2. * x + 2.).powi(3) / 2. }
+    "Cubic      (IO)":   9 : easeInOutCubic => if x < 0.5 { 4. * x*x*x } else { 1. - (-2. * x + 2.).powi(3) / 2. }
     "Quart      (I) ":  10 : easeInQuart => x*x*x*x
     "Quart       (O)":  11 : easeOutQuart => 1. - (1. - x).powi(4)
     "Quart      (IO)":  12 : easeinOutQuart => if x < 0.5 { 8. * x*x*x*x } else { 1. - (-2. * x + 2.).powi(4) / 2. }

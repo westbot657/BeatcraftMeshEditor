@@ -1,16 +1,18 @@
 use glam::{Quat, Vec3, Vec4};
-use serde::de::{self, IgnoredAny, SeqAccess, Visitor};
+use serde::de::{SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
-use num_traits::real::Real;
 
-#[derive(Copy, Clone, Debug, PartialEq, Default)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Default)]
 pub struct OptVec2(pub [Option<f32>; 2]);
 
-#[derive(Copy, Clone, Debug, PartialEq, Default)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Default)]
 pub struct OptVec3(pub [Option<f32>; 3]);
 
-#[derive(Copy, Clone, Debug, PartialEq, Default)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Default)]
 pub struct OptVec4(pub [Option<f32>; 4]);
 
 macro_rules! impl_opt_vec {
@@ -49,9 +51,6 @@ macro_rules! impl_opt_vec {
                                 None => break,
                             }
                         }
-                        // if seq.next_element::<IgnoredAny>()?.is_some() {
-                        //     return Err(de::Error::invalid_length($n + 1, &self));
-                        // }
                         Ok($name(out))
                     }
                 }
@@ -66,7 +65,8 @@ impl_opt_vec!(OptVec2, 2);
 impl_opt_vec!(OptVec3, 3);
 impl_opt_vec!(OptVec4, 4);
 
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ColorVec4 {
     #[serde(untagged)]
     Vec4(Vec4),
@@ -74,7 +74,8 @@ pub enum ColorVec4 {
     Vec3(Vec3),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub enum RotationVec3 {
     #[serde(untagged)]
     Vec3(OptVec3),
@@ -82,7 +83,8 @@ pub enum RotationVec3 {
     Y(f32),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SuggestionModName {
     Chroma,
 
@@ -92,7 +94,8 @@ pub enum SuggestionModName {
     Custom(String),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RequirementModName {
     Chroma,
     #[serde(rename = "Noodle Extensions")]

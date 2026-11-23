@@ -6,7 +6,8 @@ use crate::custom_data::{ColorVec4, OptVec2, OptVec3, RotationVec3};
 
 
 #[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
 pub struct BeatmapFileCustomDataV3 {
@@ -22,7 +23,8 @@ pub struct BeatmapFileCustomDataV3 {
 }
 
 #[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
 pub struct CommonCustomDataV3 {
@@ -32,8 +34,8 @@ pub struct CommonCustomDataV3 {
     pub track: Vec<String>,
 
     #[cfg(feature = "noodle")]
-    #[serde(skip_serializing_if = "OptVec2::is_none")]
-    pub coordinates: OptVec2,
+    #[serde(skip_serializing_if = "OptVec3::is_none")]
+    pub coordinates: OptVec3,
     #[cfg(feature = "noodle")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub world_rotation: Option<RotationVec3>,
@@ -92,7 +94,8 @@ impl CommonCustomDataV3 {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
 pub struct CustomNoteDataV3 {
@@ -153,7 +156,8 @@ impl CustomNoteDataV3 {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
 pub struct CustomBombDataV3 {
@@ -182,7 +186,8 @@ impl CustomBombDataV3 {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
 pub struct CustomObstacleDataV3 {
@@ -212,7 +217,8 @@ impl CustomObstacleDataV3 {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
 pub struct CustomChainDataV3 {
@@ -250,7 +256,8 @@ impl CustomChainDataV3 {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
 pub struct CustomArcDataV3 {

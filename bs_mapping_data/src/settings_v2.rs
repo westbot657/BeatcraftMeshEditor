@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use super::convert_u8;
+use super::convert_int;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CustomSettingsV2 {
     #[serde(rename = "_playerOptions")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -27,7 +28,8 @@ pub struct CustomSettingsV2 {
     pub note_tweaks: Option<NoteTweaksOptionsV2>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PlayerOptionsV2 {
     #[serde(rename = "_leftHanded")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -75,14 +77,16 @@ pub struct PlayerOptionsV2 {
     pub environment_effects_filter_expert_plus_preset: Option<EnvironmentEffectsV2>,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EnvironmentEffectsV2 {
     AllEffects,
     StrobeFilter,
     NoEffects,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "_noteJumpDurationTypeSettings")]
 pub enum NoteJumpDurationTypeSettingsV2 {
     Dynamic {
@@ -97,7 +101,8 @@ pub enum NoteJumpDurationTypeSettingsV2 {
     },
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ModifiersOptionsV2 {
     #[serde(rename = "_energyType")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -147,20 +152,23 @@ pub struct ModifiersOptionsV2 {
     pub small_cubes: Option<bool>,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EnergyTypeV2 {
     Bar,
     Battery,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ObstacleType {
     All,
     FullHeightOnly,
     NoObstacles,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SongSpeed {
     Normal,
     Faster,
@@ -168,21 +176,24 @@ pub enum SongSpeed {
     SuperFast,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct EnvironmentOptionsV2 {
     #[serde(rename = "_overrideEnvironments")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub override_environments: Option<bool>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ColorOptionsV2 {
     #[serde(rename = "_overrideDefaultColors")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub override_default_colors: Option<bool>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct GraphicsOptionsV2 {
     #[serde(rename = "_mirrorGraphicsSettings")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -190,11 +201,11 @@ pub struct GraphicsOptionsV2 {
     #[serde(rename = "_mainEffectGraphicsSettings")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// "Bloom Post Process". Disabling switches to baked/fake "Quest style" bloom.
-    pub main_effect_graphics_settings: Option<bool>,
+    pub main_effect_graphics_settings: Option<MainEffectGraphicsSettings>,
     #[serde(rename = "_smokeGraphicsSettings")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// Also enables depth texture / "Soft Particles" when used.
-    pub smoke_graphics_settings: Option<bool>,
+    pub smoke_graphics_settings: Option<SmokeGraphicsSettings>,
     #[serde(rename = "_burnMarkTrailsEnabled")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// Hidden setting: hides burn trails left by sabers.
@@ -207,8 +218,9 @@ pub struct GraphicsOptionsV2 {
     pub max_shockwave_particles: Option<MaxShockwaveParticles>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "i32", into = "u8")]
 #[repr(u8)]
 pub enum MirrorGraphicsSettings {
     Off = 0,
@@ -216,37 +228,51 @@ pub enum MirrorGraphicsSettings {
     Medium = 2,
     High = 3,
 }
-convert_u8! { MirrorGraphicsSettings : 0..=3 }
+convert_int! { MirrorGraphicsSettings : 0..=3 }
 
-// #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-// #[serde(try_from = "u8", into = "u8")]
-// #[repr(u8)]
-// pub enum MainEffectGraphicsSettings {
-//     Off = 0,
-//     On = 1,
-// }
-// convert_u8! { MainEffectGraphicsSettings : 0 | 1 }
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "bool", into = "bool")]
+pub enum MainEffectGraphicsSettings {
+    Off,
+    On,
+}
 
-// #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-// #[serde(try_from = "u8", into = "u8")]
-// #[repr(u8)]
-// pub enum SmokeGraphicsSettings {
-//     Off = 0,
-//     On = 1,
-// }
-// convert_u8! { SmokeGraphicsSettings : 0 | 1 }
+impl From<bool> for MainEffectGraphicsSettings {
+    fn from(value: bool) -> Self {
+        if value { Self::On } else { Self::Off }
+    }
+}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
+impl From<MainEffectGraphicsSettings> for bool {
+    fn from(value: MainEffectGraphicsSettings) -> Self {
+        value == MainEffectGraphicsSettings::On
+    }
+}
+
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "i32", into = "u8")]
+#[repr(u8)]
+pub enum SmokeGraphicsSettings {
+    Off = 0,
+    On = 1,
+}
+convert_int!(SmokeGraphicsSettings: 0 | 1);
+
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "i32", into = "u8")]
 #[repr(u8)]
 pub enum MaxShockwaveParticles {
     Off = 0,
     Low = 1,
     High = 2,
 }
-convert_u8! { MaxShockwaveParticles : 0..=2 }
+convert_int! { MaxShockwaveParticles : 0..=2 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ChromaOptionsV2 {
     #[serde(rename = "_disableChromaEvents")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -262,7 +288,8 @@ pub struct ChromaOptionsV2 {
     pub force_zen_mode_walls: Option<bool>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CountersPlusOptionsV2 {
     #[serde(rename = "_mainEnabled")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -299,7 +326,8 @@ pub struct CountersPlusOptionsV2 {
     pub fail_enabled: Option<bool>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct UiTweaksOptionsV2 {
     #[serde(rename = "_multiplierEnabled")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -318,7 +346,8 @@ pub struct UiTweaksOptionsV2 {
     pub progress_enabled: Option<bool>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NoteTweaksOptionsV2 {
     #[serde(rename = "_enabled")]
     #[serde(default, skip_serializing_if = "Option::is_none")]

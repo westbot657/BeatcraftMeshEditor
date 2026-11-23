@@ -2,7 +2,8 @@ use crate::custom_data::{RequirementModName, SuggestionModName};
 use crate::is_value_f;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct InfoCustomDataV2 {
     #[serde(rename = "_contributors")]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -22,7 +23,8 @@ pub struct InfoCustomDataV2 {
     pub extra: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ContributorV2 {
     #[serde(rename = "_role")]
     pub role: String,
@@ -35,7 +37,8 @@ pub struct ContributorV2 {
     pub extra: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct EditorInfoV2 {
     #[serde(rename = "_lastEditedBy")]
     pub last_edited_by: Option<String>,
@@ -47,7 +50,8 @@ pub struct EditorInfoV2 {
     pub editor_info: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DifficultySetCustomDataV2 {
     #[serde(rename = "_characteristicLabel")]
     pub characteristic_label: String,
@@ -58,14 +62,16 @@ pub struct DifficultySetCustomDataV2 {
     pub extra: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct RGBCustomColorDataV2 {
     pub r: f32,
     pub g: f32,
     pub b: f32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DifficultyBeatmapCustomDataV2 {
     #[serde(rename = "_oneSaber")]
     #[serde(default, skip_serializing_if = "Option::is_none")]

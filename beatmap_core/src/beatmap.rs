@@ -9,6 +9,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use tracks_rs::animation::track::PathPropertiesMap;
+use tracks_rs::animation::tracks_holder::TrackKey;
 use tracks_rs::base_value::BaseValue;
 use bs_mapping_data::custom_data::{OptVec2, OptVec3};
 
@@ -411,10 +412,9 @@ pub struct CustomData {
     pub custom_njs: Option<f32>,
     pub local_rotation: Quat,
     pub world_rotation: Quat,
-    pub coordinates: OptVec2,
+    pub coordinates: OptVec3,
     pub animation: Option<PathPropertiesMap>,
-    // pub track: Option<?>,
-    // pub animation: Option<?>,
+    // pub track: Option<TrackKey>,
 }
 
 pub struct NoteCustomData {

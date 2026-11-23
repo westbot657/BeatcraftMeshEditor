@@ -187,7 +187,7 @@ impl Exportable for BeatmapFileV2 {
                     custom_data: None,
                     bookmarks: None,
                     waypoints: None,
-                    special_events: None,
+                    special_events_keyword_filters: None,
                 },
                 warnings
             }

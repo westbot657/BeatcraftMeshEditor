@@ -1,15 +1,16 @@
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
 use crate::custom_v2::{CustomArcDataV2, CustomBombDataV2, CustomNoteDataV2, CustomObstacleDataV2, BeatmapFileCustomDataV2};
-use super::convert_u8;
+use super::convert_int;
 use super::{
     ArcMidAnchorMode, Color, CutDirection, Sentinel, SpawnRotationAngle, SpawnRotationExecutionTime,
 };
 use super::{default_f, is_value_f};
 use crate::MapVersion;
-use crate::v2_v3::*;
+use crate::v2_v3_v4::*;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColorNoteV2 {
     #[serde(rename = "_time")]
@@ -30,7 +31,8 @@ pub struct ColorNoteV2 {
     pub custom_data: CustomNoteDataV2,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BombNoteV2 {
     #[serde(rename = "_time")]
@@ -50,17 +52,19 @@ pub struct BombNoteV2 {
     pub custom_data: CustomBombDataV2,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
-#[serde(try_from = "u8", into = "u8")]
+#[serde(try_from = "i32", into = "u8")]
 pub enum ObstacleV2Type {
     FullHeight = 0,
     Crouch = 1,
     Free = 2,
 }
-convert_u8! { ObstacleV2Type: 0..=2 }
+convert_int! { ObstacleV2Type: 0..=2 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ObstacleV2 {
     #[serde(rename = "_type")]
@@ -87,7 +91,8 @@ pub struct ObstacleV2 {
     pub custom_data: CustomObstacleDataV2,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArcV2 {
     #[serde(rename = "_colorType")]
@@ -124,7 +129,8 @@ pub struct ArcV2 {
     pub custom_data: CustomArcDataV2,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpawnRotationEventV2 {
     #[serde(rename = "_time")]
@@ -135,26 +141,29 @@ pub struct SpawnRotationEventV2 {
     pub rotation_angle: SpawnRotationAngle,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BPMEventV2 {
     #[serde(rename = "_time")]
     pub beat: f32,
     _type: Sentinel<100>,
     #[serde(rename = "_value")]
-    value: Sentinel<0>,
+    pub value: Sentinel<0>,
     #[serde(rename = "_floatValue")]
-    float_value: f32,
+    pub float_value: f32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum V2Note {
     Note(ColorNoteV2),
     Bomb(BombNoteV2),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum V2Event {
     SpawnRotation(SpawnRotationEventV2),
@@ -167,7 +176,8 @@ pub enum V2Event {
     BPM(BPMEventV2),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LightEventV2 {
     #[serde(rename = "_time")]
@@ -182,7 +192,8 @@ pub struct LightEventV2 {
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RingLightEventV2 {
     #[serde(rename = "_time")]
@@ -197,7 +208,8 @@ pub struct RingLightEventV2 {
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpinningLaserEventV2 {
     #[serde(rename = "_time")]
@@ -212,7 +224,8 @@ pub struct SpinningLaserEventV2 {
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HydraulicsEventV2 {
     #[serde(rename = "_time")]
@@ -227,7 +240,8 @@ pub struct HydraulicsEventV2 {
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GagaEventV2 {
     #[serde(rename = "_time")]
@@ -242,7 +256,8 @@ pub struct GagaEventV2 {
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColorBoostV2 {
     #[serde(rename = "_time")]
@@ -250,14 +265,15 @@ pub struct ColorBoostV2 {
     #[serde(rename = "_type")]
     typ: Sentinel<5>,
     #[serde(rename = "_value")]
-    value: ColorBoostValueV2,
+    pub value: ColorBoostValueV2,
     #[cfg(feature = "custom_data")]
     #[serde(rename = "_customData")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BeatmapFileV2 {
     #[serde(rename = "Stats")]
@@ -286,12 +302,10 @@ pub struct BeatmapFileV2 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bookmarks: Option<serde_json::Value>,
 
-    // private as I don't care to implement these
-    // but it still needs to be preserved from loading
     #[serde(rename = "_waypoints")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waypoints: Option<serde_json::Value>,
     #[serde(rename = "_specialEventsKeywordFilters")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub special_events: Option<serde_json::Value>,
+    pub special_events_keyword_filters: Option<serde_json::Value>,
 }

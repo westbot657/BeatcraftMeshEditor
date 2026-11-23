@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BeatcraftEditorInfo {
     pub version: String,
@@ -11,7 +12,8 @@ pub struct BeatcraftEditorInfo {
     catchall: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
 pub struct BeatmapDifficultyCustomData {

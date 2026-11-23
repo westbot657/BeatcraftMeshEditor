@@ -24,8 +24,11 @@ pub mod v3;
 #[cfg(feature = "v4")]
 pub mod v4;
 
-#[cfg(any(feature = "v2", feature = "v3"))]
-pub mod v2_v3;
+#[cfg(any(feature = "v2", feature = "v3", feature = "v4"))]
+pub mod v2_v3_v4;
+
+#[cfg(any(feature = "v3", feature = "v4"))]
+pub mod v3_v4;
 
 #[cfg(any(feature = "v2", feature = "v3"))]
 pub mod info_v2;
@@ -44,7 +47,18 @@ pub mod custom_v3;
 #[cfg(all(any(feature = "v2", feature = "v3"), feature = "settings_setter"))]
 pub mod settings_v2;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg(all(any(feature = "v2", feature = "v3"), feature = "tracks"))]
+pub mod animation;
+#[cfg(all(feature = "v2", feature = "tracks"))]
+pub mod animation_v2;
+#[cfg(all(feature = "v3", feature = "tracks"))]
+pub mod animation_v3;
+
+#[cfg(test)]
+pub mod tests;
+
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum VersionClass {
     #[cfg(any(feature = "v2", feature = "v3"))]
     V2,
@@ -54,7 +68,8 @@ pub enum VersionClass {
     V4,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MapVersion {
     #[cfg(feature = "v2")]
     #[serde(rename = "2.0.0")]
@@ -93,7 +108,8 @@ pub enum MapVersion {
     V4_1_0,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InfoVersion {
     #[cfg(any(feature = "v2", feature = "v3"))]
     #[serde(rename = "2.0.0")]
@@ -110,7 +126,16 @@ pub enum InfoVersion {
     V4_0_1,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LightshowVersion {
+    #[cfg(feature = "v4")]
+    #[serde(rename = "4.0.0")]
+    V4_0_0,
+}
+
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MapCharacteristic {
     Standard,
     NoArrows,
@@ -128,7 +153,8 @@ pub enum MapCharacteristic {
     Unknown(String),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MapDifficulty {
     Easy,
     Normal,
@@ -177,7 +203,8 @@ macro_rules! environment_enum {
 }
 
 environment_enum! {
-    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    #[cfg_attr(feature = "debug", derive(Debug))]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub enum EnvironmentV2 {
         Default => "DefaultEnvironment",
         Triangle => "TriangleEnvironment",
@@ -207,7 +234,8 @@ environment_enum! {
 }
 
 environment_enum! {
-    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    #[cfg_attr(feature = "debug", derive(Debug))]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub enum EnvironmentV3 {
         Weave => "WeaveEnvironment",
         Pyro => "PyroEnvironment",
@@ -234,13 +262,15 @@ environment_enum! {
 }
 
 environment_enum! {
-    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    #[cfg_attr(feature = "debug", derive(Debug))]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub enum Environment360V2 {
         GlassDesert => "GlassDesertEnvironment",
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Environment {
     #[serde(untagged)]
     V2(EnvironmentV2),
@@ -284,7 +314,8 @@ impl Environment {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Environment360 {
     #[serde(untagged)]
     V2(Environment360V2),
@@ -317,7 +348,8 @@ impl Environment360 {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize)]
 pub enum AnyEnvironment {
     #[serde(untagged)]
     Standard(Environment),
@@ -423,22 +455,24 @@ impl From<Environment360> for AnyEnvironment {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
-#[serde(try_from = "u8", into = "u8")]
+#[serde(try_from = "i32", into = "u8")]
 pub enum Color {
     #[default]
     Red = 0,
     Blue = 1,
 }
-convert_u8! { Color: 0 | 1 }
+convert_int! { Color: 0 | 1 }
 impl Color {
     pub fn is_red(&self) -> bool {
         *self == Self::Red
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RGBAColor {
     pub r: f32,
     pub g: f32,
@@ -446,9 +480,10 @@ pub struct RGBAColor {
     pub a: f32,
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
-#[serde(try_from = "u8", into = "u8")]
+#[serde(try_from = "i32", into = "u8")]
 pub enum CutDirection {
     #[default]
     Up = 0,
@@ -461,7 +496,7 @@ pub enum CutDirection {
     DownRight = 7,
     Dot = 8,
 }
-convert_u8! { CutDirection: 0..=8 }
+convert_int! { CutDirection: 0..=8 }
 impl CutDirection {
     pub fn is_default(&self) -> bool {
         *self == Self::Up
@@ -483,9 +518,9 @@ pub(crate) fn is_value_f<const N: u32>(v: &f32) -> bool {
     *v == f32::from_bits(N)
 }
 
-// pub(crate) fn default_i<T: Num + From<i8>, const N: i8>() -> T {
-//     N.into()
-// }
+pub(crate) fn default_i<T: Num + From<i8>, const N: i8>() -> T {
+    N.into()
+}
 
 #[inline(always)]
 pub(crate) fn default_u<T: Num + From<u8>, const N: u8>() -> T {
@@ -497,30 +532,32 @@ pub(crate) fn default_f<const N: u32>() -> f32 {
     f32::from_bits(N)
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
-#[serde(try_from = "u8", into = "u8")]
+#[serde(try_from = "i32", into = "u8")]
 pub enum ArcMidAnchorMode {
     #[default]
     Straight = 0,
     Clockwise = 1,
     CounterClockwise = 2,
 }
-convert_u8! { ArcMidAnchorMode: 0..=2 }
+convert_int! { ArcMidAnchorMode: 0..=2 }
 impl ArcMidAnchorMode {
     pub fn is_default(&self) -> bool {
         *self == Self::Straight
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
-#[serde(try_from = "u8", into = "u8")]
+#[serde(try_from = "i32", into = "u8")]
 pub enum SpawnRotationExecutionTime {
     LegacyEarly = 14,
     LegacyLate = 15,
 }
-convert_u8! { SpawnRotationExecutionTime: 14 | 15 }
+convert_int! { SpawnRotationExecutionTime: 14 | 15 }
 impl SpawnRotationExecutionTime {
     pub fn is_early(&self) -> bool {
         matches!(self, Self::LegacyEarly)
@@ -530,10 +567,12 @@ impl SpawnRotationExecutionTime {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
-#[serde(try_from = "u8", into = "u8")]
+#[serde(try_from = "i32", into = "u8")]
 pub enum SpawnRotationAngle {
+    #[default]
     CCW60 = 0,
     CCW45 = 1,
     CCW30 = 2,
@@ -543,25 +582,8 @@ pub enum SpawnRotationAngle {
     CW45 = 6,
     CW60 = 7,
 }
-impl TryFrom<u8> for SpawnRotationAngle {
-    type Error = BeatmapDataError;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Ok(match value {
-            0..=7 => unsafe { std::mem::transmute::<u8, Self>(value) },
-            _ => {
-                return Err(BeatmapDataError::ToEnum {
-                    enum_name: stringify!(SpawnRotationAngle),
-                    val: value as i32,
-                });
-            }
-        })
-    }
-}
-impl From<SpawnRotationAngle> for u8 {
-    fn from(value: SpawnRotationAngle) -> Self {
-        unsafe { std::mem::transmute::<SpawnRotationAngle, u8>(value) }
-    }
-}
+convert_int! { SpawnRotationAngle: 0..=7, defaults }
+
 impl SpawnRotationAngle {
     pub fn get_degrees(&self) -> i32 {
         match self {
@@ -577,7 +599,8 @@ impl SpawnRotationAngle {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Copy, Clone)]
 pub struct BpmRegion {
     pub start_sample: usize,
     pub end_sample: usize,
@@ -748,7 +771,8 @@ impl VersionClass {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
 pub enum InfoFile {
@@ -758,7 +782,8 @@ pub enum InfoFile {
     V4(info_v4::InfoV4),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
 pub enum BeatmapFile {
@@ -770,7 +795,8 @@ pub enum BeatmapFile {
     V4(v4::BeatmapFileV4),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
 pub enum AudioDataFile {
@@ -839,30 +865,102 @@ impl AudioDataFile {
 
 // extra helpers
 
-macro_rules! convert_u8 {
+macro_rules! convert_int {
     ($cl:ty: $values:pat) => {
+        impl TryFrom<i32> for $cl {
+            type Error = $crate::BeatmapDataError;
+            fn try_from(value: i32) -> Result<Self, Self::Error> {
+                Ok(match value {
+                    $values => unsafe { ::std::mem::transmute::<u8, Self>(value as u8) },
+                    _ => {
+                        return Err($crate::BeatmapDataError::ToEnum {
+                            enum_name: stringify!($cl),
+                            val: value,
+                        });
+                    }
+                })
+            }
+        }
         impl TryFrom<u8> for $cl {
-            type Error = crate::BeatmapDataError;
+            type Error = $crate::BeatmapDataError;
             fn try_from(value: u8) -> Result<Self, Self::Error> {
                 Ok(match value {
-                    $values => unsafe { std::mem::transmute::<u8, Self>(value) },
+                    $values => unsafe { ::std::mem::transmute::<u8, Self>(value) },
                     _ => {
-                        return Err(crate::BeatmapDataError::ToEnum {
+                        return Err($crate::BeatmapDataError::ToEnum {
                             enum_name: stringify!($cl),
                             val: value as i32,
-                        });
+                        })
                     }
                 })
             }
         }
         impl From<$cl> for u8 {
             fn from(value: $cl) -> Self {
-                unsafe { std::mem::transmute::<$cl, u8>(value) }
+                unsafe { ::std::mem::transmute::<$cl, u8>(value) }
+            }
+        }
+    };
+    ($cl:ty: $values:pat, defaults) => {
+        impl From<i32> for $cl {
+            fn from(value: i32) -> Self {
+                match value {
+                    $values => unsafe { ::std::mem::transmute::<u8, Self>(value as u8) },
+                    _ => Self::default(),
+                }
+            }
+        }
+        impl TryFrom<u8> for $cl {
+            type Error = $crate::BeatmapDataError;
+            fn try_from(value: u8) -> Result<Self, Self::Error> {
+                Ok(match value {
+                    $values => unsafe { ::std::mem::transmute::<u8, Self>(value) },
+                    _ => {
+                        return Err($crate::BeatmapDataError::ToEnum {
+                            enum_name: stringify!($cl),
+                            val: value as i32,
+                        })
+                    }
+                })
+            }
+        }
+        impl From<$cl> for u8 {
+            fn from(value: $cl) -> Self {
+                unsafe { ::std::mem::transmute::<$cl, u8>(value) }
+            }
+        }
+    };
+    ($cl:ty: $values:pat, defaults: $def:expr) => {
+        impl From<i32> for $cl {
+            fn from(value: i32) -> Self {
+                match value {
+                    $values => unsafe { ::std::mem::transmute::<u8, Self>(value as u8) },
+                    _ => $def,
+                }
+            }
+        }
+        impl TryFrom<u8> for $cl {
+            type Error = $crate::BeatmapDataError;
+            fn try_from(value: u8) -> Result<Self, Self::Error> {
+                Ok(match value {
+                    $values => unsafe { ::std::mem::transmute::<u8, Self>(value) },
+                    _ => {
+                        return Err($crate::BeatmapDataError::ToEnum {
+                            enum_name: stringify!($cl),
+                            val: value as i32,
+                        })
+                    }
+                })
+            }
+        }
+        impl From<$cl> for u8 {
+            fn from(value: $cl) -> Self {
+                unsafe { ::std::mem::transmute::<$cl, u8>(value) }
             }
         }
     };
 }
-pub(crate) use convert_u8;
+pub(crate) use convert_int;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Sentinel<const N: u8>;
@@ -873,6 +971,7 @@ impl<const N: u8> Default for Sentinel<N> {
     }
 }
 
+#[cfg(feature = "debug")]
 impl<const N: u8> Debug for Sentinel<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Sentinel").field(&N).finish()
@@ -952,73 +1051,6 @@ pub(crate) mod easing_as_i8 {
     {
         let val = i8::deserialize(deserializer)?;
         Easing::try_from(val).map_err(D::Error::custom)
-    }
-}
-
-// pub(crate) mod vec4_array {
-//     use glam::Vec4;
-//     use serde::{Deserialize, Deserializer, Serialize, Serializer};
-//
-//     pub fn serialize<S>(v: &Vec4, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         if v.w == 1.0 {
-//             [v.x, v.y, v.z].serialize(serializer)
-//         } else {
-//             [v.x, v.y, v.z, v.w].serialize(serializer)
-//         }
-//     }
-//
-//     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec4, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         #[derive(Deserialize)]
-//         #[serde(untagged)]
-//         enum Repr {
-//             Xyz([f32; 3]),
-//             Xyzw([f32; 4]),
-//         }
-//
-//         match Repr::deserialize(deserializer)? {
-//             Repr::Xyz([x, y, z]) => Ok(Vec4::new(x, y, z, 1.0)),
-//             Repr::Xyzw([x, y, z, w]) => Ok(Vec4::new(x, y, z, w)),
-//         }
-//     }
-// }
-
-pub(crate) mod vec4_array_opt {
-    use glam::Vec4;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(v: &Option<Vec4>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match v {
-            Some(v) if v.w == 1.0 => Some([v.x, v.y, v.z].to_vec()).serialize(serializer),
-            Some(v) => Some([v.x, v.y, v.z, v.w].to_vec()).serialize(serializer),
-            None => Option::<()>::None.serialize(serializer),
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec4>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Repr {
-            Xyz([f32; 3]),
-            Xyzw([f32; 4]),
-        }
-
-        match Option::<Repr>::deserialize(deserializer)? {
-            None => Ok(None),
-            Some(Repr::Xyz([x, y, z])) => Ok(Some(Vec4::new(x, y, z, 1.0))),
-            Some(Repr::Xyzw([x, y, z, w])) => Ok(Some(Vec4::new(x, y, z, w))),
-        }
     }
 }
 

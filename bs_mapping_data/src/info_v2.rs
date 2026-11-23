@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{AnyEnvironment, BpmRegion, Environment, Environment360, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion, RGBAColor};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InfoV2 {
     #[serde(rename = "_version")]
@@ -50,7 +51,8 @@ pub struct InfoV2 {
     pub difficulty_beatmap_sets: Vec<CharacteristicSetV2>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColorSchemeV2 {
     #[serde(rename = "useOverride")]
@@ -59,7 +61,8 @@ pub struct ColorSchemeV2 {
     pub color_scheme: ColorSchemeInnerV2,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColorSchemeInnerV2 {
     #[serde(rename = "colorSchemeId")]
@@ -80,7 +83,8 @@ pub struct ColorSchemeInnerV2 {
     pub environment_color_1_boost: RGBAColor,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CharacteristicSetV2 {
     #[cfg(feature = "custom_data")]
@@ -93,7 +97,8 @@ pub struct CharacteristicSetV2 {
     pub difficulty_beatmaps: Vec<DifficultyBeatmapV2>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DifficultyBeatmapV2 {
     #[serde(rename = "_difficulty")]
@@ -119,7 +124,8 @@ pub struct DifficultyBeatmapV2 {
     pub environment_name_index: Option<u32>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AudioDataFileV2 {
     #[serde(rename = "_version")]
@@ -132,7 +138,8 @@ pub struct AudioDataFileV2 {
     pub bpm_regions: Vec<BpmRegionV2>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BpmRegionV2 {
     #[serde(rename = "_startSampleIndex")]

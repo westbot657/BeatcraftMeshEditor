@@ -8,7 +8,7 @@ readme = "README.md"
 license = "MIT"
 
 [features]
-default = ["heck", "beatcraft", "all-versions"]
+default = ["heck", "beatcraft", "all-versions", "debug"]
 all-versions = ["v2", "v3", "v4"]
 heck = ["noodle", "chroma", "settings_setter"]
 noodle = ["custom_data", "tracks"]
@@ -20,6 +20,7 @@ custom_data = []
 v2 = []
 v3 = []
 v4 = []
+debug = []
 
 [dependencies]
 bitflags = { version = "2.13.1", features = ["serde"] }

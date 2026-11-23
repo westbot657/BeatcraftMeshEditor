@@ -9,7 +9,8 @@ use crate::custom_data::*;
 
 
 #[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct PointDefV2 {
     #[serde(rename = "_name")]
     pub name: String,
@@ -18,7 +19,8 @@ pub struct PointDefV2 {
 }
 
 #[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BeatmapFileCustomDataV2 {
     #[cfg(feature = "tracks")]
@@ -36,7 +38,8 @@ pub struct BeatmapFileCustomDataV2 {
 
 
 #[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CommonCustomDataV2 {
     #[cfg(feature = "tracks")]
@@ -47,8 +50,8 @@ pub struct CommonCustomDataV2 {
 
     #[cfg(feature = "noodle")]
     #[serde(rename = "_position")]
-    #[serde(skip_serializing_if = "OptVec2::is_none")]
-    pub position: OptVec2,
+    #[serde(skip_serializing_if = "OptVec3::is_none")]
+    pub position: OptVec3,
     #[cfg(feature = "noodle")]
     #[serde(rename = "_rotation")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -116,7 +119,8 @@ impl CommonCustomDataV2 {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CustomNoteDataV2 {
     #[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
@@ -177,7 +181,8 @@ impl CustomNoteDataV2 {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct CustomBombDataV2 {
     #[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
     #[serde(flatten)]
@@ -206,8 +211,8 @@ impl CustomBombDataV2 {
     }
 }
 
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct CustomObstacleDataV2 {
     #[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
     #[serde(flatten)]
@@ -236,7 +241,8 @@ impl CustomObstacleDataV2 {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct CustomArcDataV2 {
     #[cfg(any(feature = "noodle", feature = "chroma", feature = "tracks"))]
     #[serde(flatten)]

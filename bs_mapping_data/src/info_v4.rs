@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{AnyEnvironment, BpmRegion, InfoVersion, MapCharacteristic, MapDifficulty, MapVersion};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct InfoV4 {
@@ -16,7 +17,8 @@ pub struct InfoV4 {
     pub difficulty_beatmaps: Vec<DifficultyBeatmapV4>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct SongInfoV4 {
@@ -25,7 +27,8 @@ pub struct SongInfoV4 {
     pub author: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioInfoV4 {
@@ -38,7 +41,8 @@ pub struct AudioInfoV4 {
     pub preview_duration: f32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct ColorSchemeV4 {
@@ -53,7 +57,8 @@ pub struct ColorSchemeV4 {
     pub environment_color_1_boost: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct DifficultyBeatmapV4 {
@@ -68,7 +73,8 @@ pub struct DifficultyBeatmapV4 {
     pub lightshow_data_filename: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct MapAuthorsV4 {
@@ -76,7 +82,8 @@ pub struct MapAuthorsV4 {
     pub lighters: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioDataFileV4 {
@@ -87,10 +94,11 @@ pub struct AudioDataFileV4 {
     pub bpm_data: Vec<BpmRegionV4>,
 
     // I swear these things are buggy in base game anyways so idc about them rn.
-    lufs_data: Vec<serde_json::Value>,
+    pub lufs_data: Vec<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BpmRegionV4 {
     #[serde(rename = "si")]

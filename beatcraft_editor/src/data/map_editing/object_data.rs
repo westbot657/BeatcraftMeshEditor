@@ -42,7 +42,7 @@ pub struct Template {
 #[derive(Serialize, Deserialize, Default)]
 pub struct CustomData {
     // noodle
-    pub coordinates: OptVec2Value,
+    pub coordinates: OptVec3Value,
     pub world_rotation: OptVec3Value,
     pub local_rotation: OptVec3Value,
     pub scale: OptVec3Value,
