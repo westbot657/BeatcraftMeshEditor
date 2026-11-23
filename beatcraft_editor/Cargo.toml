@@ -51,9 +51,9 @@ bitflags = { version = "2.13.1", features = ["serde"] }
 rand = "0.10.2"
 keybinds = { version = "0.2.0", features = ["serde"] }
 fluent-templates = "0.15.1"
-bs-mapping-data = { path = "../bs_mapping_data" }
+bs-mapping-data = { path = "../../BsDataUtils/bs_mapping_data" }
 beatcraft_editor_proc = { path = "../beatcraft_editor_proc" }
-beatmap-core = { path = "../beatmap_core", features = ["beatcraft_worldspace"] }
+beatmap-core = { path = "../../BsDataUtils/beatmap_core", features = ["beatcraft_worldspace"] }
 beatcraft-audiolib = { path = "../beatcraft_audiolib", features = ["spectrogram", "tracing"] }
 ahash = "0.8.12"
 

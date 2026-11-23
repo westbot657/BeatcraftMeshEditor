@@ -6,7 +6,7 @@ use std::time::Instant;
 use eframe::glow::{self, HasContext, NativeProgram, SHADER_STORAGE_BUFFER};
 use glam::{FloatExt, IVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 use indexmap::IndexMap;
-use beatcraft_editor_proc::hex;
+use beatmap_core::proc::hex;
 #[cfg(feature = "mapper")]
 use crate::beatmap::render::BeatmapRenderer;
 use crate::data::mesh::{MaterialData, MaterialFlags, MaterialType, ShaderSettingsData};
