@@ -60,50 +60,36 @@ pub mod tests;
 #[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum VersionClass {
-    #[cfg(any(feature = "v2", feature = "v3"))]
     V2,
-    #[cfg(feature = "v3")]
     V3,
-    #[cfg(feature = "v4")]
     V4,
 }
 
 #[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MapVersion {
-    #[cfg(feature = "v2")]
     #[serde(rename = "2.0.0")]
     V2_0_0,
-    #[cfg(feature = "v2")]
     #[serde(rename = "2.2.0")]
     V2_2_0,
-    #[cfg(feature = "v2")]
     #[serde(rename = "2.4.0")]
     V2_4_0,
-    #[cfg(feature = "v2")]
     #[serde(rename = "2.5.0")]
     V2_5_0,
-    #[cfg(feature = "v2")]
     #[serde(rename = "2.6.0")]
     V2_6_0,
 
-    #[cfg(feature = "v3")]
     #[serde(rename = "3.0.0")]
     V3_0_0,
-    #[cfg(feature = "v3")]
     #[serde(rename = "3.1.0")]
     V3_1_0,
-    #[cfg(feature = "v3")]
     #[serde(rename = "3.2.0")]
     V3_2_0,
-    #[cfg(feature = "v3")]
     #[serde(rename = "3.3.0")]
     V3_3_0,
 
-    #[cfg(feature = "v4")]
     #[serde(rename = "4.0.0")]
     V4_0_0,
-    #[cfg(feature = "v4")]
     #[serde(rename = "4.1.0")]
     V4_1_0,
 }
@@ -111,17 +97,13 @@ pub enum MapVersion {
 #[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InfoVersion {
-    #[cfg(any(feature = "v2", feature = "v3"))]
     #[serde(rename = "2.0.0")]
     V2_0_0,
-    #[cfg(any(feature = "v2", feature = "v3"))]
     #[serde(rename = "2.1.0")]
     V2_1_0,
 
-    #[cfg(feature = "v4")]
     #[serde(rename = "4.0.0")]
     V4_0_0,
-    #[cfg(feature = "v4")]
     #[serde(rename = "4.0.1")]
     V4_0_1,
 }
@@ -129,7 +111,6 @@ pub enum InfoVersion {
 #[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LightshowVersion {
-    #[cfg(feature = "v4")]
     #[serde(rename = "4.0.0")]
     V4_0_0,
 }
@@ -522,10 +503,10 @@ pub(crate) fn default_i<T: Num + From<i8>, const N: i8>() -> T {
     N.into()
 }
 
-#[inline(always)]
-pub(crate) fn default_u<T: Num + From<u8>, const N: u8>() -> T {
-    N.into()
-}
+// #[inline(always)]
+// pub(crate) fn default_u<T: Num + From<u8>, const N: u8>() -> T {
+//     N.into()
+// }
 
 #[inline(always)]
 pub(crate) fn default_f<const N: u32>() -> f32 {
@@ -689,17 +670,14 @@ impl MapVersion {
     pub fn classifier(&self) -> VersionClass {
         #[allow(clippy::single_match, unreachable_patterns)]
         match self {
-            #[cfg(feature = "v2")]
             MapVersion::V2_0_0
             | MapVersion::V2_2_0
             | MapVersion::V2_4_0
             | MapVersion::V2_5_0
             | MapVersion::V2_6_0 => VersionClass::V2,
-            #[cfg(feature = "v3")]
             MapVersion::V3_0_0 | MapVersion::V3_1_0 | MapVersion::V3_2_0 | MapVersion::V3_3_0 => {
                 VersionClass::V3
             }
-            #[cfg(feature = "v4")]
             MapVersion::V4_0_0 | MapVersion::V4_1_0 => VersionClass::V4,
             _ => unreachable!("MapVersion classifier should match"),
         }

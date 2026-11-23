@@ -1,5 +1,6 @@
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "custom_data")]
 use crate::custom_v2::{CustomArcDataV2, CustomBombDataV2, CustomNoteDataV2, CustomObstacleDataV2, BeatmapFileCustomDataV2};
 use super::convert_int;
 use super::{

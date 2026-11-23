@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::convert_int;
+#[cfg(feature = "custom_data")]
 use crate::custom_v3::{BeatmapFileCustomDataV3, CustomArcDataV3, CustomBombDataV3, CustomChainDataV3, CustomNoteDataV3, CustomObstacleDataV3};
 use crate::easing::Easing;
 use crate::is_value_f;
@@ -599,6 +600,7 @@ pub struct BeatmapFileV3 {
     #[serde(default, skip_serializing_if = "FxEventsCollectionV3::is_empty")]
     pub vfx_events_collections: FxEventsCollectionV3,
     pub use_normal_events_as_compatible_events: bool,
+    #[cfg(feature = "custom_data")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_data: Option<BeatmapFileCustomDataV3>,
 }
