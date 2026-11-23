@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use crate::vec_or_string;
 use std::ops::{Deref, DerefMut, Not};
 use serde::{Deserialize, Serialize};
+use crate::animation_v3::AnimationV3;
 use crate::custom_data::{ColorVec4, OptVec2, OptVec3, RotationVec3};
 
 
@@ -56,7 +57,7 @@ pub struct CommonCustomDataV3 {
     pub uninteractable: bool,
     #[cfg(feature = "tracks")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub animation: Option<serde_json::Value>,
+    pub animation: Option<AnimationV3>,
 
     #[cfg(feature = "chroma")]
     #[serde(skip_serializing_if = "Option::is_none")]

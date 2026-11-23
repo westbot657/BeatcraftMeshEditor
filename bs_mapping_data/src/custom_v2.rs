@@ -4,7 +4,7 @@ use std::ops::Not;
 use std::ops::{Deref, DerefMut};
 
 use serde::{Deserialize, Serialize};
-
+use crate::animation_v2::AnimationV2;
 use crate::custom_data::*;
 
 
@@ -79,7 +79,7 @@ pub struct CommonCustomDataV2 {
     #[cfg(feature = "tracks")]
     #[serde(rename = "_animation")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub animation: Option<serde_json::Value>,
+    pub animation: Option<AnimationV2>,
 
     #[cfg(feature = "chroma")]
     #[serde(rename = "_color")]

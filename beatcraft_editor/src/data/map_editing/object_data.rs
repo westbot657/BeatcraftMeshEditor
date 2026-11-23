@@ -4,6 +4,7 @@ use crate::data::map_editing::values::{ArcMidAnchorModeValue, BoolValue, CutDire
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Deref;
+use bs_mapping_data::animation::Animation;
 use bs_mapping_data::custom_v2::{CommonCustomDataV2, CustomArcDataV2, CustomBombDataV2, CustomNoteDataV2, CustomObstacleDataV2};
 use bs_mapping_data::custom_v3::{CommonCustomDataV3, CustomBombDataV3, CustomChainDataV3, CustomNoteDataV3, CustomObstacleDataV3};
 
@@ -52,7 +53,7 @@ pub struct CustomData {
     // chroma
     pub color: OptionalColorValue,
 
-    pub animation: Option<serde_json::Value>,
+    pub animation: Option<Animation>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -225,7 +226,7 @@ impl From<&CommonCustomDataV2> for CustomData {
             custom_njs_offset: value.note_jump_start_beat_offset.into(),
             uninteractable: value.uninteractable.into(),
             color: value.color.into(),
-            animation: value.animation.clone(),
+            animation: value.animation.clone().map(Into::into),
         }
     }
 }
@@ -279,7 +280,7 @@ impl From<&CommonCustomDataV3> for CustomData {
             custom_njs_offset: value.note_jump_start_beat_offset.into(),
             uninteractable: value.uninteractable.into(),
             color: value.color.into(),
-            animation: value.animation.clone(),
+            animation: value.animation.clone().map(Into::into),
         }
     }
 }

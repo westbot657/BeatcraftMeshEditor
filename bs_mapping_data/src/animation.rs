@@ -6,6 +6,29 @@ use serde::ser::SerializeSeq;
 use crate::easing::Easing;
 
 #[cfg_attr(feature = "debug", derive(Debug))]
+#[derive(Clone, Serialize, Deserialize)]
+pub enum Animation {
+    #[cfg(feature = "v2")]
+    V2(crate::animation_v2::AnimationV2),
+    #[cfg(feature = "v3")]
+    V3(crate::animation_v3::AnimationV3),
+}
+
+#[cfg(feature = "v2")]
+impl From<crate::animation_v2::AnimationV2> for Animation {
+    fn from(value: crate::animation_v2::AnimationV2) -> Self {
+        Self::V2(value)
+    }
+}
+
+#[cfg(feature = "v3")]
+impl From<crate::animation_v3::AnimationV3> for Animation {
+    fn from(value: crate::animation_v3::AnimationV3) -> Self {
+        Self::V3(value)
+    }
+}
+
+#[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Spline {
     #[serde(rename = "splineCatmullRom")]
