@@ -1,42 +1,43 @@
 use crate::config::ProjectType;
 use crate::data::map_editing::{EditingData, GlobalEditingData};
 use crate::data::mesh::LightMeshData;
-use crate::editor::{setup_fonts, App, EditorContext, HistoryEntry, RoutineAction, Selection, ViewStyle, MINECRAFT_F, SOURCE_CODE_F};
+use crate::editor::{App, EditorContext, HistoryEntry, MINECRAFT_F, RoutineAction, SOURCE_CODE_F, Selection, ViewStyle, setup_fonts};
 use crate::light_mesh::LightMesh;
 use crate::render::{GpuMesh, GridType, InstanceData, MeshDrawCall, Renderer};
-use crate::widgets::ImageCard;
-use crate::{editor, get_data_folder, ContextScrollExt, RefDuper, UnsafeMutRef, DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, MISSING_EDITOR_ICON, BUTTON_ROW_HEIGHT};
+use crate::widgets::{ImageCard, TextInput};
+use crate::{BUTTON_ROW_HEIGHT, ContextScrollExt, DB_AUDIO, DB_DATA, DB_LOGIC, DB_MAIN, MISSING_EDITOR_ICON, RefDuper, UnsafeMutRef, editor, get_data_folder};
 use beatcraft_audiolib::{Audio, AudioError, AudioSystem, NativeOpenAL};
 use beatmap_core::proc::hex;
 use chrono::SubsecRound;
 use eframe::glow::{self, Context, HasContext};
-use egui::{Align2, Color32, FontId, Id, ImageSource, Pos2, Rect, RichText, Sense, TextStyle, TextWrapMode, Ui, WidgetText};
+use egui::{Align, Align2, Color32, DragValue, FontId, Id, ImageSource, Label, Pos2, Rect, RichText, ScrollArea, Sense, TextEdit, TextStyle, TextWrapMode, Ui, ValueFormat, Widget, WidgetText};
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use indexmap::IndexMap;
 use rand::rngs::ThreadRng;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
-use std::path::PathBuf;
-use std::sync::mpsc::{self, TryRecvError};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 
 use self::data::obstacle_font::{HorizontalAlign, ObstacleFont, ObstacleFontData, TextLayout, VerticalAlign};
 use self::object::GameObjectExt;
-use bs_mapping_data::custom_info_v2::DifficultyBeatmapCustomDataV2;
+use bs_mapping_data::custom_info_v2::{DifficultyBeatmapCustomDataV2, DifficultySetCustomDataV2};
 use bs_mapping_data::info_v2::{CharacteristicSetV2, DifficultyBeatmapV2};
 use bs_mapping_data::{ArcMidAnchorMode, AudioDataFile, BeatmapFile, Color, CutDirection, InfoFile, MapCharacteristic, MapDifficulty};
 
+use crate::beatmap::data::info::{Info, InfoConversionError};
 use crate::beatmap::widgets::cut_direction_selector::{CutDirectionSelector, SelectorLayout};
 use crate::beatmap::widgets::song_overview::SongOverview;
 use crate::data::map_editing::object_data::ObjectSource;
 use crate::widgets::bar_slider::BarSlider;
 use crate::widgets::keybind_hint::{Corner, ExtensionAxis, ExtensionCorner, HintItem, KeybindHint, KeybindHintList};
 use crate::widgets::math_values::MathDragValue;
+use beatmap_core::BeatmapController;
 use beatmap_core::beatmap::{ArrowType, GameObject, ObjectType};
 use beatmap_core::math::HitBox;
-use beatmap_core::{BeatmapController, RuntimeData};
 use beatmap_core::tracks_rs::time_types::SongTime;
-use crate::beatmap::data::info::{Info, InfoConversionError};
 
 pub mod data;
 pub mod event;
@@ -86,9 +87,33 @@ pub struct BeatmapProjectDiff {
     pub v4_data: Option<V4BeatmapProjectDiffData>,
 }
 
+impl BeatmapProjectDiff {
+    pub fn empty(difficulty: MapDifficulty) -> Self {
+        Self {
+            difficulty,
+            beatmap_file: None,
+            njs: 16.,
+            njs_offset: 0.,
+            custom_data: None,
+            v4_data: None,
+        }
+    }
+}
+
 pub struct BeatmapProjectSet {
     pub set: MapCharacteristic,
     pub diffs: Vec<BeatmapProjectDiff>,
+    pub custom_data: Option<DifficultySetCustomDataV2>,
+}
+
+impl BeatmapProjectSet {
+    pub fn empty(set: MapCharacteristic) -> Self {
+        Self {
+            set,
+            diffs: Vec::new(),
+            custom_data: None,
+        }
+    }
 }
 
 impl From<&CharacteristicSetV2> for BeatmapProjectSet {
@@ -96,6 +121,7 @@ impl From<&CharacteristicSetV2> for BeatmapProjectSet {
         Self {
             set: value.beatmap_characteristic_name.clone(),
             diffs: value.difficulty_beatmaps.iter().map(Into::into).collect(),
+            custom_data: value.custom_data.clone()
         }
     }
 }
@@ -118,7 +144,7 @@ impl From<&DifficultyBeatmapV2> for BeatmapProjectDiff {
 pub struct BeatmapProject {
     pub folder: PathBuf,
     pub info_path: Option<PathBuf>,
-    pub info: Option<Info>,
+    pub info: Info,
     pub audio_info_path: Option<PathBuf>,
     pub audio_info: Option<AudioDataFile>,
     pub audio: Option<std::sync::Arc<Audio<NativeOpenAL>>>,
@@ -667,6 +693,7 @@ impl BeatmapEditor {
                         sets.push(BeatmapProjectSet {
                             set: ch.clone(),
                             diffs,
+                            custom_data: None,
                         });
                     }
                     audio_info_path = Some(PathBuf::from(&v4.audio.audio_data_filename));
@@ -695,7 +722,7 @@ impl BeatmapEditor {
         let project = BeatmapProject {
             folder: map,
             info_path: info_file,
-            info: info_data,
+            info: info_data.unwrap_or_default(),
             audio_info_path,
             audio_info,
             audio,
@@ -935,6 +962,27 @@ fn format_time(seconds: f32) -> String {
     format!("{hours:>02}:{minutes:>02}:{rem:06.3}")
 }
 
+fn format_time_simple(seconds: f32) -> String {
+    let rem = seconds % 60.;
+    let minutes = seconds as u32 / 60;
+    let minutes = minutes % 60;
+    format!("{minutes:>02}:{rem:05.2}")
+}
+
+fn parse_time(s: &str) -> Option<f64> {
+    let (min, sec) = s.trim().split_once(':')?;
+
+    let minutes: u32 = min.trim().parse().ok()?;
+    let seconds: f64 = sec.trim().parse().ok()?;
+
+    let sec = sec.trim();
+    if !sec.chars().all(|c| c.is_ascii_digit() || c == '.') || !seconds.is_finite() {
+        return None;
+    }
+
+    Some(minutes as f64 * 60.0 + seconds)
+}
+
 pub fn paint_text_centered(ui: &Ui, center: Pos2, text: impl Into<RichText>) -> Rect {
     let galley = WidgetText::from(text.into()).into_galley(
         ui,
@@ -949,21 +997,10 @@ pub fn paint_text_centered(ui: &Ui, center: Pos2, text: impl Into<RichText>) -> 
 }
 
 impl App {
-    fn await_beatmap_open(&mut self) {
-        tracing::debug!(target: DB_LOGIC, "Spawning thread for opening beatmap project");
-        let (sx, rx) = mpsc::channel();
-        let title = self.data.locale.get("open-beatmap-title").to_string();
-        thread::spawn(move || {
-            let Some(map_folder) = rfd::FileDialog::new().set_title(title).pick_folder() else {
-                tracing::debug!(target: DB_LOGIC, "Canceled opening beatmap");
-                return;
-            };
-            tracing::debug!(target: DB_LOGIC, ?map_folder, "Opening beatmap");
-            let _ = sx.send(map_folder);
-        });
+    fn start_beatmap_open_routine(&mut self, rx: Receiver<PathBuf>) {
         self.add_routine(Box::new(move |s, gl| match rx.try_recv() {
-            Err(mpsc::TryRecvError::Empty) => RoutineAction::None,
-            Err(mpsc::TryRecvError::Disconnected) => RoutineAction::Remove,
+            Err(TryRecvError::Empty) => RoutineAction::None,
+            Err(TryRecvError::Disconnected) => RoutineAction::Remove,
             Ok(folder) => {
                 let rd = RefDuper;
                 let s2 = unsafe { rd.detach_mut_ref(s) };
@@ -990,6 +1027,40 @@ impl App {
                 RoutineAction::Remove
             }
         }));
+    }
+    fn await_beatmap_open(&mut self) {
+        tracing::debug!(target: DB_LOGIC, "Spawning thread for opening beatmap project");
+        let (sx, rx) = mpsc::channel();
+        let title = self.data.locale.get("open-beatmap-title").to_string();
+        thread::spawn(move || {
+            let Some(map_folder) = rfd::FileDialog::new()
+                .set_title(title)
+                .pick_folder()
+            else {
+                tracing::debug!(target: DB_LOGIC, "Canceled opening beatmap");
+                return;
+            };
+            tracing::debug!(target: DB_LOGIC, ?map_folder, "Opening beatmap");
+            let _ = sx.send(map_folder);
+        });
+        self.start_beatmap_open_routine(rx);
+    }
+
+    fn await_beatmap_create(&mut self) {
+        tracing::debug!(target: DB_LOGIC, "Spawning thread for creating beatmap project.");
+        let (sx, rx) = mpsc::channel();
+        let title = self.data.locale.get("create-beatmap-project").to_string();
+        thread::spawn(move || {
+            if let Some(map_folder) = rfd::FileDialog::new()
+                .set_title(title)
+                .set_can_create_directories(true)
+                .pick_folder()
+            {
+                tracing::debug!(target: DB_LOGIC, ?map_folder, "Creating new beatmap");
+                let _ = sx.send(map_folder);
+            }
+        });
+        self.start_beatmap_open_routine(rx);
     }
 
     fn check_tool_keybinds(&mut self, tool: &mut PlacementObjectType) {
@@ -1163,13 +1234,16 @@ impl App {
                                         self.render.renderer.beatmap.seek(0.);
                                         map.controller = None;
                                         self.history.clear();
-                                        if let Some(audio) = map.audio.take() {
+                                        if let Some(audio) = map.audio.as_ref() {
+                                            let _ = audio.seek(0.);
+                                            audio.set_speed(1.);
                                             audio.stop();
-                                            drop(audio);
-                                            self.audio_system.remove_dead_audio();
-                                            self.state.playback_speed = 1.;
+                                            // drop(audio);
+                                            // self.audio_system.remove_dead_audio();
+                                            // self.state.playback_speed = 1.;
                                         }
                                         self.history.clear();
+
                                     }
                                 }
 
@@ -1177,18 +1251,31 @@ impl App {
                         });
 
                         if let Some(map) = self.map_editor.map.as_ref()
-                            && let Some(info) = map.info.as_ref()
-                            && let Some(song) = info.song.as_ref()
                             && map.controller.is_some()
                         {
                             ui.add_space(15.);
-                            ui.label(format!("{} [{}]", song.title, song.author));
+                            ui.label(
+                                format!(
+                                    "{} [{}]",
+                                    map.info.song.title,
+                                    map.info.song.author,
+                                )
+                            );
                             if let Some((set, diff)) = map.selected_diff {
                                 let set = &map.sets[set];
                                 let diff = &set.diffs[diff];
                                 ui.add_space(15.);
                                 ui.label(format!("{} - {}", set.set, diff.difficulty));
                             }
+                        }
+
+                        if !self.state.status.is_empty() && self.state.status_timer > 0. {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.label(
+                                    egui::RichText::new(&self.state.status)
+                                        .color(egui::Color32::from_rgb(140, 200, 140)),
+                                );
+                            });
                         }
 
                     });
@@ -1259,7 +1346,7 @@ impl App {
 
                                         paint_text_centered(ui, beat_pos, beat);
 
-                                        let beat_resp = ui.interact(beat_rect, Id::new("beatmap-beat-rect"), Sense::hover());
+                                        let beat_resp = ui.interact(beat_rect, Id::unique("beatmap-beat-rect"), Sense::hover());
                                         KeybindHintList::new(
                                             vec![HintItem::text(self.data.locale.get("beat-label").to_string())],
                                             beat_rect, &beat_resp
@@ -1509,7 +1596,7 @@ impl App {
                                 + TOOL_SIZE * TOOL_ROWS as f32
                                 + TOOL_PADDING * (TOOL_ROWS - 1) as f32;
 
-                            let mut hint_rects: Vec<(&'static str, egui::Rect)> = Vec::new();
+                            let mut hint_rects: Vec<(&'static str, Rect)> = Vec::new();
 
                             let panel = ui.allocate_ui_with_layout(
                                 [T_WIDTH, T_HEIGHT].into(),
@@ -1528,18 +1615,18 @@ impl App {
                                             col as f32 * (TOOL_SIZE + TOOL_PADDING),
                                             row as f32 * (TOOL_SIZE + TOOL_PADDING),
                                         );
-                                        let rect = egui::Rect::from_min_size(pos, egui::Vec2::splat(TOOL_SIZE));
+                                        let rect = Rect::from_min_size(pos, egui::Vec2::splat(TOOL_SIZE));
 
                                         let response = ui
-                                            .allocate_rect(rect, egui::Sense::click())
+                                            .allocate_rect(rect, Sense::click())
                                             .on_hover_text(tool.display_name());
 
                                         let bg = if tool == current {
-                                            egui::Color32::from_gray(60)
+                                            Color32::from_gray(60)
                                         } else if response.hovered() {
-                                            egui::Color32::from_gray(50)
+                                            Color32::from_gray(50)
                                         } else {
-                                            egui::Color32::from_gray(0x20)
+                                            Color32::from_gray(0x20)
                                         };
                                         ui.painter().rect_filled(rect, 4.0, bg);
 
@@ -1575,7 +1662,6 @@ impl App {
 
                             let w2 = (width - padding) / 2.;
                             let w3 = (width - padding * 2.) / 3.;
-                            let w4 = (width - padding * 3.) / 4.;
 
                             let rd = RefDuper;
                             let placement_data = unsafe { rd.detach_mut_ref(&mut self.map_editor.placement_data) };
@@ -1782,7 +1868,7 @@ impl App {
                             [200., 200.],
                             ImageCard::new(CREATE_MAP_ICON.clone(), [200., 200.]).show_border(false)
                         ).on_hover_text(self.data.locale.get("create-beatmap-project")).clicked() {
-                            // TODO: create beatmap
+                            self.await_beatmap_create();
                         }
                     }
                 );
@@ -1991,116 +2077,527 @@ fn select_cover_image(app: &mut App, folder: PathBuf) {
                 let Some(map) = app.map_editor.map.as_mut() else {
                     return RoutineAction::Remove;
                 };
-                let Some(info) = &mut map.info else {
+                let Some(relative) = relative_or_copy_into(path, &map.folder) else {
                     return RoutineAction::Remove;
                 };
-                let Ok(path) = path.canonicalize() else {
-                    return RoutineAction::Remove;
-                };
-                let Ok(folder) = map.folder.canonicalize() else {
-                    return RoutineAction::Remove;
-                };
-                let relative: PathBuf = match path.strip_prefix(&folder) {
-                    Ok(rel) => rel.to_path_buf(),
-                    Err(_) => {
-                        let Some(file_name) = path.file_name() else {
-                            return RoutineAction::Remove;
-                        };
-                        match std::fs::copy(&path, folder.join(file_name)) {
-                            Err(_) => return RoutineAction::Remove,
-                            Ok(_) => PathBuf::from(file_name),
-                        }
-                    }
-                };
-                app.history.add_history(HistoryEntry::BeatmapInfo(Box::new(Some(info.clone()))));
-                info.cover_filename = Some(relative.to_string_lossy().to_string());
+                app.history.add_history(HistoryEntry::BeatmapInfo(Box::new(map.info.clone())));
+                map.info.cover_filename = Some(relative.to_string_lossy().to_string());
                 RoutineAction::Remove
             }
         }
     }))
 }
 
-fn draw_map_info(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
-    if let Some(i) = map.info.as_mut() {
-        ui.add_space(15.);
-        ui.allocate_ui_with_layout(
-            [ui.available_width(), 200.].into(),
-            egui::Layout::left_to_right(egui::Align::Min),
-            |ui| {
-                ui.add_space(15.);
-                if let Some(cover) = i.cover_filename.as_deref() {
-                    let cover = map.folder.join(cover);
-                    let image = if cover.exists() && cover.is_file() {
-                        egui::Image::new(format!("file://{}", cover.to_string_lossy()))
-                    } else {
-                        i.cover_filename = None;
-                        egui::Image::new(MISSING_EDITOR_ICON.clone())
-                    };
-
-                    let resp = ui
-                        .add_sized([200., 200.], image.sense(egui::Sense::click()))
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-
-                    if resp.hovered() {
-                        let icon_rect = egui::Rect::from_min_size(
-                            egui::pos2(resp.rect.right() - 50., resp.rect.top()),
-                            egui::vec2(50., 50.),
-                        );
-                        egui::Image::new(EDIT_ICON.clone()).paint_at(ui, icon_rect);
-                    }
-
-                    if resp.clicked() {
-                        select_cover_image(app, map.folder.clone());
-                    }
-                } else if ui
-                    .add_sized([200., 200.], egui::Button::new(EDIT_ICON.clone()))
-                    .clicked()
-                {
-                    select_cover_image(app, map.folder.clone());
-                }
-            }
-        );
-        ui.add_space(15.);
+/// Copies `path` into `folder` if it isn't already inside it, returning the path
+/// relative to `folder`. Same logic as the inline block in `select_cover_image`.
+fn relative_or_copy_into(path: PathBuf, folder: &PathBuf) -> Option<PathBuf> {
+    let path = path.canonicalize().ok()?;
+    let folder = folder.canonicalize().ok()?;
+    match path.strip_prefix(&folder) {
+        Ok(rel) => Some(rel.to_path_buf()),
+        Err(_) => {
+            let file_name = path.file_name()?;
+            std::fs::copy(&path, folder.join(file_name)).ok()?;
+            Some(PathBuf::from(file_name))
+        }
     }
 }
 
-fn draw_map_diffs(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
+fn convert_to_ogg(src: &Path, dst: &Path) -> Result<(), String> {
+    let output = Command::new("ffmpeg")
+        .args(["-y", "-v", "error", "-i"])
+        .arg(src)
+        // drop any video stream (e.g. embedded cover art in mp3s)
+        .arg("-vn")
+        .args(["-c:a", "libvorbis", "-q:a", "6"])
+        .arg(dst)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => "ffmpeg not found on PATH".to_string(),
+            _ => format!("failed to run ffmpeg: {e}"),
+        })?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
+/// Like `relative_or_copy_into`, but converts non-Ogg audio to .ogg (Vorbis) in `folder`.
+/// Existing .ogg/.egg files are just copied/referenced as before.
+fn import_audio_into(path: PathBuf, folder: &Path) -> Option<PathBuf> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+
+    if ext == "ogg" || ext == "egg" {
+        return relative_or_copy_into(path, &folder.to_path_buf());
+    }
+
+    let stem = path.file_stem()?;
+    let out_name = PathBuf::from(stem).with_extension("ogg");
+    let dst = folder.join(&out_name);
+
+    match convert_to_ogg(&path, &dst) {
+        Ok(()) => Some(out_name),
+        Err(e) => {
+            tracing::error!(target: DB_DATA, "Failed to convert audio to ogg: {e}");
+            let _ = std::fs::remove_file(&dst);
+            None
+        }
+    }
+}
+enum AudioImportMsg {
+    /// Sent right before ffmpeg starts, so the UI can show a status.
+    Converting,
+    /// The file is in the map folder; payload is the path relative to it.
+    Done(PathBuf),
+    /// Import failed (the reason has already been logged).
+    Failed,
+}
+
+fn needs_conversion(path: &Path) -> bool {
+    !matches!(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref(),
+        Some("ogg") | Some("egg")
+    )
+}
+
+fn select_audio(app: &mut App, folder: PathBuf) {
+    let (sx, rx) = mpsc::channel();
+
+    let select_audio = app.data.locale.get("select-audio-file").to_string();
+    thread::spawn(move || {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title(select_audio)
+            .add_filter("audio", &["ogg", "egg", "wav", "mp3", "flac"])
+            .set_directory(&folder)
+            .pick_file()
+        else {
+            return;
+        };
+
+        if needs_conversion(&path) {
+            let _ = sx.send(AudioImportMsg::Converting);
+        }
+
+        let msg = match import_audio_into(path, &folder) {
+            Some(relative) => AudioImportMsg::Done(relative),
+            None => AudioImportMsg::Failed,
+        };
+        let _ = sx.send(msg);
+    });
+
+    app.add_routine(Box::new(move |app: &mut App, _gl: &Context| {
+        match rx.try_recv() {
+            Err(TryRecvError::Empty) => RoutineAction::None,
+            Err(TryRecvError::Disconnected) => RoutineAction::Remove,
+            Ok(AudioImportMsg::Converting) => {
+                let text = app.data.locale.get("converting-audio").to_string();
+                app.set_status(None, text, 5.);
+                // keep polling for Done/Failed
+                RoutineAction::None
+            }
+            Ok(AudioImportMsg::Failed) => RoutineAction::Remove,
+            Ok(AudioImportMsg::Done(relative)) => {
+                let Some(map) = app.map_editor.map.as_mut() else {
+                    return RoutineAction::Remove;
+                };
+
+                if let Some(old) = map.audio.take() {
+                    old.stop();
+                    drop(old);
+                    app.audio_system.remove_dead_audio();
+                }
+
+                match Audio::new(&mut app.audio_system, &map.folder.join(&relative)) {
+                    Ok(audio) => {
+                        audio.set_volume(app.data.audio_volume);
+                        map.audio = Some(audio);
+                        app.render.renderer.beatmap.seek(0.);
+
+                        app.history.add_history(HistoryEntry::BeatmapInfo(Box::new(map.info.clone())));
+                        map.info.audio.filename = Some(relative.to_string_lossy().to_string());
+                    }
+                    Err(e) => {
+                        tracing::error!(target: DB_MAIN, "Failed to load audio: {e}");
+                    }
+                }
+                RoutineAction::Remove
+            }
+        }
+    }));
+}
+
+fn draw_map_info(app: &mut App, ui: &mut Ui, map: &mut BeatmapProject) {
+    ui.add_space(15.);
     ui.allocate_ui_with_layout(
         [ui.available_width(), 200.].into(),
-        egui::Layout::left_to_right(egui::Align::Min),
+        egui::Layout::left_to_right(Align::Min),
         |ui| {
             ui.add_space(15.);
-            for (si, set) in map.sets.iter_mut().enumerate() {
-                ui.allocate_ui_with_layout(
-                    [200., 200.].into(),
-                    egui::Layout::top_down(egui::Align::Center),
-                    |ui| {
-                        ui.label(set.set.display_name());
-                        ui.separator();
-                        for (di, diff) in set.diffs.iter_mut().enumerate() {
-                            let sel = if let Some((si0, di0)) = map.selected_diff {
-                                si0 == si && di0 == di
-                            } else {
-                                false
-                            };
-                            if ui
+            if let Some(cover) = map.info.cover_filename.as_deref() {
+                let cover = map.folder.join(cover);
+                let image = if cover.exists() && cover.is_file() {
+                    egui::Image::new(format!("file://{}", cover.to_string_lossy()))
+                } else {
+                    map.info.cover_filename = None;
+                    egui::Image::new(MISSING_EDITOR_ICON.clone())
+                };
+
+                let resp = ui
+                    .add_sized([200., 200.], image.sense(Sense::click()))
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+
+                if resp.hovered() {
+                    let icon_rect = Rect::from_min_size(
+                        egui::pos2(resp.rect.right() - 50., resp.rect.top()),
+                        egui::vec2(50., 50.),
+                    );
+                    egui::Image::new(EDIT_ICON.clone()).paint_at(ui, icon_rect);
+                }
+
+                if resp.clicked() {
+                    select_cover_image(app, map.folder.clone());
+                }
+            } else if ui
+                .add_sized([200., 200.], egui::Button::new(EDIT_ICON.clone()))
+                .clicked()
+            {
+                select_cover_image(app, map.folder.clone());
+            }
+
+            ui.allocate_ui_with_layout(
+                ui.available_size(),
+                egui::Layout::top_down(Align::Min),
+                |ui| {
+                    ui.allocate_ui_with_layout(
+                        [ui.available_width(), 75.].into(),
+                        egui::Layout::left_to_right(Align::Min),
+                        |ui| {
+                            ui.add_space(5.);
+                            let w = (ui.available_width() - 10.).max(1.);
+
+                            if let Some(audio) = map.audio.as_ref() {
+                                let (rect, resp) =
+                                    ui.allocate_exact_size(egui::vec2(w, 75.), Sense::click());
+                                let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                                ui.painter().rect_filled(rect, 2., Color32::from_gray(0x20));
+
+                                let s = unsafe { UnsafeMutRef::new(&mut *app) };
+                                ui.painter().add(egui::PaintCallback {
+                                    rect,
+                                    callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(
+                                        move |_info, painter| {
+                                            if let Some(map) = s.map_editor.map.as_ref()
+                                                && let Some(audio) = map.audio.as_ref()
+                                                && let Some(length) = audio.length_seconds()
+                                            {
+                                                let gl = painter.gl();
+                                                s.render.renderer.beatmap.render_spectrogram_ui(
+                                                    &mut s.ref_mut().render.renderer,
+                                                    gl,
+                                                    audio,
+                                                    -100., // hides the seek bar since it's drawn by the shader
+                                                    length,
+                                                );
+                                            }
+                                        },
+                                    )),
+                                });
+
+                                if let Some(length) = audio.length_seconds() {
+                                    let start = map.info.audio.preview_start;
+                                    let duration = map.info.audio.preview_duration;
+
+                                    if length > 0.0 && duration > 0.0 {
+                                        // The spectrogram in this view is showing the full song, so
+                                        // time maps linearly onto the rect's width.
+                                        let x0 = rect.left() + rect.width() * (start / length).clamp(0.0, 1.0);
+                                        let x1 = rect.left() + rect.width() * ((start + duration) / length).clamp(0.0, 1.0);
+
+                                        let preview_rect = Rect::from_min_max(
+                                            egui::pos2(x0, rect.top()),
+                                            egui::pos2(x1.max(x0 + 1.0), rect.bottom()),
+                                        );
+
+                                        ui.painter().rect_stroke(
+                                            preview_rect,
+                                            0.,
+                                            egui::Stroke::new(2., Color32::from_rgb(0x30, 0x90, 0xFF)),
+                                            egui::StrokeKind::Inside,
+                                        );
+                                    }
+                                }
+
+                                if resp.hovered() {
+                                    ui.painter()
+                                        .rect_filled(rect, 2., Color32::from_rgba_premultiplied(0, 0, 0, 160));
+                                    let text = app.data.locale.get("change-audio-file").to_string();
+                                    paint_text_centered(ui, rect.center(), text);
+                                }
+
+                                if resp.clicked() {
+                                    select_audio(app, map.folder.clone());
+                                }
+                            } else if ui
                                 .add_sized(
-                                    [180., BUTTON_ROW_HEIGHT],
-                                    egui::Button::new(diff.difficulty.display_name()).selected(sel),
+                                    [w, 75.],
+                                    egui::Button::new(app.data.locale.get("select-audio-file").to_string()),
                                 )
                                 .clicked()
                             {
-                                if sel {
-                                    map.selected_diff = None;
-                                } else {
-                                    map.selected_diff = Some((si, di));
-                                }
+                                select_audio(app, map.folder.clone());
                             }
+
                         }
-                        ui.add_space(ui.available_height());
-                    },
-                );
-            }
+                    );
+
+                    ui.add_space(10.);
+
+                    ui.allocate_ui_with_layout(
+                        [ui.available_width() - 10., 100.].into(),
+                        egui::Layout::left_to_right(Align::Min),
+                        |ui| {
+                            ui.add_space(5.);
+                            ui.allocate_ui_with_layout(
+                                [ui.available_width()/3., ui.available_height()].into(),
+                                egui::Layout::top_down(Align::Min),
+                                |ui| {
+
+                                    let title = app.data.locale.get("song-title-hint");
+                                    ui.add_sized(
+                                        [ui.available_width(), BUTTON_ROW_HEIGHT],
+                                        TextEdit::singleline(&mut map.info.song.title)
+                                            .hint_text(title)
+                                    );
+
+                                    let subtitle = app.data.locale.get("song-subtitle-hint");
+                                    ui.add_sized(
+                                        [ui.available_width(), BUTTON_ROW_HEIGHT],
+                                        TextEdit::singleline(&mut map.info.song.subtitle)
+                                            .hint_text(subtitle)
+                                    );
+
+                                    let author = app.data.locale.get("song-author-hint");
+                                    ui.add_sized(
+                                        [ui.available_width(), BUTTON_ROW_HEIGHT],
+                                        TextEdit::singleline(&mut map.info.song.author)
+                                            .hint_text(author)
+                                    );
+
+                                }
+                            );
+                            ui.allocate_ui_with_layout(
+                                [ui.available_width()/2., ui.available_height()].into(),
+                                egui::Layout::top_down(Align::Min),
+                                |ui| {
+
+                                    ui.allocate_ui_with_layout(
+                                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                                        egui::Layout::left_to_right(Align::Min),
+                                        |ui| {
+
+                                            if let Some(dur) = map.info.audio.duration {
+                                                ui.add_sized(
+                                                    ui.available_size(),
+                                                    Label::new(format!("Duration: {}", format_time(dur)))
+                                                        .halign(Align::Center)
+                                                );
+                                            } else {
+                                                if let Some(audio) = map.audio.as_ref() {
+                                                    map.info.audio.duration = audio.length_seconds();
+                                                }
+                                                ui.add_sized(
+                                                    ui.available_size(),
+                                                    Label::new("Duration: --:--:--.---")
+                                                        .halign(Align::Center)
+                                                );
+                                            }
+
+                                        }
+                                    );
+
+                                    ui.allocate_ui_with_layout(
+                                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                                        egui::Layout::left_to_right(Align::Min),
+                                        |ui| {
+
+                                            ui.add_sized(
+                                                [ui.available_width()/2., BUTTON_ROW_HEIGHT],
+                                                DragValue::new(&mut map.info.audio.bpm)
+                                                    .speed(0.25)
+                                                    .max_decimals(2)
+                                                    .suffix(" BPM")
+                                            ).on_hover_text("BPM");
+                                            ui.add_sized(
+                                                [ui.available_width(), BUTTON_ROW_HEIGHT],
+                                                DragValue::new(&mut map.info.audio.lufs)
+                                                    .speed(0.25)
+                                                    .max_decimals(2)
+                                                    .suffix(" LUFS")
+                                            ).on_hover_text("LUFS (used in V4 only)");
+
+                                        }
+                                    );
+
+                                }
+                            );
+                            ui.allocate_ui_with_layout(
+                                [ui.available_width(), ui.available_height()].into(),
+                                egui::Layout::top_down(Align::Min),
+                                |ui| {
+                                    ui.allocate_ui_with_layout(
+                                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                                        egui::Layout::left_to_right(Align::Min),
+                                        |ui| {
+                                            ui.add_sized(
+                                                ui.available_size(),
+                                                Label::new("Audio Preview")
+                                                    .halign(Align::Center)
+                                            );
+                                        }
+                                    );
+
+                                    ui.allocate_ui_with_layout(
+                                        [ui.available_width(), BUTTON_ROW_HEIGHT].into(),
+                                        egui::Layout::left_to_right(Align::Min),
+                                        |ui| {
+                                            if let Some(audio) = map.audio.as_ref()
+                                                && let Some(duration) = audio.length_seconds()
+                                            {
+                                                ui.add_sized(
+                                                    [ui.available_width()/2., BUTTON_ROW_HEIGHT],
+                                                    DragValue::new(&mut map.info.audio.preview_start)
+                                                        .speed(0.25)
+                                                        .max_decimals(2)
+                                                        .range(0f32..=duration)
+                                                        .format(ValueFormat::default().custom_formatter(|t, _| format_time_simple(t as f32)))
+                                                        .custom_parser(parse_time)
+                                                        .prefix("Start: ")
+                                                ).on_hover_text("Preview start time");
+
+                                                ui.add_sized(
+                                                    [ui.available_width(), BUTTON_ROW_HEIGHT],
+                                                    DragValue::new(&mut map.info.audio.preview_duration)
+                                                        .speed(0.25)
+                                                        .max_decimals(2)
+                                                        .range(0f32..=duration)
+                                                        .format(ValueFormat::default().custom_formatter(|t, _| format_time_simple(t as f32)))
+                                                        .custom_parser(parse_time)
+                                                        .prefix("Length: ")
+                                                ).on_hover_text("Preview duration");
+                                            } else {
+                                                ui.add_sized(
+                                                    [ui.available_width(), BUTTON_ROW_HEIGHT],
+                                                    Label::new("Audio not loaded").halign(Align::Center)
+                                                );
+                                            }
+                                        }
+                                    );
+                                }
+                            );
+
+                        }
+                    );
+
+                }
+            );
+        }
+    );
+    ui.add_space(15.);
+}
+
+fn draw_map_diffs(_app: &mut App, ui: &mut Ui, map: &mut BeatmapProject) {
+    ui.allocate_ui_with_layout(
+        [ui.available_width(), 250.].into(),
+        egui::Layout::left_to_right(Align::Min),
+        |ui| {
+            ui.add_space(15.);
+            ScrollArea::horizontal()
+                .max_width(ui.available_width() - 15.)
+                .show(ui, |ui| {
+                    for characteristic in MapCharacteristic::iter_known() {
+                        if let Some((si, set)) = map.sets.iter_mut().enumerate().find(|(_, set)| set.set == characteristic) {
+                            ui.allocate_ui_with_layout(
+                                [200., 250.].into(),
+                                egui::Layout::top_down(Align::Center),
+                                |ui| {
+                                    if let Some(cd) = set.custom_data.as_mut() {
+                                        ui.add_sized(
+                                            [ui.available_width(), BUTTON_ROW_HEIGHT],
+                                            TextEdit::singleline(&mut cd.characteristic_label)
+                                                .hint_text(set.set.display_name())
+                                        );
+                                    } else {
+                                        ui.add_sized(
+                                            [ui.available_width(), BUTTON_ROW_HEIGHT],
+                                            Label::new(set.set.display_name())
+                                        );
+                                    }
+                                    ui.separator();
+                                    for difficulty in MapDifficulty::iter_known() {
+                                        if let Some((di, diff)) = set.diffs.iter_mut().enumerate().find(|(_, diff)| diff.difficulty == difficulty) {
+                                            let sel = if let Some((si0, di0)) = map.selected_diff {
+                                                si0 == si && di0 == di
+                                            } else {
+                                                false
+                                            };
+                                            if ui
+                                                .add_sized(
+                                                    [180., BUTTON_ROW_HEIGHT],
+                                                    egui::Button::new(diff.difficulty.display_name()).selected(sel),
+                                                )
+                                                .clicked()
+                                            {
+                                                if sel {
+                                                    map.selected_diff = None;
+                                                } else {
+                                                    map.selected_diff = Some((si, di));
+                                                }
+                                            }
+                                        } else {
+                                            if ui.add_sized(
+                                                [180., BUTTON_ROW_HEIGHT],
+                                                egui::Button::new(
+                                                    RichText::new(format!("+ {}", difficulty.display_name()))
+                                                        .color(Color32::from_gray(50))
+                                                )
+                                                    .fill(Color32::from_gray(15)),
+                                            ).clicked() {
+                                                set.diffs.push(BeatmapProjectDiff::empty(difficulty));
+                                            }
+                                        }
+                                    }
+                                    ui.add_space(ui.available_height());
+                                },
+                            );
+                        } else {
+                            ui.allocate_ui_with_layout(
+                                [200., 250.].into(),
+                                egui::Layout::top_down(Align::Center),
+                                |ui| {
+                                    if ui.add_sized(
+                                        [ui.available_width(), BUTTON_ROW_HEIGHT],
+                                        egui::Button::new(format!("+ {}", characteristic.display_name()))
+                                    ).clicked() {
+                                        map.sets.push(BeatmapProjectSet::empty(characteristic))
+                                    }
+                                    ui.separator();
+                                    ui.add_space(ui.available_height())
+                                }
+                            );
+                        }
+                    }
+                });
+
         },
     );
 }
@@ -2158,10 +2655,6 @@ fn draw_map_diff(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
                                             tracing::error!(target: DB_AUDIO, "Audio sample_count is None");
                                             break 'try_open Err(MapOpeningError::SampleCountNotAvailable);
                                         };
-                                        if map.info.as_ref().is_none_or(|i| i.audio.is_none()) {
-                                            tracing::error!(target: DB_DATA, "Audio info is not available");
-                                            break 'try_open Err(MapOpeningError::AudioInfoNotAvailable);
-                                        }
                                         let bpm_regions = match map.audio_info.as_ref() {
                                             None => Vec::new(),
                                             Some(info) => {
@@ -2174,7 +2667,7 @@ fn draw_map_diff(app: &mut App, ui: &mut egui::Ui, map: &mut BeatmapProject) {
                                         let editing_data = EditingData::from_beatmap(
                                             &file,
                                             diff,
-                                            map.info.as_ref().unwrap().audio.as_ref().unwrap().bpm,
+                                            map.info.audio.bpm,
                                             bpm_regions,
                                             sample_count,
                                             audio
@@ -2826,7 +3319,7 @@ fn draw_map_gl(
                 // (ObjectType::ArcHead, None) => todo!(),
                 // (ObjectType::ArcTail, None) => todo!(),
                 (t, n) => {
-                    unreachable!("Hit check encountered unexpected type-link combo: {t:?}, {n:?}")
+                    unreachable!("Hit check encountered unexpected type-link combo: {:?}, {:?}", t, n)
                 }
             };
             const HIGHLIGHT_COLOR: Vec4 = Vec4::new(0.01, 0.8, 0.01, 1.0);

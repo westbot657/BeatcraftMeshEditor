@@ -7,16 +7,11 @@ use crate::DB_DATA;
 use beatmap_core::beatmap::{BombNote, ChainNote, ChainNoteLinkData, ColorNote, CutDirectionExt, NoteColor, ObjectColor, Obstacle, RawNoteColor};
 use beatmap_core::{BeatmapController, RuntimeData, TimeUnit};
 use beatmap_core::tracks_rs::animation::events::EventData;
-use beatmap_core::tracks_rs::animation::timeline_coroutine_manager::TimelineCoroutineManager;
-use beatmap_core::tracks_rs::animation::track::{PathPropertyHandle, ValuePropertyHandle};
-use beatmap_core::tracks_rs::animation::tracks_holder::TracksHolder;
-use beatmap_core::tracks_rs::point_definition::base_point_definition::BasePointDefinition;
-use beatmap_core::tracks_rs::prelude::PointDefinitionLike;
 use bs_mapping_data::v2::{self, ObstacleV2Type, V2Note};
-use bs_mapping_data::{BeatmapFile, BpmRegion, CutDirection, Sentinel};
+use bs_mapping_data::{BeatmapFile, BpmRegion, CutDirection};
 use object_data::{ArcData, BombData, ChainData, NoteData, ObjectSource, ObstacleData, ObstacleTextData, Template, TemplatePlacement};
 use resolver::{ResolveError, Value};
-use crate::beatmap::{BeatmapProject, BeatmapProjectDiff};
+use crate::beatmap::{BeatmapProjectDiff};
 
 pub mod values;
 pub mod resolver;
@@ -442,7 +437,7 @@ impl EditingData {
     fn random_quat(rng: &mut rand::rngs::ThreadRng) -> Quat {
         use rand::RngExt;
         Quat::from_euler(
-            glam::EulerRot::ZYX,
+            glam::EulerRot::YXZ,
             rng.random::<f32>() * 1.2 - 0.6,
             rng.random::<f32>() * 1.2 - 0.6,
             rng.random::<f32>() * 1.2 - 0.6,
@@ -459,7 +454,7 @@ impl EditingData {
         let mut bomb_notes = Vec::new();
         let mut obstacles = Vec::new();
         let mut chain_notes = Vec::new();
-        let arcs = Vec::new();
+        let mut arcs: Vec<beatmap_core::beatmap::Arc<ObjectSource>> = Vec::new();
 
         for (k, v) in self.values.iter() {
             values.insert(k.clone(), v.clone());
@@ -658,6 +653,12 @@ impl EditingData {
             }
         }
 
+        color_notes.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+        bomb_notes.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+        obstacles.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+        chain_notes.sort_by(|a, b| a.head_beat.total_cmp(&b.head_beat));
+        arcs.sort_by(|a, b| a.head_beat.total_cmp(&b.head_beat));
+
         Self::check_window_snaps(&mut color_notes);
 
         if let Some(events) = self.custom_events.as_ref() {
@@ -732,7 +733,7 @@ impl EditingData {
         let ap = a.grid_pos;
         let bp = b.grid_pos;
         let cross = bp - ap;
-        let angle = -cross.to_angle().to_degrees() + 90.;
+        let angle = cross.to_angle().to_degrees();
 
         if this_is_dot && other_is_dot {
             a.angle_offset_deg = angle;

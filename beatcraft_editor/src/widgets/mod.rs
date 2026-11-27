@@ -17,8 +17,8 @@ impl<'a, 'b> TextInput<'a, 'b> {
     }
 }
 
-impl<'a, 'b> egui::Widget for TextInput<'a, 'b> {
-    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+impl<'a, 'b> Widget for TextInput<'a, 'b> {
+    fn ui(self, ui: &mut Ui) -> Response {
         let id = ui.next_auto_id();
 
         let mut text = ui.memory_mut(|m| m.data.get_temp::<String>(id).unwrap_or_else(String::new));

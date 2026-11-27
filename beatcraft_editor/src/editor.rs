@@ -23,7 +23,7 @@ use crate::data::mesh::{
 };
 #[cfg(feature = "mesh-editor")]
 use crate::data::mesh::{NormalId, UvId};
-use crate::keymap::{ContextGuard, KeymapSystem};
+use crate::keymap::ContextGuard;
 use crate::light_mesh::{
     LightMesh, Part,
 };
@@ -887,7 +887,7 @@ pub enum HistoryEntry {
     FogHeights(Option<[f32; 2]>),
 
     #[cfg(feature = "mapper")]
-    BeatmapInfo(Box<Option<Info>>),
+    BeatmapInfo(Box<Info>),
     #[cfg(feature = "mapper")]
     BeatmapAudioData(Box<Option<AudioDataFile>>),
     #[cfg(feature = "mapper")]

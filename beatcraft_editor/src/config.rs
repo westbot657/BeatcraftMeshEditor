@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use chrono::DateTime;
-use egui::{Key, KeyboardShortcut, Modifiers};
 use fluent_templates::fluent_bundle::FluentValue;
 use fluent_templates::{LanguageIdentifier, Loader, static_loader};
 use keybinds::KeySeq;
@@ -39,15 +38,45 @@ impl Default for RawKeymapData {
     }
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub enum YtDlpCommand {
+    #[default]
+    Unset,
+    Python {
+        python: String,
+        yt_dlp: PathBuf,
+    },
+    Exe(PathBuf),
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct YtDlpBackendData {
+    // python ./yt-dlp "<url>" -f 'ba[acodec*=vorbis]/ba/b' -x --audio-format ogg
+    command: YtDlpCommand,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct AudioDownloaderBackendData {
+    pub yt_dlp: YtDlpBackendData,
+}
+
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+pub enum AudioDownloaderBackend {
+    #[default]
+    YtDlp,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RawAppData {
     recents: RawRecentProjects,
     audio_volume: f32,
-    #[serde(default)]
     keymaps: RawKeymapData,
 
     locale: String,
+
+    audio_download_backend_data: AudioDownloaderBackendData,
+    selected_audio_download_backend: AudioDownloaderBackend,
 
     #[serde(flatten)]
     /// Intended to catch any malformed data to prevent intact data from being lost.
@@ -61,6 +90,8 @@ impl Default for RawAppData {
             audio_volume: 0.5,
             keymaps: Default::default(),
             locale: "en-US".to_string(),
+            audio_download_backend_data: Default::default(),
+            selected_audio_download_backend: Default::default(),
             catch_all: None,
         }
     }
@@ -71,6 +102,8 @@ pub struct AppData {
     pub recents: RecentProjects,
     pub audio_volume: f32,
     pub keymaps: KeymapSystem,
+    pub audio_downloader_backend_data: AudioDownloaderBackendData,
+    pub audio_downloader_backend: AudioDownloaderBackend,
     pub locale: LocaleCache,
 }
 
@@ -293,6 +326,8 @@ impl From<RawAppData> for AppData {
             audio_volume: value.audio_volume,
             keymaps,
             locale: LocaleCache::new(&value.locale),
+            audio_downloader_backend_data: value.audio_download_backend_data.clone(),
+            audio_downloader_backend: value.selected_audio_download_backend,
         }
     }
 }
@@ -367,6 +402,8 @@ impl From<&AppData> for RawAppData {
                 timeout: value.keymaps.timeout,
             },
             locale: value.locale.locale.to_string(),
+            audio_download_backend_data: value.audio_downloader_backend_data.clone(),
+            selected_audio_download_backend: value.audio_downloader_backend,
             catch_all: None,
         };
         tracing::debug!(target: DB_DATA, value = ?s, "Saving app data");

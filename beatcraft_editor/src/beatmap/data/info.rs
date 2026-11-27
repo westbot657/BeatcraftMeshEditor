@@ -7,10 +7,10 @@ use bs_mapping_data::custom_info_v2::{DifficultyBeatmapCustomDataV2, DifficultyS
 use bs_mapping_data::info_v2::{CharacteristicSetV2, ColorSchemeInnerV2, ColorSchemeV2, DifficultyBeatmapV2, InfoV2};
 
 /// General info that can coerce into V2 and V4
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Info {
-    pub song: Option<SongInfo>,
-    pub audio: Option<AudioInfo>,
+    pub song: SongInfo,
+    pub audio: AudioInfo,
     pub preview_filename: Option<String>,
     pub cover_filename: Option<String>,
     pub color_schemes: Vec<ColorScheme>,
@@ -19,7 +19,7 @@ pub struct Info {
     pub custom_characteristic_data: HashMap<MapCharacteristic, DifficultySetCustomDataV2>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SongInfo {
     pub title: String,
     pub subtitle: String,
@@ -28,13 +28,26 @@ pub struct SongInfo {
 
 #[derive(Clone)]
 pub struct AudioInfo {
-    pub filename: String,
+    pub filename: Option<String>,
     pub duration: Option<f32>,
     pub data_filename: Option<String>,
     pub bpm: f32,
     pub lufs: f32,
     pub preview_start: f32,
     pub preview_duration: f32,
+}
+impl Default for AudioInfo {
+    fn default() -> Self {
+        Self {
+            filename: None,
+            duration: None,
+            data_filename: None,
+            bpm: 60.0,
+            lufs: 1.0,
+            preview_start: 0.0,
+            preview_duration: 10.0,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -97,15 +110,13 @@ impl TryFrom<Info> for InfoV2 {
     type Error = InfoV2ExportError;
     fn try_from(mut value: Info) -> Result<Self, Self::Error> {
 
-        let Some(SongInfo {
+        let SongInfo {
             title,
             subtitle,
             author
-        }) = value.song else {
-            return Err(InfoExportError::MissingComponent("Song Info".to_string()).into());
-        };
+        } = value.song;
 
-        let Some(AudioInfo {
+        let AudioInfo {
             filename,
             duration: _,
             data_filename: _,
@@ -113,12 +124,13 @@ impl TryFrom<Info> for InfoV2 {
             lufs: _,
             preview_start,
             preview_duration
-        }) = value.audio else {
-            return Err(InfoExportError::MissingComponent("Audio Info".to_string()).into());
-        };
+        } = value.audio;
 
         let Some(cover_image_filename) = value.cover_filename else {
             return Err(InfoExportError::MissingComponent("Cover Image".to_string()).into());
+        };
+        let Some(audio_file_name) = filename else {
+            return Err(InfoExportError::MissingComponent("Audio filename".to_string()).into());
         };
 
         let color_schemes: Vec<ColorSchemeV2> = value.color_schemes
@@ -134,7 +146,7 @@ impl TryFrom<Info> for InfoV2 {
         let mut lighters = Vec::new();
 
         let mut default_rank = 10;
-        for mut diff in value.beatmaps {
+        for diff in value.beatmaps {
             for mapper in diff.authors.mappers {
                 if !mappers.contains(&mapper) {
                     mappers.push(mapper);
@@ -225,7 +237,7 @@ impl TryFrom<Info> for InfoV2 {
             shuffle_period: 0.0,
             preview_start_time: preview_start,
             preview_duration,
-            song_filename: filename,
+            song_filename: audio_file_name,
             cover_image_filename,
             environment,
             environment_360,
@@ -240,25 +252,21 @@ impl TryFrom<Info> for InfoV2 {
 impl TryFrom<Info> for InfoV4 {
     type Error = InfoV4ExportError;
     fn try_from(value: Info) -> Result<Self, Self::Error> {
-        let Some(song) = value.song else {
-            return Err(InfoExportError::MissingComponent("Song Info".to_string()).into());
-        };
 
-        let Some(audio) = value.audio else {
-            return Err(InfoExportError::MissingComponent("Audio Info".to_string()).into());
-        };
-
-        let Some(audio_data_filename) = audio.data_filename else {
+        let Some(audio_data_filename) = value.audio.data_filename else {
             return Err(InfoExportError::MissingComponent("Audio Data File".to_string()).into());
         };
+        let Some(song_filename) = value.audio.filename else {
+            return Err(InfoExportError::MissingComponent("Audio Filename".to_string()).into());
+        };
 
-        let song_preview_filename = value.preview_filename.unwrap_or_else(|| audio.filename.clone());
+        let song_preview_filename = value.preview_filename.unwrap_or_else(|| song_filename.clone());
 
         let Some(cover_image_filename) = value.cover_filename else {
             return Err(InfoExportError::MissingComponent("Cover Image".to_string()).into());
         };
 
-        let Some(song_duration) = audio.duration else {
+        let Some(song_duration) = value.audio.duration else {
             return Err(InfoExportError::MissingComponent("song duration".to_string()).into());
         };
 
@@ -305,18 +313,18 @@ impl TryFrom<Info> for InfoV4 {
         Ok(Self {
             version: InfoVersion::V4_0_1,
             song: SongInfoV4 {
-                title: song.title,
-                sub_title: song.subtitle,
-                author: song.author,
+                title: value.song.title,
+                sub_title: value.song.subtitle,
+                author: value.song.author,
             },
             audio: AudioInfoV4 {
-                song_filename: audio.filename,
+                song_filename,
                 song_duration,
                 audio_data_filename,
-                bpm: audio.bpm,
-                lufs: audio.lufs,
-                preview_start_time: audio.preview_start,
-                preview_duration: audio.preview_duration,
+                bpm: value.audio.bpm,
+                lufs: value.audio.lufs,
+                preview_start_time: value.audio.preview_start,
+                preview_duration: value.audio.preview_duration,
             },
             song_preview_filename,
             cover_image_filename,
@@ -385,20 +393,20 @@ impl TryFrom<InfoV2> for Info {
         }
 
         Ok(Self {
-            song: Some(SongInfo {
+            song: SongInfo {
                 title: value.song_name,
                 subtitle: value.song_sub_name,
                 author: value.song_author_name,
-            }),
-            audio: Some(AudioInfo {
-                filename: value.song_filename.clone(),
+            },
+            audio: AudioInfo {
+                filename: Some(value.song_filename.clone()),
                 duration: None,
                 data_filename: None,
                 bpm: value.bpm,
                 lufs: 0.0,
                 preview_start: value.preview_start_time,
                 preview_duration: value.preview_duration,
-            }),
+            },
             preview_filename: Some(value.song_filename),
             cover_filename: Some(value.cover_image_filename),
             color_schemes: value.color_schemes.into_iter().map(Into::into).collect(),
@@ -436,20 +444,20 @@ impl TryFrom<InfoV4> for Info {
         }
 
         Ok(Self {
-            song: Some(SongInfo {
+            song: SongInfo {
                 title: value.song.title,
                 subtitle: value.song.sub_title,
                 author: value.song.author,
-            }),
-            audio: Some(AudioInfo {
-                filename: value.audio.song_filename,
+            },
+            audio: AudioInfo {
+                filename: Some(value.audio.song_filename),
                 duration: Some(value.audio.song_duration),
                 data_filename: Some(value.audio.audio_data_filename),
                 bpm: value.audio.bpm,
                 lufs: value.audio.lufs,
                 preview_start: value.audio.preview_start_time,
                 preview_duration: value.audio.preview_duration,
-            }),
+            },
             preview_filename: Some(value.song_preview_filename),
             cover_filename: Some(value.cover_image_filename),
             color_schemes: value.color_schemes

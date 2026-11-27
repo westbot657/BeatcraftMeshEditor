@@ -27,7 +27,14 @@ file-menu-label = File
 create-new-menu-label = Create new{"\u2026"}
 create-env-file = Create environment file...
 create-editor-data-file = Create editor data file...
-create-beatmap-project = Create beatmap
+create-beatmap-project = Set directory for new beatmap project
+
+select-audio-file = Select audio file
+change-audio-file = Change audio file
+song-title-hint = Title
+song-subtitle-hint = Subtitle
+song-author-hint = Author
+converting-audio = Converting audio to ogg vorbis format...
 
 failed-to-save-environment = Failed to save environment/session
 

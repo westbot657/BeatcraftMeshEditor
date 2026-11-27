@@ -184,6 +184,7 @@ impl GameObjectExt for ChainNote<ObjectSource> {
                 arrow_dissolve = 1. - dis;
             }
         }
+
         GameObjectInstanceData::color_note(
             clipping_plane,
             model,
@@ -245,5 +246,5 @@ impl GameObjectExt for Arc<ObjectSource> {
 
 pub fn get_random_spawn_quat(rng: &mut ThreadRng) -> Quat {
     let get_c = |rng: &mut ThreadRng| -> f32 { rng.random::<f32>() * 0.6f32 * 2. - 0.6 };
-    Quat::from_euler(glam::EulerRot::ZYX, get_c(rng), get_c(rng), get_c(rng))
+    Quat::from_euler(glam::EulerRot::YXZ, get_c(rng), get_c(rng), get_c(rng))
 }
