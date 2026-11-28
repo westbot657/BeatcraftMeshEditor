@@ -64,7 +64,7 @@ impl EditingData {
         sample_count: usize,
         audio: &Arc<Audio<NativeOpenAL>>
     ) -> Self {
-        let mut runtime_data = RuntimeData::new(
+        let runtime_data = RuntimeData::new(
             diff.njs,
             bpm,
             diff.njs_offset,

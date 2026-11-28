@@ -54,6 +54,7 @@ pub struct CustomData {
     pub color: OptionalColorValue,
 
     pub animation: Option<Animation>,
+    pub track: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -227,6 +228,7 @@ impl From<&CommonCustomDataV2> for CustomData {
             uninteractable: value.uninteractable.into(),
             color: value.color.into(),
             animation: value.animation.clone().map(Into::into),
+            track: value.track.clone()
         }
     }
 }
@@ -281,6 +283,7 @@ impl From<&CommonCustomDataV3> for CustomData {
             uninteractable: value.uninteractable.into(),
             color: value.color.into(),
             animation: value.animation.clone().map(Into::into),
+            track: value.track.clone(),
         }
     }
 }

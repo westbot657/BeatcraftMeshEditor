@@ -5,7 +5,8 @@ use glam::Vec4;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use beatmap_core::RuntimeData;
-use beatmap_core::tracks_rs::animation::track::PathPropertiesMap;
+use beatmap_core::tracks_rs::animation::track::{PathPropertiesMap, Track};
+use beatmap_core::tracks_rs::animation::tracks_holder::TracksHolder;
 use beatmap_core::tracks_rs::point_definition::base_point_definition::BasePointDefinition;
 
 #[derive(Clone, Debug, Default)]
@@ -500,6 +501,17 @@ impl crate::data::map_editing::object_data::CustomData {
             },
             None => None,
         };
+        let mut tracks = Vec::new();
+        for t in self.track.iter() {
+            if let Some(key) = rt.tracks_holder.get_track_key(t) {
+                tracks.push(key);
+            } else {
+                let mut track = Track::default();
+                track.name = t.clone();
+                let key = rt.tracks_holder.add_track(track);
+                tracks.push(key);
+            }
+        }
         Ok(CustomData {
             custom_njs_offset: self.custom_njs_offset.resolve(values, Default::default())?,
             custom_njs: self.custom_njs.resolve(values, Default::default())?,
@@ -507,6 +519,7 @@ impl crate::data::map_editing::object_data::CustomData {
             world_rotation: self.world_rotation.resolve(values, Default::default())?.to_quat(glam::EulerRot::YXZ),
             coordinates: self.coordinates.resolve(values, Default::default())?,
             animation,
+            tracks,
         })
     }
 }
